@@ -1,0 +1,85 @@
+`include "./../SoC_Config.sv"
+`include "./../RV32_inst_Define.sv"
+module EX_MEM #(
+    parameter ADDR_WIDTH = `ADDR_WIDTH,
+    parameter DATA_WIDTH = `DATA_WIDTH,
+    parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
+    parameter ALIGN_BYTES = `ALIGN_BYTES
+ )( 
+    input   logic                           clk,
+    input   logic                           rst_n,
+    input   logic                           stall,
+    input   logic                           flush,
+    // from execute
+    input   logic   [ADDR_WIDTH-1:0]        inst_addr_i,
+    input   logic   [DATA_WIDTH-1:0]        inst_i,
+    input   logic                           wr_reg_en_i,
+    input   logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_i,
+    input   logic   [DATA_WIDTH-1:0]        wr_reg_data_i,
+    input   logic   [ADDR_WIDTH-1:0]        mem_addr_i,
+    input   logic                           access_en_i,
+    input   logic                           access_wr_i,
+    input   logic   [2:0]                   rd_mem_func3_i,
+
+    input   logic   [DATA_WIDTH-1:0]        wr_mem_data_i,
+    input   logic   [ALIGN_BYTES-1:0]       wr_mem_mask_i,
+    //to ctrl
+    // output  logic                           jump_en,
+    // output  logic   [ADDR_WIDTH-1:0]        jump_addr,
+    // to mem
+    output  logic   [ADDR_WIDTH-1:0]        inst_addr_o,
+    output  logic   [DATA_WIDTH-1:0]        inst_o,
+    output  logic   [ADDR_WIDTH-1:0]        mem_addr_o,
+    output  logic                           access_en_o,
+    output  logic                           access_wr_o,
+    output  logic   [2:0]                   rd_mem_func3_o,
+    output  logic   [DATA_WIDTH-1:0]        wr_mem_data_o,
+    output  logic   [ALIGN_BYTES-1:0]       wr_mem_mask_o,
+    // to wb
+    output  logic                           wr_reg_en_o,
+    output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_o,
+    output  logic   [DATA_WIDTH-1:0]        wr_reg_data_o
+);
+
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n) begin
+        inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
+        inst_o          <= `INST_NOP;
+        mem_addr_o      <= 'h0;
+        access_en_o     <= 1'b0;
+        rd_mem_func3_o  <= 'h0;
+        access_wr_o     <= 1'b0;
+        wr_mem_data_o   <= 'h0;
+        wr_mem_mask_o   <= 'h0;
+        wr_reg_en_o     <= 1'b0;
+        wr_reg_addr_o   <= 'h0;
+        wr_reg_data_o   <= 'h0;
+    end else if(flush) begin
+        inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
+        inst_o          <= `INST_NOP;
+        mem_addr_o      <= 'h0;
+        access_en_o     <= 1'b0;
+        rd_mem_func3_o  <= 'h0;
+        access_wr_o     <= 1'b0;
+        wr_mem_data_o   <= 'h0;
+        wr_mem_mask_o   <= 'h0;
+        wr_reg_en_o     <= 1'b0;
+        wr_reg_addr_o   <= 'h0;
+        wr_reg_data_o   <= 'h0;
+    end else if(!stall) begin//指令地址无需清零
+        inst_addr_o     <= inst_addr_i;
+        inst_o          <= inst_i;
+        mem_addr_o      <= mem_addr_i;
+        access_en_o     <= access_en_i;
+        rd_mem_func3_o  <= rd_mem_func3_i;
+        access_wr_o     <= access_wr_i;
+        wr_mem_data_o   <= wr_mem_data_i;
+        wr_mem_mask_o   <= wr_mem_mask_i;
+        wr_reg_en_o     <= wr_reg_en_i;
+        wr_reg_addr_o   <= wr_reg_addr_i;
+        wr_reg_data_o   <= wr_reg_data_i;
+    end
+end
+
+endmodule
