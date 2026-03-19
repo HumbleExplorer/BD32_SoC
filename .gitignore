@@ -1,0 +1,6 @@
+BD32_SoC/
+work/
+transcript
+*.vstf
+*.wlf
+wlft*
