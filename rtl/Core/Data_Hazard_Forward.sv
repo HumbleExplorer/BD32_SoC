@@ -74,7 +74,7 @@ assign forward_B[1] = (bus_done || ~bus_sel) && (wr_reg_en_mem && (wr_reg_addr_m
 assign forward_C = (wr_reg_en_mem && (wr_reg_addr_mem == rd_rs2_addr_ex) && (wr_reg_addr_mem != rd_rs1_addr_ex)
 && (wr_reg_addr_mem != 'h0) && rd_mem_en_mem && wr_mem_en_ex);
 
-assign load_use_flag = (wr_reg_en_ex && rd_mem_en_ex && (wr_reg_addr_ex != 'h0) &&//load
+assign load_use_flag = (rd_mem_en_ex && (wr_reg_addr_ex != 'h0) &&//load
 ((wr_mem_en_id &&//store
 (wr_reg_addr_ex == rd_rs1_addr_id)) ||
 ((!wr_mem_en_id &&//非store
