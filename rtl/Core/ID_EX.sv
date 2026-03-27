@@ -13,6 +13,8 @@ module ID_EX #(
     //from id
     input   logic   [ADDR_WIDTH-1:0]        inst_addr_i,
     input   logic   [DATA_WIDTH-1:0]        inst_i,
+    input   logic   [ADDR_WIDTH-1:0]        predict_target_pc_i,
+    input   logic                           predict_taken_i,
     input   logic   [DATA_WIDTH-1:0]        alu_op1_i,
     input   logic   [DATA_WIDTH-1:0]        alu_op2_i,
     input   logic   [DATA_WIDTH-1:0]        imm_i,
@@ -28,6 +30,8 @@ module ID_EX #(
     //to execute
     output  logic   [ADDR_WIDTH-1:0]        inst_addr_o,
     output  logic   [DATA_WIDTH-1:0]        inst_o,
+    output  logic   [ADDR_WIDTH-1:0]        predict_target_pc_o,
+    output  logic                           predict_taken_o,
     output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
     output  logic   [DATA_WIDTH-1:0]        alu_op2_o,
     output  logic   [DATA_WIDTH-1:0]        imm_o,
@@ -46,6 +50,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
         inst_o          <= `INST_NOP;
+        predict_target_pc_o <= 'h0;
+        predict_taken_o  <= 1'b0;
         alu_op1_o       <= 'h0;
         alu_op2_o       <= 'h0;
         imm_o           <= 'h0;
@@ -60,6 +66,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else if(flush) begin
         inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
         inst_o          <= `INST_NOP;
+        predict_target_pc_o <= 'h0;
+        predict_taken_o <= 1'b0;
         alu_op1_o       <= 'h0;
         alu_op2_o       <= 'h0;
         imm_o           <= 'h0;
@@ -74,6 +82,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else if (!stall) begin
         inst_addr_o     <= inst_addr_i;
         inst_o          <= inst_i;
+        predict_target_pc_o <= predict_target_pc_i;
+        predict_taken_o <= predict_taken_i;
         alu_op1_o       <= alu_op1_i;
         alu_op2_o       <= alu_op2_i;
         imm_o           <= imm_i;

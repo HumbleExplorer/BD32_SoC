@@ -12,6 +12,8 @@ module Executer #(
     input   logic   [ADDR_WIDTH-1:0]        inst_addr,
     input   logic   [DATA_WIDTH-1:0]        inst,
     input   logic   [DATA_WIDTH-1:0]        imm,
+    input   logic   [ADDR_WIDTH-1:0]        predict_target_pc,
+    input   logic                           predict_taken,
     // from CSR
     input   logic   [DATA_WIDTH-1:0]        rd_csr_data,
     input   logic                           illegal_inst_csr,
@@ -28,8 +30,8 @@ module Executer #(
     // from wb
     input   logic   [DATA_WIDTH-1:0]        wr_reg_data_wb,//forward_A_B
     // to ctrl
-    output  logic                           jump_en,
-    output  logic   [ADDR_WIDTH-1:0]        jump_addr,
+    output  logic                           branch_jump_en,//实际上是否跳转
+    output  logic   [ADDR_WIDTH-1:0]        branch_jump_addr,//实际跳转地址
     output  logic   [DATA_WIDTH-2:0]        exception_code,
     output  logic   [DATA_WIDTH-1:0]        exception_val,
     // to mul_div
@@ -46,12 +48,23 @@ module Executer #(
     // to csr
     output  logic   [DATA_WIDTH-1:0]        wr_csr_data,
     output  logic                           wfi_req,
-    output  logic                           mret_req
+    output  logic                           mret_req,
+    // to IF
+    output  logic                           is_fence_i,
+    output  logic                           branch_taken,    // 分支跳转方向
+    output  logic   [ADDR_WIDTH-1:0]        branch_target,   // 分支目标跳转地址
+    output  logic   [1:0]                   branch_inst_type,// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
+    output  logic                           branch_req,
+    output  logic                           branch_predict_success,
+    output  logic                           push_ras,        // call
+    output  logic                           pop_ras          // ret
+
 );
 
 logic   [6:0]               opcode;
 logic   [4:0]               rd;
 logic   [2:0]               func3;
+logic   [4:0]               zimm;
 logic   [6:0]               func7;
 logic                       equal;
 logic                       less_signed;
@@ -63,6 +76,24 @@ logic   [DATA_WIDTH-1:0]    sr_shift_mask;
 
 // logic                       access_addr_misalign;
 // 支持非对齐访存
+
+/*
+link为x1或x5
+
+对于JAL指令, rd = link时push
+对于JALR指令:
+        rd  |  rs1  | rs1 = rd |   RAS操作
+    -------------------------------------------
+    !link | !link |    ---   |    none
+    !link | link  |    ---   |    pop
+    link  | !link |    ---   |    push
+    link  | link  |     0    |    pop, then push
+    link  | link  |     1    |    push
+*/
+logic rd_link;
+logic rs1_link;
+logic rs1_eq_rd;
+
 
 
 assign  opcode          =   inst[6:0];
@@ -88,17 +119,31 @@ assign  mul_div_func3 = func3;
 assign  exception_code = (illegal_inst_csr) ? 'h3 : {DATA_WIDTH-1{1'b1}};
 // assign exception_code = {DATA_WIDTH-1{1'b1}};
 assign  exception_val = 'h0;
+
+assign  rd_link = (rd == 'd1 || rd == 'd5);
+assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
+assign  rs1_eq_rd = (inst[19:15] == rd);
+assign  is_fence_i = (opcode == `INST_FENCE) && (func3[0]);
+
+assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target_pc == branch_target);
+assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
+assign  branch_jump_addr= (((branch_taken && ~predict_taken) || (predict_target_pc != branch_target)) && ~is_fence_i) ?//跳被预测为不跳，或者跳不准
+                         branch_target : inst_addr + 4;//不跳被预测为跳
+
 always_comb begin
     wr_reg_addr     = 5'h0;
     wr_reg_data     = 'h0;
-    jump_en         = 1'b0;
-    jump_addr       = 'h0;
     wr_mem_data     = 'h0;
     wr_mem_mask     = 4'b0000;
     wr_csr_data     = 'h0;
     wfi_req         = 1'b0;
     mret_req        = 1'b0;
-
+    branch_taken    = 1'b0;
+    branch_target   = 'h0;
+    branch_inst_type= 2'b00;
+    branch_req      = 1'b0;
+    push_ras        = 1'b0;
+    pop_ras         = 1'b0;
     case(opcode)
         `INST_TYPE_I:begin
             wr_reg_addr     = rd;
@@ -155,30 +200,32 @@ always_comb begin
             wr_reg_addr     = 5'h0;
             wr_reg_data     = 'h0;
             wr_mem_data     = 'h0;
+            branch_inst_type= 2'b01;
+            branch_req      = 1'b1;
             case(func3)
                 `INST_BEQ: begin
-                    jump_en     = equal;
-                    jump_addr   = equal ? jump_imm : 'h0;
+                    branch_taken     = equal;
+                    branch_target   = equal ? jump_imm : 'h0;
                 end
                 `INST_BNE: begin
-                    jump_en     = ~equal;
-                    jump_addr   = ~equal ? jump_imm : 'h0;
+                    branch_taken     = ~equal;
+                    branch_target   = ~equal ? jump_imm : 'h0;
                 end
                 `INST_BLT: begin
-                    jump_en     = less_signed;
-                    jump_addr   = less_signed ? jump_imm : 'h0;
+                    branch_taken     = less_signed;
+                    branch_target   = less_signed ? jump_imm : 'h0;
                 end
                 `INST_BGE: begin
-                    jump_en     = ~less_signed;
-                    jump_addr   = ~less_signed ? jump_imm : 'h0;
+                    branch_taken     = ~less_signed;
+                    branch_target   = ~less_signed ? jump_imm : 'h0;
                 end
                 `INST_BLTU: begin
-                    jump_en     = less_unsigned;
-                    jump_addr   = less_unsigned ? jump_imm : 'h0;
+                    branch_taken     = less_unsigned;
+                    branch_target   = less_unsigned ? jump_imm : 'h0;
                 end
                 `INST_BGEU: begin
-                    jump_en     = ~less_unsigned;
-                    jump_addr   = ~less_unsigned ? jump_imm : 'h0;
+                    branch_taken     = ~less_unsigned;
+                    branch_target   = ~less_unsigned ? jump_imm : 'h0;
                 end
             endcase
         end
@@ -250,17 +297,37 @@ always_comb begin
                     endcase
             endcase
         end
+        /*
+        link为x1或x5
+        
+        对于JAL指令, rd = link时push
+        对于JALR指令:
+            rd  |  rs1  | rs1 = rd |   RAS操作
+        -------------------------------------------
+            !link | !link |    ---   |    none
+            !link | link  |    ---   |    pop
+            link  | !link |    ---   |    push
+            link  | link  |     0    |  pop,then push
+            link  | link  |     1    |    push
+        */
         `INST_JAL:begin
             wr_reg_addr     = rd;
             wr_reg_data     = inst_addr + 32'h4;
-            jump_en         = 1'b1;
-            jump_addr       = inst_addr + alu_op2;
+            branch_taken    = 1'b1;
+            branch_target   = inst_addr + alu_op2;
+            branch_inst_type= 2'b10;
+            branch_req      = 1'b1;
+            push_ras        = rd_link;//push or none
         end
         `INST_JALR:begin
             wr_reg_addr     = rd;
             wr_reg_data     = inst_addr + 32'h4;
-            jump_en         = 1'b1;
-            jump_addr       = alu_op1 + alu_op2;
+            branch_taken    = 1'b1;
+            branch_target   = alu_op1 + alu_op2;
+            branch_inst_type= 2'b11;
+            branch_req      = 1'b1;
+            push_ras        = rd_link;
+            pop_ras         = rs1_link && ((rd_link && ~rs1_eq_rd) || ~rd_link);
         end
         `INST_LUI:begin
             wr_reg_addr     = rd;
@@ -272,8 +339,7 @@ always_comb begin
         end
         `INST_FENCE:begin
             if(func3) begin//FENCE.I 冲刷
-                jump_en         = 1'b1;
-                jump_addr       = alu_op1 + alu_op2;//=PC+4
+                ;
             end else begin //FENCE 等同于NOP
                 ;
             end

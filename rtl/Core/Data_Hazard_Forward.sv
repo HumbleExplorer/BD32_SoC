@@ -71,6 +71,7 @@ assign forward_B[1] = (bus_done || ~bus_sel) && (wr_reg_en_mem && (wr_reg_addr_m
 // ===================================== 第二步：Load-Use冒险逻辑（load_use_flag_o） =====================================
 //如果是load后跟着store指令，并且load指令的rd与store指令的rs2相同，rs1不同，则不需要停顿，只需要将MEM/WB寄存器的数据前递到MEM阶段。
 //rs2是数据，前递能补，rs1是地址，不能补。
+// load-store前递
 assign forward_C = (wr_reg_en_mem && (wr_reg_addr_mem == rd_rs2_addr_ex) && (wr_reg_addr_mem != rd_rs1_addr_ex)
 && (wr_reg_addr_mem != 'h0) && rd_mem_en_mem && wr_mem_en_ex);
 
