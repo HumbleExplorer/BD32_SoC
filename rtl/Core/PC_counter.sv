@@ -2,7 +2,8 @@
 module PC_counter #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
-    parameter ALIGN_WIDTH =`ALIGN_WIDTH
+    parameter ALIGN_WIDTH =`ALIGN_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
 )( 
     input   logic                       clk,
     input   logic                       rst_n,
@@ -14,13 +15,13 @@ module PC_counter #(
     output  logic   [DATA_WIDTH-1:0]    exception_val
     // output  logic   [ADDR_WIDTH-1:0]    inst_addr_o//当前指令地址（给流水线，即当前取出的指令对应的地址）
 );
-assign exception_code = (pc[ADDR_WIDTH-1:16]==`BOOT_BASE_ADDR || pc[ADDR_WIDTH-1:16]==`ITCM_BASE_ADDR) ? //指令访问错误，即越界
+assign exception_code = (pc[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_ADDR || pc[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_ADDR) ? //指令访问错误，即越界
 (pc[ALIGN_WIDTH-1:0] == 0 ? {DATA_WIDTH-1{1'b1}} : 'd0) : 'd1;//指令地址未对齐
 assign exception_val = jump_en ? pc : pc+4;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)
-        pc <= {`BOOT_BASE_ADDR,16'h0};  // 复位为0
+        pc <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};  // 复位为0
     else if(jump_en)//刷新优先级应高于停顿
         pc[ADDR_WIDTH-1:ALIGN_WIDTH] <= jump_addr[ADDR_WIDTH-1:ALIGN_WIDTH];
     else if(stall)

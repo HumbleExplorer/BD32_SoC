@@ -2,7 +2,8 @@
 `include "./../RV32_inst_Define.sv"
 module Mem_Access #(//模块内的mem指所有用到load、store的部分
     parameter ADDR_WIDTH = `ADDR_WIDTH,
-    parameter DATA_WIDTH = `DATA_WIDTH
+    parameter DATA_WIDTH = `DATA_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
 )(
     input   logic   [ADDR_WIDTH-1:0]    access_addr,
     input   logic                       access_en,
@@ -33,10 +34,10 @@ logic direct_sel;//此处的direct指可以单周期读写，不经过总线读�
 logic [DATA_WIDTH-1:0] rd_direct_data;
 logic                  access_illegal;
 
-assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:16] == `DTCM_BASE_ADDR) ;
-assign clint_sel    = access_en & (access_addr[ADDR_WIDTH-1:16] == `CLINT_BASE_ADDR);
-assign plic_sel     = access_en & (access_addr[ADDR_WIDTH-1:16] == `PLIC_BASE_ADDR);
-assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:16] >= `BUS_BASE_ADDR);
+assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `DTCM_BASE_ADDR) ;
+assign clint_sel    = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `CLINT_BASE_ADDR);
+assign plic_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `PLIC_BASE_ADDR);
+assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR);
 assign direct_sel   = dtcm_sel || clint_sel || plic_sel;
 assign rd_direct_data = plic_sel ? rd_plic_data : (clint_sel ? rd_clint_data : (dtcm_sel ? rd_dtcm_data : 'h0));
 // assign mem_access_ready = access_en ? (direct_sel ? 1'b1 : (bus_sel ? bus_tran_done : 1'b0)): 1'b1;
@@ -44,7 +45,7 @@ assign mem_access_ready = bus_sel ? bus_tran_done : 1'b1;
 // assign rd_mem_en = access_en & ~access_wr;
 // assign wr_mem_en = access_en & access_wr;
 assign rd_mem_data = direct_sel ? rd_direct_data : (bus_sel ? rd_bus_data : 'h0);
-assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:16] < `DTCM_BASE_ADDR): 1'b0;//还可以再加上总线传来的错误信息
+assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_ADDR): 1'b0;//还可以再加上总线传来的错误信息
 // assign exception_code = access_illegal ? (rd_mem_en ? 4'd5 : wr_mem_en ? 4'd7 : {DATA_WIDTH-1{1'b1}}): {DATA_WIDTH-1{1'b1}};
 assign exception_code = access_illegal ? (access_wr ? 4'd7 : 4'd5) : {DATA_WIDTH-1{1'b1}};
 assign exception_val = access_addr;

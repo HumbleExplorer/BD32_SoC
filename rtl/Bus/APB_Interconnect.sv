@@ -1,7 +1,8 @@
 `include "./../SoC_Config.sv"
 module APB_Interconnect #(
     parameter PADDR_WIDTH = `ADDR_WIDTH,
-    parameter PDATA_WIDTH = `DATA_WIDTH
+    parameter PDATA_WIDTH = `DATA_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = PADDR_WIDTH - `DEVICE_TAG_WIDTH
 )(
     // APB 主机信号
     input  logic [PADDR_WIDTH-1:0]  PADDR,
@@ -21,8 +22,8 @@ module APB_Interconnect #(
     output logic                    PSLVERR
 );
 
-assign o_gpio_psel = (PADDR[PDATA_WIDTH-1:16] == `GPIO_BASE_ADDR) & PSEL;
-assign o_uart_psel = (PADDR[PDATA_WIDTH-1:16] == `UART_BASE_ADDR) & PSEL;
+assign o_gpio_psel = (PADDR[PDATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `GPIO_BASE_ADDR) & PSEL;
+assign o_uart_psel = (PADDR[PDATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `UART_BASE_ADDR) & PSEL;
 
 assign PREADY = i_gpio_ready & i_uart_ready;
 assign PSLVERR = 1'b0;

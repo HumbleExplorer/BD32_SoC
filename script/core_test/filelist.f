@@ -1,7 +1,8 @@
 ../../sim/tb_soc_top.sv
 ../../rtl/*.sv
 ../../rtl/Bus/*.sv
-../../rtl/Clock/*.sv
+../../rtl/Common/*.sv
+../../rtl/Common/Clock/*.sv
 ../../rtl/Core/*.sv
 ../../rtl/Core/Mul_Div/*.sv
 ../../rtl/Periph/*.sv

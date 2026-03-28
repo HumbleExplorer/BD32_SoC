@@ -98,10 +98,15 @@ logic   [DATA_WIDTH-1:0]    wr_reg_data;
 // IF
 logic   [ADDR_WIDTH-1:0]    pc;
 logic   [DATA_WIDTH-1:0]    inst;
+logic                       predict_taken_if;
+logic   [ADDR_WIDTH-1:0]    predict_target_pc_if;
+
 
 // ID
 logic   [ADDR_WIDTH-1:0]    inst_addr_id;
 logic   [DATA_WIDTH-1:0]    inst_id;
+logic                       predict_taken_id;
+logic   [ADDR_WIDTH-1:0]    predict_target_pc_id;
 logic   [DATA_WIDTH-1:0]    alu_op1_id;
 logic   [DATA_WIDTH-1:0]    alu_op2_id;
 logic   [DATA_WIDTH-1:0]    imm_id;
@@ -114,6 +119,8 @@ logic   [CSR_ADDR_WIDTH-1:0]csr_addr_id;
 // EX
 logic   [ADDR_WIDTH-1:0]    inst_addr_ex;
 logic   [DATA_WIDTH-1:0]    inst_ex;
+logic                       predict_taken_ex;
+logic   [ADDR_WIDTH-1:0]    predict_target_pc_ex;
 logic   [DATA_WIDTH-1:0]    imm_ex;
 logic                       access_en_ex;
 logic                       access_wr_ex;
@@ -129,6 +136,16 @@ logic   [REG_ADDR_WIDTH-1:0]rd_rs1_addr_ex;
 logic   [REG_ADDR_WIDTH-1:0]rd_rs2_addr_ex;
 logic                       wfi_req;
 logic                       mret_req;
+
+logic                       is_fence_i;
+logic                       branch_taken;
+logic   [ADDR_WIDTH-1:0]    branch_target;
+logic   [1:0]               branch_inst_type;
+logic                       branch_req;
+logic                       branch_predict_success;
+logic                       push_ras;
+logic                       pop_ras;
+
 
 // Mul_Div
 logic                       mul_div_en;
@@ -211,6 +228,7 @@ Pipeline_Ctrl #(
 );
 
 Data_Hazard_Forward #(
+    .ADDR_WIDTH     	(ADDR_WIDTH),
     .DATA_WIDTH     	(DATA_WIDTH),
     .REG_ADDR_WIDTH 	(REG_ADDR_WIDTH)
 )u_Data_Hazard_Forward(
@@ -235,9 +253,9 @@ Data_Hazard_Forward #(
     .rd_rs2_data_ex     	(rs2_data_ex        ),
     .wr_reg_data_mem    	(wr_reg_data_mem    ),
     .wr_reg_data_wb     	(wr_reg_data        ),
-    .bus_sel                (bus_sel),
-    .bus_done               (bus_tran_done),
-    .mem_addr_ex            (mem_addr_ex),
+    .bus_sel                (bus_sel            ),
+    .bus_done               (bus_tran_done      ),
+    .mem_addr_ex            (mem_addr_ex        ),
     .forward_A          	(forward_A          ),
     .forward_B          	(forward_B          ),
     .forward_C          	(forward_C          ),
@@ -247,6 +265,28 @@ Data_Hazard_Forward #(
     .wr_mem_data_temp   	(wr_mem_data_temp   )
 );
 
+Dynamic_Branch_Predictor #(
+    .ADDR_WIDTH     (ADDR_WIDTH ),
+    .DATA_WIDTH     (DATA_WIDTH ),
+    .ALIGN_WIDTH    (ALIGN_WIDTH),
+    .BTB_ENTRIES    (256),
+    .PHT_ENTRIES    (128),
+    .RAS_DEPTH      (8)
+)u_Dynamic_Branch_Predictor(
+    .clk             (clk            ),
+    .rst_n           (rst_n          ),
+    .is_fence_i      (is_fence_i     ),
+    .stall           (pc_stall       ),
+    .pc              (pc             ),
+    .branch_pc       (inst_addr_ex   ),
+    .branch_taken    (branch_taken   ),
+    .branch_target   (branch_target  ),  
+    .branch_req      (branch_req     ),
+    .branch_predict_success(branch_predict_success),
+    .branch_inst_type(branch_inst_type),
+    .push_ras        (push_ras       ),
+    .pop_ras         (pop_ras        )
+);
 
 PC_counter #(
     .ADDR_WIDTH(ADDR_WIDTH)
@@ -280,18 +320,22 @@ ITCM #(
 );  
 
 IF_ID #(
-    .ADDR_WIDTH     (ADDR_WIDTH),
-    .DATA_WIDTH     (DATA_WIDTH)
-)u_IF_ID( 
-    .clk            (clk),
-    .rst_n          (rst_n),
-    .stall          (if_id_stall),
-    .flush          (if_id_flush),
-    .inst_addr_i    (pc),
+    .ADDR_WIDTH         (ADDR_WIDTH),
+    .DATA_WIDTH         (DATA_WIDTH)
+)u_IF_ID(
+    .clk                (clk),
+    .rst_n              (rst_n),
+    .stall              (if_id_stall),
+    .flush              (if_id_flush),
+    .inst_addr_i        (pc),
     // .inst_i         (inst),
-    .inst_i         (inst),
-    .inst_addr_o    (inst_addr_id),
-    .inst_o         (inst_id)
+    .inst_i             (inst),
+    .predict_taken_i    (predict_taken_if),
+    .predict_target_pc_i(predict_target_pc_if),
+    .inst_addr_o        (inst_addr_id),
+    .inst_o             (inst_id),
+    .predict_taken_o    (predict_taken_id),
+    .predict_target_pc_o(predict_target_pc_id)
 );  
 
 Decoder #(
@@ -346,6 +390,8 @@ ID_EX #(
     .flush          (id_ex_flush),
     .inst_addr_i    (inst_addr_id),
     .inst_i         (inst_id),
+    .predict_taken_i(predict_taken_id),
+    .predict_target_pc_i(predict_target_pc_id),
     .alu_op1_i      (alu_op1_id),
     .alu_op2_i      (alu_op2_id),
     .imm_i          (imm_id),
@@ -359,6 +405,8 @@ ID_EX #(
     .rd_rs2_addr_i  (rd_rs2_addr),
     .inst_addr_o    (inst_addr_ex),
     .inst_o         (inst_ex),
+    .predict_taken_o(predict_taken_ex),
+    .predict_target_pc_o(predict_target_pc_ex),
     .alu_op1_o      (alu_op1_from_id_ex),
     .alu_op2_o      (alu_op2_from_id_ex),
     .imm_o          (imm_ex),
@@ -383,6 +431,8 @@ Executer #(
     .inst_addr        	(inst_addr_ex       ),
     .inst             	(inst_ex            ),
     .imm              	(imm_ex             ),
+    .predict_taken    	(predict_taken_ex   ),
+    .predict_target_pc	(predict_target_pc_ex),
     .rd_csr_data      	(rd_csr_data        ),
     .illegal_inst_csr   (illegal_inst_csr   ),
     .alu_op1          	(alu_op1_forward    ),
@@ -392,8 +442,8 @@ Executer #(
     .result_mul_div   	(result_mul_div     ),
     .wr_reg_data_mem  	(wr_reg_data_mem    ),
     .wr_reg_data_wb   	(wr_reg_data        ),
-    .jump_en          	(branch_jump_en     ),
-    .jump_addr        	(branch_jump_addr   ),
+    .branch_jump_en     (branch_jump_en     ),
+    .branch_jump_addr   (branch_jump_addr   ),
     .exception_code  	(exception_code_ex  ),
     .exception_val   	(exception_val_ex   ),
     .mul_div_en       	(mul_div_en         ),
@@ -406,7 +456,15 @@ Executer #(
     .wr_reg_data      	(wr_reg_data_ex     ),
     .wr_csr_data      	(wr_csr_data        ),
     .wfi_req            (wfi_req            ),
-    .mret_req           (mret_req           )
+    .mret_req           (mret_req           ),
+    .is_fence_i         (is_fence_i         ),
+    .branch_taken       (branch_taken       ),
+    .branch_target      (branch_target      ),
+    .branch_inst_type   (branch_inst_type   ),
+    .branch_req         (branch_req         ),
+    .branch_predict_success(branch_predict_success),
+    .push_ras           (push_ras           ),
+    .pop_ras            (pop_ras            )
 );
 
 mul_div #(

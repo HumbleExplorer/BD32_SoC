@@ -4,7 +4,8 @@ module ID_EX #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
-    parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH
+    parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
  )( 
     input   logic                           clk,
     input   logic                           rst_n,
@@ -13,8 +14,8 @@ module ID_EX #(
     //from id
     input   logic   [ADDR_WIDTH-1:0]        inst_addr_i,
     input   logic   [DATA_WIDTH-1:0]        inst_i,
-    input   logic   [ADDR_WIDTH-1:0]        predict_target_pc_i,
     input   logic                           predict_taken_i,
+    input   logic   [ADDR_WIDTH-1:0]        predict_target_pc_i,
     input   logic   [DATA_WIDTH-1:0]        alu_op1_i,
     input   logic   [DATA_WIDTH-1:0]        alu_op2_i,
     input   logic   [DATA_WIDTH-1:0]        imm_i,
@@ -30,8 +31,8 @@ module ID_EX #(
     //to execute
     output  logic   [ADDR_WIDTH-1:0]        inst_addr_o,
     output  logic   [DATA_WIDTH-1:0]        inst_o,
-    output  logic   [ADDR_WIDTH-1:0]        predict_target_pc_o,
     output  logic                           predict_taken_o,
+    output  logic   [ADDR_WIDTH-1:0]        predict_target_pc_o,
     output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
     output  logic   [DATA_WIDTH-1:0]        alu_op2_o,
     output  logic   [DATA_WIDTH-1:0]        imm_o,
@@ -48,10 +49,10 @@ module ID_EX #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
+        inst_addr_o     <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= `INST_NOP;
-        predict_target_pc_o <= 'h0;
         predict_taken_o  <= 1'b0;
+        predict_target_pc_o <= 'h0;
         alu_op1_o       <= 'h0;
         alu_op2_o       <= 'h0;
         imm_o           <= 'h0;
@@ -64,10 +65,10 @@ always_ff @(posedge clk or negedge rst_n) begin
         rd_rs1_addr_o   <= 'h0;
         rd_rs2_addr_o   <= 'h0;
     end else if(flush) begin
-        inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
+        inst_addr_o     <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= `INST_NOP;
-        predict_target_pc_o <= 'h0;
         predict_taken_o <= 1'b0;
+        predict_target_pc_o <= 'h0;
         alu_op1_o       <= 'h0;
         alu_op2_o       <= 'h0;
         imm_o           <= 'h0;
@@ -82,8 +83,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else if (!stall) begin
         inst_addr_o     <= inst_addr_i;
         inst_o          <= inst_i;
-        predict_target_pc_o <= predict_target_pc_i;
         predict_taken_o <= predict_taken_i;
+        predict_target_pc_o <= predict_target_pc_i;
         alu_op1_o       <= alu_op1_i;
         alu_op2_o       <= alu_op2_i;
         imm_o           <= imm_i;

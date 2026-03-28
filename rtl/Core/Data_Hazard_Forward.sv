@@ -1,8 +1,10 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
 module Data_Hazard_Forward #(
+    parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
-    parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH
+    parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
 )(
     input   logic                           access_en_id,
     input   logic                           access_wr_id,
@@ -58,7 +60,7 @@ assign wr_mem_en_id = access_en_id & access_wr_id;
 assign rd_mem_en_ex = access_en_ex & ~access_wr_ex;
 assign wr_mem_en_ex = access_en_ex & access_wr_ex;
 assign rd_mem_en_mem = access_en_mem & ~access_wr_mem;
-assign bus_sel_ex = mem_addr_ex[`ADDR_WIDTH-1:16] >= `BUS_BASE_ADDR;
+assign bus_sel_ex = mem_addr_ex[`ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR;
 
 // ALU操作数1（rs1）的前递选择
 assign forward_A[0] = (wr_reg_en_wb && (wr_reg_addr_wb == rd_rs1_addr_ex) && (wr_reg_addr_wb != 'h0));

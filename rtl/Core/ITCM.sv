@@ -10,6 +10,7 @@ module ITCM #(
     parameter   ALIGN_WIDTH = `ALIGN_WIDTH,
     localparam  ITCM_SIZE_WIDTH = $clog2(ITCM_DEPTH)+ALIGN_WIDTH,
     localparam  MROM_SIZE_WIDTH = $clog2(`MROM_DEPTH)+ALIGN_WIDTH,
+    localparam  BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH,
     localparam  PATH        = `PATH,
     localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE},
     localparam  MROM_FULL_PATH = {PATH,`MROM_FILE}
@@ -29,7 +30,7 @@ initial begin
 end  
 
 generate 
-    if(`TCM_Reg_or_BRAM=="BRAM") begin
+    if(`TCM_Reg_or_BRAM=="BRAM") begin : BRAM
         // 例化Xilinx BRAM IP（单端口，字节写使能）
         // logic [ALIGN_BYTES-1:0]         bram_wea;
         // logic [ADDR_WIDTH-1:ALIGN_WIDTH]bram_addr;
@@ -45,12 +46,12 @@ generate
         //     .douta  (bram_dout)     // BRAM组合读数据
         // );
         // assign inst_o = (!rst_n || itcm_update_en || bram_addr >= DTCM_DEPTH) ? `INST_NOP : bram_dout;
-    end else if(`TCM_Reg_or_BRAM=="Reg") begin
+    end else if(`TCM_Reg_or_BRAM=="Reg") begin : REG
         logic [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1];
 
-        initial begin
-            // $readmemh(ITCM_FULL_PATH,itcm_mem);
-        end
+        // initial begin
+        //     $readmemh(ITCM_FULL_PATH,itcm_mem);
+        // end
 
         // always_ff @(posedge clk or negedge rst_n) begin
         //     if(!rst_n) begin
@@ -64,14 +65,14 @@ generate
         // end
 
         assign inst_o = (!rst_n) ? `INST_NOP :
-                        (inst_addr[DATA_WIDTH-1:16] == `BOOT_BASE_ADDR) ?
+                        (inst_addr[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_ADDR) ?
                         mrom_mem[inst_addr[MROM_SIZE_WIDTH-1:ALIGN_WIDTH]]   :
-                        (inst_addr[DATA_WIDTH-1:16] == `ITCM_BASE_ADDR) ?
+                        (inst_addr[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_ADDR) ?
                         itcm_mem[inst_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]]   :
                         `INST_NOP;
 
         always_ff @(posedge clk) begin
-            if(itcm_wr_en && inst_addr[ADDR_WIDTH-1:16] != `ITCM_BASE_ADDR) begin
+            if(itcm_wr_en && inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] != `ITCM_BASE_ADDR) begin
                 itcm_mem[itcm_wr_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]] <= itcm_wr_data;
             end
         end

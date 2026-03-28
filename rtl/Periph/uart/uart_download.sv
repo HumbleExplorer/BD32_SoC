@@ -5,7 +5,8 @@ module uart_download #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES,
-    parameter ALIGN_WIDTH =`ALIGN_WIDTH
+    parameter ALIGN_WIDTH =`ALIGN_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
 )(
     // input   logic                       clk,
     input   logic                       clk,
@@ -54,7 +55,7 @@ assign uart_rx_valid_pos = uart_rx_valid && ~uart_rx_valid_d;
 // T3: recv B -> shift = {B,A,B,A}
 assign recv_data_n = (uart_rx_valid_pos && ~download_done && download_en) ? 
 {uart_rec_byte,recv_data_q[DATA_WIDTH-1:8]} : recv_data_q;
-assign itcm_addr_access_valid = itcm_wr_addr[DATA_WIDTH-1:16] == `ITCM_BASE_ADDR;
+assign itcm_addr_access_valid = itcm_wr_addr[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_ADDR;
 // 帧检测逻辑
 assign detect_start_frame =  byte_cnt == 2'b11 && recv_data_n == START_FRAME;
 assign detect_end_frame = byte_cnt == 2'b11 && recv_data_n == END_FRAME;
@@ -121,7 +122,7 @@ end
 // 核心状态机
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        itcm_wr_addr <= {`ITCM_BASE_ADDR,16'h0000};
+        itcm_wr_addr <= {`ITCM_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else begin
         case(current_state)
             RECV_DATA: begin

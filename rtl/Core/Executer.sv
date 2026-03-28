@@ -12,8 +12,8 @@ module Executer #(
     input   logic   [ADDR_WIDTH-1:0]        inst_addr,
     input   logic   [DATA_WIDTH-1:0]        inst,
     input   logic   [DATA_WIDTH-1:0]        imm,
-    input   logic   [ADDR_WIDTH-1:0]        predict_target_pc,
     input   logic                           predict_taken,
+    input   logic   [ADDR_WIDTH-1:0]        predict_target_pc,
     // from CSR
     input   logic   [DATA_WIDTH-1:0]        rd_csr_data,
     input   logic                           illegal_inst_csr,

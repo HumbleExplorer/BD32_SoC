@@ -4,7 +4,8 @@ module EX_MEM #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
-    parameter ALIGN_BYTES = `ALIGN_BYTES
+    parameter ALIGN_BYTES = `ALIGN_BYTES,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
  )( 
     input   logic                           clk,
     input   logic                           rst_n,
@@ -44,7 +45,7 @@ module EX_MEM #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
+        inst_addr_o     <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= `INST_NOP;
         mem_addr_o      <= 'h0;
         access_en_o     <= 1'b0;
@@ -56,7 +57,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         wr_reg_addr_o   <= 'h0;
         wr_reg_data_o   <= 'h0;
     end else if(flush) begin
-        inst_addr_o     <= {`BOOT_BASE_ADDR,16'h0};
+        inst_addr_o     <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= `INST_NOP;
         mem_addr_o      <= 'h0;
         access_en_o     <= 1'b0;

@@ -58,36 +58,37 @@ module Dynamic_Branch_Predictor #(
     localparam BTB_ADDR_WIDTH = $clog2(BTB_ENTRIES),
     localparam PHT_ADDR_WIDTH = $clog2(PHT_ENTRIES),
     localparam RAS_ADDR_WIDTH = $clog2(RAS_DEPTH),
-    localparam BTB_TAG_WIDTH = $clog2(`BLOCK_ADDR_WIDTH) - ALIGN_WIDTH,// Tag宽度 16-2
-    localparam BTB_BTA_WIDTH = $clog2(`BLOCK_ADDR_WIDTH) - ALIGN_WIDTH,// branch target address宽度 16-2
-    localparam RAS_DATA_WIDTH = $clog2(`BLOCK_ADDR_WIDTH) - ALIGN_WIDTH// 堆栈数据宽度 16-2
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH,
+    localparam BTB_TAG_WIDTH = $clog2(BLOCK_SIZE_WIDTH) - ALIGN_WIDTH,// Tag宽度 16-2
+    localparam BTB_BTA_WIDTH = $clog2(BLOCK_SIZE_WIDTH) - ALIGN_WIDTH,// branch target address宽度 16-2
+    localparam RAS_DATA_WIDTH = $clog2(BLOCK_SIZE_WIDTH) - ALIGN_WIDTH// 堆栈数据宽度 16-2
 
 )(
     // 时钟和复位
     input   logic                       clk,
     input   logic                       rst_n,
+
+    // 控制信号
     input   logic                       is_fence_i,
     input   logic                       stall,
-    
-    // 预测接口 from IF
-    input   logic                       predict_req,        // 预测请求？？？
-    input   logic   [ADDR_WIDTH-1:0]    pc,                 // 待预测的PC
-    
-    
-    output  logic   [ADDR_WIDTH-1:0]    predict_target,  // 预测的目标地址
-    output  logic                       predict_taken,      // 预测的跳转方向
-    output  logic                       btb_hit,            // BTB命中标志
-    output  logic   [1:0]               predict_confidence, // 预测置信度 (2bit饱和计数器)？？？
-    
-    // 更新接口 from EX
+
+    // From IF
+    input   logic   [ADDR_WIDTH-1:0]    pc,                 // IF阶段的PC
+
+    // From EX
     input   logic   [ADDR_WIDTH-1:0]    branch_pc,          // 分支指令PC
     input   logic                       branch_taken,       // 实际分支跳转方向
     input   logic   [ADDR_WIDTH-1:0]    branch_target,      // 实际分支目标跳转地址
     input   logic                       branch_req,         // 是否为分支和跳转指令
     input   logic                       branch_predict_success, // 预测结果正确
     input   logic   [1:0]               branch_inst_type,   // 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
-    input  logic                        push_ras,   // call
-    input  logic                        pop_ras     // ret
+    input   logic                       push_ras,   // call
+    input   logic                       pop_ras,     // ret
+
+    // To IF
+    output  logic                       predict_taken,      // 预测的跳转方向
+    output  logic   [ADDR_WIDTH-1:0]    predict_target     // 预测的目标地址
+
 
 );
 
@@ -164,7 +165,7 @@ assign predict_btb_idx = pc[BTB_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
 //                  pc[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH] ^
 //                  pc[3*PC_HASH_WIDTH+ALIGN_WIDTH-1:2*PC_HASH_WIDTH+ALIGN_WIDTH];
 assign pc_hash = pc[PC_HASH_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] ^
-                 pc[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH] ;
+                 pc[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH];
 // 步骤2: PHT索引 = PC哈希 XOR GHR
 // 这实现了标准的Gshare算法
 assign predict_pht_idx   = pc_hash ^ spec_global_history;
@@ -172,7 +173,7 @@ assign predict_pht_idx   = pc_hash ^ spec_global_history;
 // 更新时的索引计算
 assign update_btb_idx = branch_pc[BTB_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
 assign update_pc_hash = branch_pc[PC_HASH_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] ^
-                        branch_pc[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH] ;
+                        branch_pc[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH];
 assign update_pht_idx = {update_pc_hash ^ real_global_history};
 
 // BTB查询: 检查PC是否在BTB中
