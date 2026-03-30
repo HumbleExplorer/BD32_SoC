@@ -1,4 +1,5 @@
 `include "../SoC_Config.sv"
+`timescale 1ns / 1ps
 module PC_counter #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -9,6 +10,8 @@ module PC_counter #(
     input   logic                       rst_n,
     input   logic                       jump_en,
     input   logic   [ADDR_WIDTH-1:0]    jump_addr,
+    input   logic                       predict_taken,
+    input   logic   [DATA_WIDTH-1:0]    predict_target,
     input   logic                       stall,
     output  logic   [ADDR_WIDTH-1:0]    pc,//下一条指令地址（给ROM，因为有一周期的读延迟）
     output  logic   [DATA_WIDTH-2:0]    exception_code,
@@ -21,13 +24,15 @@ assign exception_val = jump_en ? pc : pc+4;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)
-        pc <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};  // 复位为0
+        pc <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};  // 复位为0
     else if(jump_en)//刷新优先级应高于停顿
-        pc[ADDR_WIDTH-1:ALIGN_WIDTH] <= jump_addr[ADDR_WIDTH-1:ALIGN_WIDTH];
+        pc[ADDR_WIDTH-1:ALIGN_WIDTH] <= #1 jump_addr[ADDR_WIDTH-1:ALIGN_WIDTH];
     else if(stall)
-        pc <= pc;
+        pc <= #1 pc;
+    else if(predict_taken)
+        pc[ADDR_WIDTH-1:ALIGN_WIDTH] <= #1 predict_target[ADDR_WIDTH-1:ALIGN_WIDTH];
     else
-        pc[ADDR_WIDTH-1:ALIGN_WIDTH] <= pc[ADDR_WIDTH-1:ALIGN_WIDTH] + 1;
+        pc[ADDR_WIDTH-1:ALIGN_WIDTH] <= #1 pc[ADDR_WIDTH-1:ALIGN_WIDTH] + 1;
 end
 
 // DelayUnit #(

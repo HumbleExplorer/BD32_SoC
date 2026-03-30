@@ -4,6 +4,7 @@ Description: 异步FIFO- 适配UART 16550
 后面可以尝试用vivado ip核进行替换。
 */
 
+`timescale 1ns / 1ps
 module fifo_async 
 #(
     parameter int DEPTH  = 16,  // UART 16550标准FIFO深度
@@ -92,16 +93,16 @@ assign rd_ptr_sync_bin = gray2bin(rd_ptr_gray_sync2); // 写时钟域的读指�
 // ---------------------------------------------------------
 always_ff @(posedge wclk or negedge rst_n) begin
     if (!rst_n) begin
-        wr_ptr <= '0;
+        wr_ptr <= #1 '0;
         // 仿真友好：初始化数据数组（综合工具自动忽略）
-        foreach(data[i]) data[i] <= '0;
+        foreach(data[i]) data[i] <= #1 '0;
     end else if (clr) begin
-        wr_ptr <= '0;
+        wr_ptr <= #1 '0;
     end else begin
         // 写使能有效且非满时，写入数据+指针+1
         if (wr_en && !wr_full) begin
-            data[wr_addr] <= wr_data;
-            wr_ptr        <= wr_ptr + 1'b1;
+            data[wr_addr] <= #1 wr_data;
+            wr_ptr        <= #1 wr_ptr + 1'b1;
         end
     end
 end
@@ -111,13 +112,13 @@ end
 // ---------------------------------------------------------
 always_ff @(posedge rclk or negedge rst_n) begin
     if (!rst_n) begin
-        rd_ptr  <= '0;
+        rd_ptr  <= #1 '0;
     end else if (clr) begin
-        rd_ptr  <= '0;
+        rd_ptr  <= #1 '0;
     end else begin
         // 读使能有效且非空时，读出数据+指针+1
         if (rd_en && !rd_empty) begin
-            rd_ptr  <= rd_ptr + 1'b1;
+            rd_ptr  <= #1 rd_ptr + 1'b1;
         end
     end
 end
@@ -127,11 +128,11 @@ end
 // ---------------------------------------------------------
 always_ff @(posedge wclk or negedge rst_n) begin
     if (!rst_n) begin
-        rd_ptr_gray_sync1 <= '0;
-        rd_ptr_gray_sync2 <= '0;
+        rd_ptr_gray_sync1 <= #1 '0;
+        rd_ptr_gray_sync2 <= #1 '0;
     end else begin
-        rd_ptr_gray_sync1 <= rd_ptr_gray;
-        rd_ptr_gray_sync2 <= rd_ptr_gray_sync1;
+        rd_ptr_gray_sync1 <= #1 rd_ptr_gray;
+        rd_ptr_gray_sync2 <= #1 rd_ptr_gray_sync1;
     end
 end
 
@@ -140,11 +141,11 @@ end
 // ---------------------------------------------------------
 always_ff @(posedge rclk or negedge rst_n) begin
     if (!rst_n) begin
-        wr_ptr_gray_sync1 <= '0;
-        wr_ptr_gray_sync2 <= '0;
+        wr_ptr_gray_sync1 <= #1 '0;
+        wr_ptr_gray_sync2 <= #1 '0;
     end else begin
-        wr_ptr_gray_sync1 <= wr_ptr_gray;
-        wr_ptr_gray_sync2 <= wr_ptr_gray_sync1;
+        wr_ptr_gray_sync1 <= #1 wr_ptr_gray;
+        wr_ptr_gray_sync2 <= #1 wr_ptr_gray_sync1;
     end
 end
 

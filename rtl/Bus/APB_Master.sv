@@ -1,4 +1,5 @@
 `include "./../SoC_Config.sv"
+`timescale 1ns / 1ps
 module APB_Master #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -53,10 +54,10 @@ logic   [DATA_WIDTH-1:0]    PRDATA     ;
 
 always_ff @(posedge i_sys_clk or negedge i_rst_n) begin
     if (!i_rst_n) begin
-        current_state  <= IDLE  ;
+        current_state  <= #1 IDLE ;
     end
     else begin
-        current_state  <= next_state ;
+        current_state  <= #1 next_state ;
     end
 end 
 

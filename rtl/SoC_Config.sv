@@ -55,3 +55,5 @@
 `define MROM_FILE "mrom.dat"
 // `define TCM_Reg_or_BRAM "BRAM"
 `define TCM_Reg_or_BRAM "Reg"
+
+`define SIM_DELAY 1

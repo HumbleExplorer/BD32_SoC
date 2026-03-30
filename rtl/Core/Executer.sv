@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`timescale 1ns / 1ps
 module Executer #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -13,7 +14,7 @@ module Executer #(
     input   logic   [DATA_WIDTH-1:0]        inst,
     input   logic   [DATA_WIDTH-1:0]        imm,
     input   logic                           predict_taken,
-    input   logic   [ADDR_WIDTH-1:0]        predict_target_pc,
+    input   logic   [ADDR_WIDTH-1:0]        predict_target,
     // from CSR
     input   logic   [DATA_WIDTH-1:0]        rd_csr_data,
     input   logic                           illegal_inst_csr,
@@ -125,9 +126,9 @@ assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
 assign  rs1_eq_rd = (inst[19:15] == rd);
 assign  is_fence_i = (opcode == `INST_FENCE) && (func3[0]);
 
-assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target_pc == branch_target);
+assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);
 assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
-assign  branch_jump_addr= (((branch_taken && ~predict_taken) || (predict_target_pc != branch_target)) && ~is_fence_i) ?//跳被预测为不跳，或者跳不准
+assign  branch_jump_addr= (((branch_taken && ~predict_taken) || (predict_target != branch_target)) && ~is_fence_i) ?//跳被预测为不跳，或者跳不准
                          branch_target : inst_addr + 4;//不跳被预测为跳
 
 always_comb begin

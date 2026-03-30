@@ -1,5 +1,6 @@
 `include "../SoC_Config.sv"
 `include "../RV32_Inst_Define.sv"
+`timescale 1ns / 1ps
 module CLINT #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -52,25 +53,25 @@ assign timer_int = mtime >= mtimecmp;
 // mtime 计数
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        mtime <= 'h0;
+        mtime <= #1 'h0;
     // end else if (time_inc_pulse) begin
     end else begin
-        mtime <= mtime + 1'b1;
+        mtime <= #1 mtime + 1'b1;
     end
 end
 
 always_ff @(posedge clk or negedge rst_n) begin
-    msip <= 'h0;
-    mtimecmp <= {2*DATA_WIDTH{1'b1}};
+    msip    <= #1 'h0;
+    mtimecmp <= #1 {2*DATA_WIDTH{1'b1}};
     if(!rst_n) begin
-        msip <= 'h0;
-        mtimecmp <= {2*DATA_WIDTH{1'b1}};
+        msip <= #1 'h0;
+        mtimecmp <= #1 {2*DATA_WIDTH{1'b1}};
     end else if (wr_en && clint_sel) begin
         if (wr_mask == 'hF) begin
             case(mmio_addr[15:2])
-                MTIMECMP_ADDR[15:2]: mtimecmp[DATA_WIDTH-1:0] <= wr_data;
-                MTIMECMP_ADDR[15:2] + 1: mtimecmp[2*DATA_WIDTH-1:DATA_WIDTH] <= wr_data;
-                MSIP_ADDR : msip[0] <= wr_data;
+                MTIMECMP_ADDR[15:2]: mtimecmp[DATA_WIDTH-1:0] <= #1 wr_data;
+                MTIMECMP_ADDR[15:2] + 1: mtimecmp[2*DATA_WIDTH-1:DATA_WIDTH] <= #1 wr_data;
+                MSIP_ADDR : msip[0] <= #1 wr_data;
                 default : ;
             endcase
         end

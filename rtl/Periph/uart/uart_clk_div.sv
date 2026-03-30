@@ -1,5 +1,6 @@
 // 注意：此处divisor = SYS_CLK_FREQ/BAUD/16
 // 经计算，当主频为50MHz，波特率为115200时，波特率偏差为0.47%
+`timescale 1ns / 1ps
 module uart_clk_div (
     input   logic           clk,        // 任意频率系统时钟
     input   logic           rst_n,      // 异步复位，低有效

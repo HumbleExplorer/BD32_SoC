@@ -1,3 +1,4 @@
+`timescale 1ns / 1ps
 module uart_rx (
     input  logic          clk_sample, // 16倍波特率采样时钟
     input  logic          rst_n,      // 异步复位（低有效）
@@ -68,9 +69,9 @@ assign pe_err          = rx_state == RX_PARITY && sample_cnt == 4'd15 ? // 奇�
 // 1. 三级同步消除RX异步信号亚稳态
 always_ff @(posedge clk_sample or negedge rst_n) begin
     if(!rst_n) begin
-        rx_in_sync_reg <= 3'b111; // 空闲状态RX为高
+        rx_in_sync_reg <= #1 3'b111; // 空闲状态RX为高
     end else begin
-        rx_in_sync_reg <= {rx_in_sync_reg[1:0], rx_i};
+        rx_in_sync_reg <= #1 {rx_in_sync_reg[1:0], rx_i};
     end
 end
 assign rx_in_sync_fall = rx_in_sync_reg[2] & ~rx_in_sync_reg[1]; // 检测起始位下降沿
@@ -78,21 +79,21 @@ assign rx_in_sync_fall = rx_in_sync_reg[2] & ~rx_in_sync_reg[1]; // 检测起始
 // 2. 16倍过采样计数器
 always_ff @(posedge clk_sample or negedge rst_n) begin
     if(!rst_n) begin
-        sample_cnt <= 4'd0;
+        sample_cnt <= #1 4'd0;
     end else begin
-        sample_cnt <= (rx_state == RX_IDLE) ? 4'd0 : ((sample_cnt == 4'd15) ? 4'd0 : sample_cnt + 1'b1);
+        sample_cnt <= #1 (rx_state == RX_IDLE) ? 4'd0 : ((sample_cnt == 4'd15) ? 4'd0 : sample_cnt + 1'b1);
     end
 end
 
 // 3. 中间8周期多数判决（提升采样容错，16550标准）
 always_ff @(posedge clk_sample or negedge rst_n) begin
     if(!rst_n) begin
-        vote_cnt_1 <= 4'd0;
+        vote_cnt_1 <= #1 4'd0;
     end else begin
         if(sample_cnt[3] ^ sample_cnt[2]) begin // 第4~11采样周期统计
-            if(rx_in_sync_reg[1]) vote_cnt_1 <= vote_cnt_1 + 1'b1;
+            if(rx_in_sync_reg[1]) vote_cnt_1 <= #1 vote_cnt_1 + 1'b1;
         end else if(sample_cnt == 4'd15) begin // 第15周期判决，清零计数器
-            vote_cnt_1 <= 4'd0;
+            vote_cnt_1 <= #1 4'd0;
         end
     end
 end
@@ -100,54 +101,54 @@ end
 // 4. 核心接收状态机 + 错误检测
 always_ff @(posedge clk_sample or negedge rst_n) begin
     if(!rst_n) begin
-        rx_state       <= RX_IDLE;
-        data_bit_cnt   <= 3'd0;
-        stop_bit_cnt   <= 1'd0;
-        rx_shift       <= 8'd0;
-        parity_calc    <= 1'b0;
-        parity_rx      <= 1'b0;
-        rx_o           <= 8'd0;
-        rx_valid_o     <= 1'b0;
+        rx_state       <= #1 RX_IDLE;
+        data_bit_cnt   <= #1 3'd0;
+        stop_bit_cnt   <= #1 1'd0;
+        rx_shift       <= #1 8'd0;
+        parity_calc    <= #1 1'b0;
+        parity_rx      <= #1 1'b0;
+        rx_o           <= #1 8'd0;
+        rx_valid_o     <= #1 1'b0;
     end else begin
         // 默认值：清除就绪标志
-        rx_valid_o  <= 1'b0;
+        rx_valid_o  <= #1 1'b0;
         case (rx_state)
             RX_IDLE: begin // 空闲状态：检测起始位下降沿
                 if(rx_in_sync_fall) begin
-                    rx_state     <= RX_START;
+                    rx_state     <= #1 RX_START;
                 end
             end
 
             RX_START: begin // 起始位检测：验证有效性（多数判决为0）
                 if(sample_cnt == 4'd15) begin
                     if(bit_val == 1'b0) begin // 起始位有效
-                        rx_state     <= RX_DATA;
-                        data_bit_cnt <= 3'd0;
-                        rx_shift     <= 8'd0;
-                        parity_calc  <= 1'b0;
+                        rx_state     <= #1 RX_DATA;
+                        data_bit_cnt <= #1 3'd0;
+                        rx_shift     <= #1 8'd0;
+                        parity_calc  <= #1 1'b0;
                     end else begin // 起始位无效，回到空闲
-                        rx_state     <= RX_IDLE;
+                        rx_state     <= #1 RX_IDLE;
                     end
                 end
             end
 
             RX_DATA: begin // 数据位接收：低位先行，按LCR配置位数接收
                 if(sample_cnt == 4'd15) begin
-                    rx_shift <= {bit_val, rx_shift[7:1]};
+                    rx_shift     <= #1 {bit_val, rx_shift[7:1]};
                     // 计算奇偶校验（仅校验使能时）
                     if(lcr[LCR_PARITY_EN]) begin
-                        parity_calc <= parity_calc ^ bit_val;
+                        parity_calc <= #1 parity_calc ^ bit_val;
                     end
-                    rx_state <= s_data_bit_done ? (lcr[LCR_PARITY_EN] ? RX_PARITY : RX_STOP) : RX_DATA;
-                    data_bit_cnt <= data_bit_cnt + 1'b1;
+                    rx_state     <= #1 s_data_bit_done ? (lcr[LCR_PARITY_EN] ? RX_PARITY : RX_STOP) : RX_DATA;
+                    data_bit_cnt <= #1 data_bit_cnt + 1'b1;
                 end
             end
 
             RX_PARITY: begin // 校验位接收：验证奇偶/强制校验位
                 if(sample_cnt == 4'd15) begin
-                    parity_rx <= bit_val;
+                    parity_rx   <= #1 bit_val;
                     // 奇偶错误PE判断
-                    rx_state <= RX_STOP;
+                    rx_state    <= #1 RX_STOP;
                 end
             end
 
@@ -156,36 +157,36 @@ always_ff @(posedge clk_sample or negedge rst_n) begin
                     // // 根据LCR停止位配置，判断是否接收完成
                     // if(lcr[LCR_STOP]) begin // 1.5/2位停止位
                     //     if(stop_bit_cnt == 1'd1) begin
-                    //         rx_state <= RX_IDLE;
+                    //         rx_state <= #1 RX_IDLE;
                     //     end else begin
-                    //         stop_bit_cnt <= stop_bit_cnt + 1'b1;
+                    //         stop_bit_cnt <= #1 stop_bit_cnt + 1'b1;
                     //     end
                     // end else begin // 1位停止位
-                    //     rx_state <= RX_IDLE;
+                    //     rx_state <= #1 RX_IDLE;
                     // end
                                         // 停止位计数处理（1/1.5/2位）
                     if(lcr[LCR_STOP]) begin
                         if(stop_bit_cnt == 1'd1) begin
-                            stop_bit_cnt <= 1'd0;
+                            stop_bit_cnt <= #1 1'd0;
                             // 停止位结束后：若RX=0 → 直接启动下一帧，不回IDLE
-                            rx_state <= rx_in_sync_fall ? RX_START : RX_IDLE;
+                            rx_state     <= #1 rx_in_sync_fall ? RX_START : RX_IDLE;
                         end else begin
-                            stop_bit_cnt <= stop_bit_cnt + 1'b1;
+                            stop_bit_cnt <= #1 stop_bit_cnt + 1'b1;
                         end
                     end else begin
                         // 1位停止位：结束直接判断是否为新起始位
-                        rx_state <= rx_in_sync_fall ? RX_START : RX_IDLE;
+                        rx_state <= #1 rx_in_sync_fall ? RX_START : RX_IDLE;
                     end
 
                     // 接收完成：输出数据和就绪信号
                     if((!lcr[LCR_STOP]) || (stop_bit_cnt == 1'd1)) begin
-                        rx_o       <= rx_shift;
-                        rx_valid_o <= 1'b1;
+                        rx_o       <= #1 rx_shift;
+                        rx_valid_o <= #1 1'b1;
                     end
                 end
             end
 
-            default: rx_state <= RX_IDLE;
+            default: rx_state <= #1 RX_IDLE;
         endcase
     end
 end

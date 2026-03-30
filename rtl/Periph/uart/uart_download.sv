@@ -1,6 +1,7 @@
 `include "../../SoC_Config.sv"
 // 串口一键下载模块（适配RISC-V ITCM）
 // 功能：接收串口数据，识别帧头/帧尾，将.bin文件写入ITCM，完成后切换到用户模式
+`timescale 1ns / 1ps
 module uart_download #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -46,7 +47,7 @@ logic                     uart_rx_valid_pos;
 // 传输程序：小端传输，低字节先传
 
 always_ff @(posedge clk) begin
-    uart_rx_valid_d <= uart_rx_valid;
+    uart_rx_valid_d <= #1 uart_rx_valid;
 end
 assign uart_rx_valid_pos = uart_rx_valid && ~uart_rx_valid_d;
 // T0: recv A -> shift = {A,0,0,0}
@@ -64,27 +65,27 @@ assign word_ready = (byte_cnt == 2'b11) && uart_rx_valid_pos && !detect_start_fr
 // 拼接4字节串口数据
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        recv_data_q <= 'h0;
+        recv_data_q <= #1 'h0;
     end else begin
-        recv_data_q <= recv_data_n;
+        recv_data_q <= #1 recv_data_n;
     end
 end
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        current_state <= IDLE;
+        current_state <= #1 IDLE;
     end
     else begin
-        current_state <= next_state;
+        current_state <= #1 next_state;
     end
 end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        byte_cnt <= 'h0;
+        byte_cnt <= #1 'h0;
     end else if (download_done || ~download_en) begin
-        byte_cnt <= 'h0;
+        byte_cnt <= #1 'h0;
     end else if(uart_rx_valid_pos) begin
-        byte_cnt <= byte_cnt + 1;
+        byte_cnt <= #1 byte_cnt + 1;
     end
 end
 
@@ -122,12 +123,12 @@ end
 // 核心状态机
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        itcm_wr_addr <= {`ITCM_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
+        itcm_wr_addr <= #1 {`ITCM_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else begin
         case(current_state)
             RECV_DATA: begin
                 if(itcm_addr_access_valid && word_ready) begin
-                    itcm_wr_addr[DATA_WIDTH-1:ALIGN_WIDTH] <= itcm_wr_addr[DATA_WIDTH-1:ALIGN_WIDTH] + 1;
+                    itcm_wr_addr[DATA_WIDTH-1:ALIGN_WIDTH] <= #1 itcm_wr_addr[DATA_WIDTH-1:ALIGN_WIDTH] + 1;
                 end
             end
             default:;

@@ -1,4 +1,5 @@
 // 分频系数作为输入信号，可动态调整，支持任意整数。
+`timescale 1ns / 1ps
 module clk_div_dynamic #(
     parameter DIV_WIDTH = 16
 )(
@@ -13,14 +14,14 @@ logic [DIV_WIDTH-1:0] div_cnt;
 always_ff @(posedge clk_in or negedge rst_n) begin
     if(!rst_n) begin
         // 复位时计数器清零
-        div_cnt <= {DIV_WIDTH{1'b0}};
+        div_cnt <= #1 {DIV_WIDTH{1'b0}};
     end else begin
         if(div_cnt == divisor - 1'b1) begin
             // 计数到分频系数-1时，计数器清零（完成一次循环）
-            div_cnt <= {DIV_WIDTH{1'b0}};
+            div_cnt <= #1 {DIV_WIDTH{1'b0}};
         end else begin
             // 未计数到最大值时，计数器自增1
-            div_cnt <= div_cnt + 1'b1;
+            div_cnt <= #1 div_cnt + 1'b1;
         end
     end
 end

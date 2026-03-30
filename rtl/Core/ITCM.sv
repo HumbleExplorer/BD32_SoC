@@ -1,6 +1,7 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
 // 暂时先实现BootROM在ITCM中，后续将在总线中实现
+`timescale 1ns / 1ps
 module ITCM #(
     parameter   ITCM_FILE    = `ITCM_FILE,
     parameter   ITCM_DEPTH   = `ITCM_DEPTH,
@@ -55,12 +56,12 @@ generate
 
         // always_ff @(posedge clk or negedge rst_n) begin
         //     if(!rst_n) begin
-        //         inst_o <= `INST_NOP;
+        //         inst_o <= #1 `INST_NOP;
         //     end else if(itcm_update_en) begin
-        //         inst_o <= `INST_NOP;
+        //         inst_o <= #1 `INST_NOP;
         //     end else begin
         //         // 同步读：clk沿采样地址，输出指令（符合同步ROM设计）
-        //         inst_o <= itcm_mem[inst_addr[ADDR_WIDTH-1:ALIGN_WIDTH]];
+        //         inst_o <= #1 itcm_mem[inst_addr[ADDR_WIDTH-1:ALIGN_WIDTH]];
         //     end
         // end
 
@@ -73,7 +74,7 @@ generate
 
         always_ff @(posedge clk) begin
             if(itcm_wr_en && inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] != `ITCM_BASE_ADDR) begin
-                itcm_mem[itcm_wr_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]] <= itcm_wr_data;
+                itcm_mem[itcm_wr_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]] <= #1 itcm_wr_data;
             end
         end
     end

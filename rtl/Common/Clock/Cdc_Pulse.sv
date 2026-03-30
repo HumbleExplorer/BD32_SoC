@@ -2,6 +2,7 @@
 // 功能：检测 src_clk 域的脉冲，在 dst_clk 域产生单周期脉冲
 // 适用：慢时钟域 -> 快时钟域 (如 1MHz -> 100MHz)
 // 把慢时钟的"宽脉冲"变成快时钟的"单周期脉冲"。
+`timescale 1ns / 1ps
 module Cdc_Pulse (
     input  logic dst_clk,   // 目标时钟 (如 100MHz)
     input  logic dst_rst_n,
@@ -28,9 +29,9 @@ module Cdc_Pulse (
     
     always_ff @(posedge dst_clk or negedge dst_rst_n) begin
         if (!dst_rst_n) begin
-            sync_level_prev <= 1'b0;
+            sync_level_prev <= #1 1'b0;
         end else begin
-            sync_level_prev <= sync_level;
+            sync_level_prev <= #1 sync_level;
         end
     end
 

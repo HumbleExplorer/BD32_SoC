@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 
+`timescale 1ns / 1ps
 module tb_apb_gpio;
 parameter  PADDR_WIDTH  = 32;
 parameter  PDATA_WIDTH  = 32;

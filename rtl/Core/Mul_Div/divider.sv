@@ -1,3 +1,4 @@
+`timescale 1ns / 1ps
 module divider #(
     parameter DATA_WIDTH = 32  // 位宽可配置：16/32/64位通用，默认32位
 )(
@@ -70,64 +71,64 @@ assign temp_dividend = is_unsigned ? dividend : dividend_abs;
 assign temp_divisor = is_unsigned ? divisor : divisor_abs;
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        state         <= IDLE;
-        div_cnt       <= '0;
-        dividend_reg  <= '0;
-        divisor_reg   <= '0;
-        result_sign_reg <= '0;
-        div0_reg <= '0;
-        divisor_larger_reg <= '0;
-        div_overflow_reg <= '0;
-        dividend_sign_reg <= '0;
+        state               <= #1 IDLE;
+        div_cnt             <= #1 '0;
+        dividend_reg        <= #1 '0;
+        divisor_reg         <= #1 '0;
+        result_sign_reg     <= #1 '0;
+        div0_reg            <= #1 '0;
+        divisor_larger_reg  <= #1 '0;
+        div_overflow_reg    <= #1 '0;
+        dividend_sign_reg   <= #1 '0;
     end else begin
         case(state)
             // -------------------------- 空闲态 --------------------------
             IDLE: begin
-                div_cnt <= '0;
-                div0_reg <= '0;
-                divisor_larger_reg <= '0;
-                div_overflow_reg <= '0;
+                div_cnt             <= #1 '0;
+                div0_reg            <= #1 '0;
+                divisor_larger_reg  <= #1 '0;
+                div_overflow_reg    <= #1 '0;
                 if(enable) begin // 使能+空闲=启动运算
                     if(div0 || divisor_larger || div_overflow) begin
                         // 特殊场景：直接进入结束态
-                        state <= DONE;
-                        div0_reg <= div0;
-                        divisor_larger_reg <= divisor_larger;
-                        div_overflow_reg <= div_overflow;
-                        dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1]<= dividend;
-                        divisor_reg      <= divisor;
+                        state               <= #1 DONE;
+                        div0_reg            <= #1 div0;
+                        divisor_larger_reg  <= #1 divisor_larger;
+                        div_overflow_reg    <= #1 div_overflow;
+                        dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1]<= #1 dividend;
+                        divisor_reg         <= #1 divisor;
                     end else begin
                         // 初始化：先取绝对值，有符号运算预处理
-                        state <= CALCULATE;
-                        dividend_reg[2*DATA_WIDTH:0] <= '0;
-                        dividend_reg[DATA_WIDTH:1]   <= temp_dividend;
-                        divisor_reg                  <= temp_divisor;
-                        result_sign_reg <= dividend[DATA_WIDTH-1] ^ divisor[DATA_WIDTH-1];
-                        dividend_sign_reg <= dividend[DATA_WIDTH-1];
+                        state                        <= #1 CALCULATE;
+                        dividend_reg[2*DATA_WIDTH:0] <= #1 '0;
+                        dividend_reg[DATA_WIDTH:1]   <= #1 temp_dividend;
+                        divisor_reg                  <= #1 temp_divisor;
+                        result_sign_reg              <= #1 dividend[DATA_WIDTH-1] ^ divisor[DATA_WIDTH-1];
+                        dividend_sign_reg            <= #1 dividend[DATA_WIDTH-1];
                     end
                 end
             end
 
             // -------------------------- 运算态 --------------------------
             CALCULATE: begin
-                div_cnt <= div_cnt + 1'b1;
+                div_cnt <= #1 div_cnt + 1'b1;
                 // 标准恢复余数法：试商核心步骤
                 if(div_temp[DATA_WIDTH] == 1'b1) begin//余数 - 除数 < 0
                     // 不够减：余数恢复原值，商置0，整体左移1位，将被除数还没有参与运算的最高位加入到下一次迭代的被减数中
-                    dividend_reg <= {dividend_reg[2*DATA_WIDTH-1:0], 1'b0};//被减数原值即dividend_reg[2*DATA_WIDTH-1:DATA_WIDTH]
+                    dividend_reg <= #1 {dividend_reg[2*DATA_WIDTH-1:0], 1'b0};//被减数原值即dividend_reg[2*DATA_WIDTH-1:DATA_WIDTH]
                 end else begin
                     // 够减：余数更新为减法结果，商置1，整体左移1位,将被除数还没有参与运算的最高位加入到下一次迭代的被减数中
-                    dividend_reg <= {div_temp[DATA_WIDTH-1:0], dividend_reg[DATA_WIDTH-1:0], 1'b1};//被减数减法结果即div_temp[DATA_WIDTH-1:0]
+                    dividend_reg <= #1 {div_temp[DATA_WIDTH-1:0], dividend_reg[DATA_WIDTH-1:0], 1'b1};//被减数减法结果即div_temp[DATA_WIDTH-1:0]
                 end
                 if(div_cnt == DONE_CNT - 1'b1) begin
-                    div_cnt <= '0;
-                    state   <= DONE; // 进入结束态
+                    div_cnt <= #1 '0;
+                    state   <= #1 DONE; // 进入结束态
                 end
             end
             // -------------------------- 结束态：DivEnd --------------------------
             DONE: begin
                 // 结果输出完成后，回到空闲态，等待下一次运算
-                state <= IDLE;
+                state <= #1 IDLE;
 
             end
         endcase

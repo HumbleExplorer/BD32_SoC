@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`timescale 1ns / 1ps
 module Mem_Access #(//模块内的mem指所有用到load、store的部分
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,

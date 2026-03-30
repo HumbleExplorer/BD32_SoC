@@ -1,4 +1,5 @@
 
+`timescale 1ns / 1ps
 module multiplier #(
     parameter DATA_WIDTH = 32,  // 位宽16/32/64通用，与除法器一致
     localparam PP_NUM     = DATA_WIDTH / 2,    // 部分积数量 = 位宽/2
@@ -53,14 +54,14 @@ assign  b_sign_en = (func3_mode_i == 2'b00) || (func3_mode_i == 2'b01);
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        a_reg <= 'h0;
-        b_reg <= 'h0;
+        a_reg <= #1 'h0;
+        b_reg <= #1 'h0;
     end else if(ready) begin
-        a_reg <= 'h0;
-        b_reg <= 'h0;
+        a_reg <= #1 'h0;
+        b_reg <= #1 'h0;
     end else if (start) begin
-        a_reg <= a_i;
-        b_reg <= b_i;
+        a_reg <= #1 a_i;
+        b_reg <= #1 b_i;
     end
 end
 //==========================================================================
@@ -107,9 +108,9 @@ endgenerate
 // 寄存器1：周期1锁存部分积 (时钟上升沿) 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        for(int i=0; i<PP_NUM; i++) pp_reg[i] <= 'h0;
+        for(int i=0; i<PP_NUM; i++) pp_reg[i] <= #1 'h0;
     end else if(start) begin // 运算态下正常锁存，与原逻辑一致
-        for(int i=0; i<PP_NUM; i++) pp_reg[i] <= pp[i];
+        for(int i=0; i<PP_NUM; i++) pp_reg[i] <= #1 pp[i];
     end
 end
 
@@ -162,13 +163,13 @@ assign cpr_res1 = cpr_level_gen[MAX_LEVEL-1].cpr_pipe_out[1];
 // 寄存器2：周期2锁存压缩结果 (时钟上升沿) 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        cpr_res0_reg <= '0;
-        cpr_res1_reg <= '0;
-        fix_temp_reg <= '0;
+        cpr_res0_reg <= #1 '0;
+        cpr_res1_reg <= #1 '0;
+        fix_temp_reg <= #1 '0;
     end else if(state == COMPRESS) begin // 运算态下正常锁存，与原逻辑一致
-        cpr_res0_reg <= cpr_res0;
-        cpr_res1_reg <= cpr_res1;
-        fix_temp_reg <= ((!a_sign_en && a_reg[DATA_WIDTH-1]) ? b_reg : '0)+((!b_sign_en && b_reg[DATA_WIDTH-1]) ? a_reg : '0);
+        cpr_res0_reg <= #1 cpr_res0;
+        cpr_res1_reg <= #1 cpr_res1;
+        fix_temp_reg <= #1 ((!a_sign_en && a_reg[DATA_WIDTH-1]) ? b_reg : '0)+((!b_sign_en && b_reg[DATA_WIDTH-1]) ? a_reg : '0);
     end
 end
 
@@ -188,26 +189,26 @@ cla #(
 //==========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        state     <= IDLE;
+        state     <= #1 IDLE;
     end else begin
         case(state)
             // -------------------------- 空闲态 IDLE --------------------------
             IDLE: begin
                 if(enable) begin // 使能+空闲=启动运算
-                    state <= COMPRESS; // 正常场景：进入运算态
+                    state <= #1 COMPRESS; // 正常场景：进入运算态
                 end
             end
             COMPRESS: begin
-                state <= CLA_CALC;
+                state <= #1 CLA_CALC;
             end
             // -------------------------- 运算态 CALCULATE --------------------------
             CLA_CALC: begin
-                state    <= DONE;
+                state    <= #1 DONE;
             end
             // -------------------------- 结束态 DONE --------------------------
             DONE: begin
                 // 结果输出完成后，自动回到空闲态，等待下一次运算触发
-                state <= IDLE;
+                state <= #1 IDLE;
             end
         endcase
     end

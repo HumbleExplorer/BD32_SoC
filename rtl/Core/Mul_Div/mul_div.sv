@@ -1,5 +1,6 @@
 `include "./../../SoC_Config.sv"
 `include "../../RV32_Inst_Define.sv"
+`timescale 1ns / 1ps
 module mul_div #(
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH
@@ -60,16 +61,16 @@ assign fuse_hit = enable && (rd_rs1_addr == rd_rs1_addr_reg) && (rd_rs2_addr == 
 //==========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        rd_rs1_addr_reg <= '0;
-        rd_rs2_addr_reg <= '0;
-        full_result_reg <= '0;
-        op_func3_reg    <= '0;
+        rd_rs1_addr_reg <= #1 '0;
+        rd_rs2_addr_reg <= #1 '0;
+        full_result_reg <= #1 '0;
+        op_func3_reg    <= #1 '0;
     end else if(data_valid && !fuse_hit) begin
         // 仅在【独立运算完成】时，锁存操作数+完整结果+指令类型
-        rd_rs1_addr_reg <= rd_rs1_addr;
-        rd_rs2_addr_reg <= rd_rs2_addr;
-        op_func3_reg    <= func3_i;
-        full_result_reg <= func3_i[2] ? quot_rem_o : mul_o; // bit2=1:除法结果，0:乘法结果
+        rd_rs1_addr_reg <= #1 rd_rs1_addr;
+        rd_rs2_addr_reg <= #1 rd_rs2_addr;
+        op_func3_reg    <= #1 func3_i;
+        full_result_reg <= #1 func3_i[2] ? quot_rem_o : mul_o; // bit2=1:除法结果，0:乘法结果
     end
 end
 
@@ -83,7 +84,7 @@ multiplier #(
     .a_i          	(a_i           ),
     .b_i          	(b_i           ),
     .mul_o        	(mul_o         ),
-    .data_valid   	(mul_valid            ),
+    .data_valid   	(mul_valid     ),
     .ready        	(mul_ready     )
 );
 

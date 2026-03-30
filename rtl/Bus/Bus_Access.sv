@@ -1,4 +1,5 @@
 `include "./../SoC_Config.sv"
+`timescale 1ns / 1ps
 module Bus_Access #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,

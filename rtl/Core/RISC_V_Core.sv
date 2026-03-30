@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`timescale 1ns / 1ps
 module RISC_V_Core #(
     parameter ITCM_FILE = `ITCM_FILE,
     parameter DTCM_FILE = `DTCM_FILE,
@@ -99,14 +100,14 @@ logic   [DATA_WIDTH-1:0]    wr_reg_data;
 logic   [ADDR_WIDTH-1:0]    pc;
 logic   [DATA_WIDTH-1:0]    inst;
 logic                       predict_taken_if;
-logic   [ADDR_WIDTH-1:0]    predict_target_pc_if;
+logic   [ADDR_WIDTH-1:0]    predict_target_if;
 
 
 // ID
 logic   [ADDR_WIDTH-1:0]    inst_addr_id;
 logic   [DATA_WIDTH-1:0]    inst_id;
 logic                       predict_taken_id;
-logic   [ADDR_WIDTH-1:0]    predict_target_pc_id;
+logic   [ADDR_WIDTH-1:0]    predict_target_id;
 logic   [DATA_WIDTH-1:0]    alu_op1_id;
 logic   [DATA_WIDTH-1:0]    alu_op2_id;
 logic   [DATA_WIDTH-1:0]    imm_id;
@@ -120,7 +121,7 @@ logic   [CSR_ADDR_WIDTH-1:0]csr_addr_id;
 logic   [ADDR_WIDTH-1:0]    inst_addr_ex;
 logic   [DATA_WIDTH-1:0]    inst_ex;
 logic                       predict_taken_ex;
-logic   [ADDR_WIDTH-1:0]    predict_target_pc_ex;
+logic   [ADDR_WIDTH-1:0]    predict_target_ex;
 logic   [DATA_WIDTH-1:0]    imm_ex;
 logic                       access_en_ex;
 logic                       access_wr_ex;
@@ -285,7 +286,9 @@ Dynamic_Branch_Predictor #(
     .branch_predict_success(branch_predict_success),
     .branch_inst_type(branch_inst_type),
     .push_ras        (push_ras       ),
-    .pop_ras         (pop_ras        )
+    .pop_ras         (pop_ras        ),
+    .predict_taken   (predict_taken_if),
+    .predict_target  (predict_target_if)
 );
 
 PC_counter #(
@@ -295,6 +298,8 @@ PC_counter #(
     .rst_n          (rst_n),
     .jump_en        (ctrl_jump_en),
     .jump_addr      (ctrl_jump_addr),
+    .predict_taken  (predict_taken_if),
+    .predict_target (predict_target_if),
     .stall          (pc_stall),
     .pc             (pc),
     .exception_code (exception_code_if),
@@ -331,11 +336,11 @@ IF_ID #(
     // .inst_i         (inst),
     .inst_i             (inst),
     .predict_taken_i    (predict_taken_if),
-    .predict_target_pc_i(predict_target_pc_if),
+    .predict_target_i   (predict_target_if),
     .inst_addr_o        (inst_addr_id),
     .inst_o             (inst_id),
     .predict_taken_o    (predict_taken_id),
-    .predict_target_pc_o(predict_target_pc_id)
+    .predict_target_o   (predict_target_id)
 );  
 
 Decoder #(
@@ -391,7 +396,7 @@ ID_EX #(
     .inst_addr_i    (inst_addr_id),
     .inst_i         (inst_id),
     .predict_taken_i(predict_taken_id),
-    .predict_target_pc_i(predict_target_pc_id),
+    .predict_target_i(predict_target_id),
     .alu_op1_i      (alu_op1_id),
     .alu_op2_i      (alu_op2_id),
     .imm_i          (imm_id),
@@ -406,7 +411,7 @@ ID_EX #(
     .inst_addr_o    (inst_addr_ex),
     .inst_o         (inst_ex),
     .predict_taken_o(predict_taken_ex),
-    .predict_target_pc_o(predict_target_pc_ex),
+    .predict_target_o(predict_target_ex),
     .alu_op1_o      (alu_op1_from_id_ex),
     .alu_op2_o      (alu_op2_from_id_ex),
     .imm_o          (imm_ex),
@@ -432,7 +437,7 @@ Executer #(
     .inst             	(inst_ex            ),
     .imm              	(imm_ex             ),
     .predict_taken    	(predict_taken_ex   ),
-    .predict_target_pc	(predict_target_pc_ex),
+    .predict_target	    (predict_target_ex  ),
     .rd_csr_data      	(rd_csr_data        ),
     .illegal_inst_csr   (illegal_inst_csr   ),
     .alu_op1          	(alu_op1_forward    ),

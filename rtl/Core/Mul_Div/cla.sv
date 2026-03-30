@@ -1,3 +1,4 @@
+`timescale 1ns / 1ps
 module cla #(
     parameter PRODUCT_WIDTH = 64,
     localparam GROUP_NUM = PRODUCT_WIDTH / 4

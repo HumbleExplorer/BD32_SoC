@@ -46,6 +46,7 @@
 
 `include "../SoC_Config.sv"
 
+`timescale 1ns / 1ps
 module Dynamic_Branch_Predictor #(
     parameter ADDR_WIDTH = `ADDR_WIDTH, // 地址宽度
     parameter DATA_WIDTH = `DATA_WIDTH,  // 数据宽度
@@ -59,9 +60,9 @@ module Dynamic_Branch_Predictor #(
     localparam PHT_ADDR_WIDTH = $clog2(PHT_ENTRIES),
     localparam RAS_ADDR_WIDTH = $clog2(RAS_DEPTH),
     localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH,
-    localparam BTB_TAG_WIDTH = $clog2(BLOCK_SIZE_WIDTH) - ALIGN_WIDTH,// Tag宽度 16-2
-    localparam BTB_BTA_WIDTH = $clog2(BLOCK_SIZE_WIDTH) - ALIGN_WIDTH,// branch target address宽度 16-2
-    localparam RAS_DATA_WIDTH = $clog2(BLOCK_SIZE_WIDTH) - ALIGN_WIDTH// 堆栈数据宽度 16-2
+    localparam BTB_TAG_WIDTH = BLOCK_SIZE_WIDTH - ALIGN_WIDTH,// Tag宽度 16-2
+    localparam BTB_BTA_WIDTH = BLOCK_SIZE_WIDTH - ALIGN_WIDTH,// branch target address宽度 16-2
+    localparam RAS_DATA_WIDTH = BLOCK_SIZE_WIDTH - ALIGN_WIDTH// 堆栈数据宽度 16-2
 
 )(
     // 时钟和复位
@@ -152,7 +153,6 @@ logic                      predict_btb_hit;             // 组合逻辑BTB命中
 logic [BTB_ADDR_WIDTH-1:0] update_btb_idx;                   // 更新时的BTB索引
 logic [PHT_ADDR_WIDTH-1:0] update_pht_idx;                   // 更新时的PHT索引
 logic [PC_HASH_WIDTH-1:0]  update_pc_hash;                   // 更新时的PC哈希值
-logic [1:0]                update_2bit_cnt_next;             // 更新后的2bit计数器
 
 // 预测时的索引计算
 // BTB索引: 使用PC的低位
@@ -168,7 +168,7 @@ assign pc_hash = pc[PC_HASH_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] ^
                  pc[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH];
 // 步骤2: PHT索引 = PC哈希 XOR GHR
 // 这实现了标准的Gshare算法
-assign predict_pht_idx   = pc_hash ^ spec_global_history;
+assign predict_pht_idx = pc_hash ^ spec_global_history;
 
 // 更新时的索引计算
 assign update_btb_idx = branch_pc[BTB_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
@@ -198,33 +198,38 @@ assign predict_target = predict_btb_hit ?
                         (btb_pop_ras_array[predict_btb_idx] ? 
                         {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_TAG_WIDTH],ras_stack[spec_ras_ptr-1],{ALIGN_WIDTH{1'b0}}} :  // RET: 从RAS取
                         (predict_pht_taken && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) ?
-                        pc + 4 : {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_TAG_WIDTH],btb_target_array[predict_btb_idx],{ALIGN_WIDTH{1'b0}}}):// 从BTB取(但实际上当B类指令pht判断为不跳时应该取pc+4)
-                        pc + 4;// 其他: 正常取
+                        {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_BTA_WIDTH],btb_target_array[predict_btb_idx],{ALIGN_WIDTH{1'b0}}} : 0):// 从BTB取(但实际上当B类指令pht判断为不跳时应该取pc+4)
+                        0;// 其他: 直接为0，默认值
 
-
-// 根据实际分支结果更新2bit计数器
-always_comb begin
-    case (pht_array[update_pht_idx])
-        STRONGLY_NOT_TAKEN: begin
-            // 00 -> 01 (如果跳转) 或 00 (如果不跳转)
-            update_2bit_cnt_next = branch_taken ? WEAKLY_NOT_TAKEN : STRONGLY_NOT_TAKEN;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        // 复位: 初始化所有PHT表项为"弱不跳转"
+        for (int i = 0; i < PHT_ENTRIES; i++) begin
+            pht_array[i] <= #1 WEAKLY_NOT_TAKEN;
         end
-        WEAKLY_NOT_TAKEN: begin
-            // 01 -> 10 (如果跳转) 或 00 (如果不跳转)
-            update_2bit_cnt_next = branch_taken ? WEAKLY_TAKEN : STRONGLY_NOT_TAKEN;
-        end
-        WEAKLY_TAKEN: begin
-            // 10 -> 11 (如果跳转) 或 01 (如果不跳转)
-            update_2bit_cnt_next = branch_taken ? STRONGLY_TAKEN : WEAKLY_NOT_TAKEN;
-        end
-        STRONGLY_TAKEN: begin
-            // 11 -> 11 (如果跳转) 或 10 (如果不跳转)
-            update_2bit_cnt_next = branch_taken ? STRONGLY_TAKEN : WEAKLY_TAKEN;
-        end
-        default: begin
-            update_2bit_cnt_next = WEAKLY_NOT_TAKEN;
-        end
-    endcase
+    end else if (branch_req && branch_inst_type == BRANCH_INST_TYPE_B && !stall) begin
+        case (pht_array[update_pht_idx])
+            STRONGLY_NOT_TAKEN: begin
+                // 00 -> 01 (如果跳转) 或 00 (如果不跳转)
+                pht_array[update_pht_idx] <= #1 branch_taken ? WEAKLY_NOT_TAKEN : STRONGLY_NOT_TAKEN;
+            end
+            WEAKLY_NOT_TAKEN: begin
+                // 01 -> 10 (如果跳转) 或 00 (如果不跳转)
+                pht_array[update_pht_idx] <= #1 branch_taken ? WEAKLY_TAKEN : STRONGLY_NOT_TAKEN;
+            end
+            WEAKLY_TAKEN: begin
+                // 10 -> 11 (如果跳转) 或 01 (如果不跳转)
+                pht_array[update_pht_idx] <= #1 branch_taken ? STRONGLY_TAKEN : WEAKLY_NOT_TAKEN;
+            end
+            STRONGLY_TAKEN: begin
+                // 11 -> 11 (如果跳转) 或 10 (如果不跳转)
+                pht_array[update_pht_idx] <= #1 branch_taken ? STRONGLY_TAKEN : WEAKLY_TAKEN;
+            end
+            default: begin
+                ;
+            end
+        endcase
+    end
 end
 
 // ========================================================================
@@ -235,39 +240,25 @@ always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin//fence.i后不再使用旧的跳转属性
         // 复位: 清空所有BTB表项
         for (int i = 0; i < BTB_ENTRIES; i++) begin
-            btb_valid_array[i]      <= 1'b0;
-            btb_tag_array[i]        <= 'h0;
-            btb_target_array[i]     <= 'h0;
-            btb_inst_type_array[i]  <= 2'b00;
-            btb_push_ras_array[i]   <= 1'b0;
-            btb_pop_ras_array[i]    <= 1'b0;
+            btb_valid_array[i]      <= #1 1'b0;
+            btb_tag_array[i]        <= #1 'h0;
+            btb_target_array[i]     <= #1 'h0;
+            btb_inst_type_array[i]  <= #1 2'b00;
+            btb_push_ras_array[i]   <= #1 1'b0;
+            btb_pop_ras_array[i]    <= #1 1'b0;
         end
     end else if (branch_req && branch_taken && !stall) begin//分支跳转指令，仅实际跳转时会更新
         // 更新BTB表项
-        btb_valid_array[update_btb_idx]     <= 1'b1;
-        btb_tag_array[update_btb_idx]       <= branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_target_array[update_btb_idx]    <= branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_inst_type_array[update_btb_idx] <= branch_inst_type;
-        btb_pop_ras_array[update_btb_idx]   <= pop_ras;
-        btb_push_ras_array[update_btb_idx]  <= push_ras;
+        btb_valid_array[update_btb_idx]     <= #1 1'b1;
+        btb_tag_array[update_btb_idx]       <= #1 branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_target_array[update_btb_idx]    <= #1 branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_inst_type_array[update_btb_idx] <= #1 branch_inst_type;
+        btb_pop_ras_array[update_btb_idx]   <= #1 pop_ras;
+        btb_push_ras_array[update_btb_idx]  <= #1 push_ras;
     end
 end
 
-// ========================================================================
-// 时序逻辑: PHT更新
-// ========================================================================
 
-always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        // 复位: 初始化所有PHT表项为"弱不跳转"
-        for (int i = 0; i < PHT_ENTRIES; i++) begin
-            pht_array[i] <= WEAKLY_NOT_TAKEN;
-        end
-    end else if (branch_req && !stall) begin
-        // 更新PHT表项
-        pht_array[update_pht_idx] <= update_2bit_cnt_next;
-    end
-end
 
 //========================================================================
 // REAL RAS 指针 next 计算 (EX 阶段)
@@ -277,13 +268,11 @@ assign ras_empty = (real_ras_ptr == 0);
 
 always_comb begin
     real_ras_ptr_next = real_ras_ptr;
-    if (branch_req) begin
-        case ({push_ras, pop_ras})
-            2'b10: real_ras_ptr_next = ras_full ? 0 : real_ras_ptr + 1;
-            2'b01: real_ras_ptr_next = ras_empty ? RAS_DEPTH : real_ras_ptr - 1;
-            default: real_ras_ptr_next = real_ras_ptr;
-        endcase
-    end
+    case ({push_ras, pop_ras})
+        2'b10: real_ras_ptr_next = ras_full ? 0 : real_ras_ptr + 1;
+        2'b01: real_ras_ptr_next = ras_empty ? RAS_DEPTH : real_ras_ptr - 1;
+        default: real_ras_ptr_next = real_ras_ptr;
+    endcase
 end
 
 //========================================================================
@@ -314,10 +303,10 @@ assign real_global_history_next = (branch_req && branch_inst_type == BRANCH_INST
 // SPEC GHR next
 //========================================================================
 always_comb begin
-    if (!branch_predict_success) begin// 预测错误
-        spec_global_history_next = real_global_history;
-    end else if (predict_btb_hit && predict_taken && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) begin // 预测成功
-        spec_global_history_next = {spec_global_history[GHR_WIDTH-2:0], 1'b1};
+    if (!branch_predict_success && branch_req) begin// 预测错误
+        spec_global_history_next = real_global_history_next;
+    end else if (predict_btb_hit && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) begin // 预测成功
+        spec_global_history_next = {spec_global_history[GHR_WIDTH-2:0], predict_taken};
     end else begin
         spec_global_history_next = spec_global_history;
     end
@@ -328,11 +317,11 @@ end
 //========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        spec_global_history <= '0;
-        spec_ras_ptr        <= '0;
+        spec_global_history <= #1 '0;
+        spec_ras_ptr        <= #1 '0;
     end else if (!stall) begin
-        spec_global_history <= spec_global_history_next;
-        spec_ras_ptr        <= spec_ras_ptr_next;
+        spec_global_history <= #1 spec_global_history_next;
+        spec_ras_ptr        <= #1 spec_ras_ptr_next;
     end
 end
 
@@ -341,22 +330,22 @@ end
 //========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        real_global_history <= '0;
-        real_ras_ptr <= '0;
+        real_global_history <= #1 '0;
+        real_ras_ptr <= #1 '0;
     end else if (!stall) begin
-        real_global_history <= real_global_history_next;
-        real_ras_ptr <= real_ras_ptr_next;
+        real_global_history <= #1 real_global_history_next;
+        real_ras_ptr <= #1 real_ras_ptr_next;
     end
 end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        for (int i=0; i<RAS_DEPTH; i++) ras_stack[i] <= '0;
+        for (int i=0; i<RAS_DEPTH; i++) ras_stack[i] <= #1 '0;
     end else if (!stall) begin
-        if (branch_req && push_ras) begin
-            ras_stack[real_ras_ptr_next] <= branch_pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
+        if (push_ras) begin
+            ras_stack[real_ras_ptr_next] <= #1 branch_pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
         end else if (predict_btb_hit && btb_push_ras_array[predict_btb_idx]) begin// 推测压栈
-            ras_stack[spec_ras_ptr_next] <= pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
+            ras_stack[spec_ras_ptr_next] <= #1 pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
         end
     end
 end

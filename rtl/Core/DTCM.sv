@@ -1,8 +1,9 @@
 `include "../SoC_Config.sv"
 
+`timescale 1ns / 1ps
 module DTCM #(
-    parameter DTCM_FILE      = `DTCM_FILE,
-    parameter DTCM_DEPTH     = `DTCM_DEPTH,
+    parameter DTCM_FILE     = `DTCM_FILE,
+    parameter DTCM_DEPTH    = `DTCM_DEPTH,
     parameter ADDR_WIDTH    = `ADDR_WIDTH,
     parameter DATA_WIDTH    = `DATA_WIDTH,
     parameter ALIGN_WIDTH   = `ALIGN_WIDTH,
@@ -45,7 +46,7 @@ generate
                 for (i=0;i<ALIGN_BYTES;i=i+1) begin
                     // 按wr_mask逐字节更新，未掩码的字节保持原样
                     if(wr_mask[i]) begin
-                        ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]][i*8+:8] <= wr_data[i*8+:8];
+                        ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]][i*8+:8] <= #1 wr_data[i*8+:8];
                     end
                 end
             end

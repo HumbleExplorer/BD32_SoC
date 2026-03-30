@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`timescale 1ns / 1ps
 module RegFile #(
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
@@ -46,11 +47,11 @@ end
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         for(int i=0;i<REGFILE_NUM;i++) begin
-            regs[i] <= 'h0;
+            regs[i] <= #1 'h0;
         end
     end
     else if(wr_reg_en && (wr_reg_addr != 5'h0)) begin
-        regs[wr_reg_addr] <= wr_reg_data;
+        regs[wr_reg_addr] <= #1 wr_reg_data;
     end
 end
 endmodule

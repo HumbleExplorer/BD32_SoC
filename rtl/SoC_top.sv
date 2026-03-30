@@ -1,5 +1,6 @@
 `include "SoC_Config.sv"
 `include "RV32_Inst_Define.sv"
+`timescale 1ns / 1ps
 module SoC_top #(
     parameter ITCM_FILE = `ITCM_FILE,
     parameter DTCM_FILE = `DTCM_FILE,
@@ -57,7 +58,7 @@ logic                       periph_enable;
 logic                       periph_write;
 logic   [ALIGN_BYTES-1:0]   periph_wmask;
 logic   [DATA_WIDTH-1:0]    periph_wdata;
-logic                       periph_ready;
+// logic                       periph_ready;
 // apb_uart Output
 logic                       uart_psel;
 logic   [DATA_WIDTH-1:0]    uart_rdata;

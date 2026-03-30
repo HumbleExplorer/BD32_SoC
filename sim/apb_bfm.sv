@@ -31,6 +31,7 @@
 //                                                                 //
 /////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+`timescale 1ns / 1ps
 module apb_master_bfm #(
     parameter PADDR_WIDTH = 32,
     parameter PDATA_WIDTH = 32

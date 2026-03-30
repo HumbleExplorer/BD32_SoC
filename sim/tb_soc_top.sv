@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 
+`timescale 1ns / 1ps
 module tb_soc_top;
 `include "./../rtl/SoC_Config.sv"
 
@@ -152,7 +153,7 @@ assign tx_data_valid = u_SoC_top.u_apb_uart.tx_start && ~u_SoC_top.u_apb_uart.tx
 logic tx_data_valid_d;
 
 always_ff @(posedge clk) begin
-    tx_data_valid_d <= tx_data_valid;
+    tx_data_valid_d <= #1 tx_data_valid;
     if (tx_data_valid && ~tx_data_valid_d) begin
         $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
     end
@@ -171,7 +172,9 @@ end
 initial  begin
     // 等待复位稳定后启动下载
     @(posedge rst_n);
-    #100; // 增加稳定时间，避免复位中操作
+    #50;// 增加稳定时间，避免复位中操作
+    wait(tb_soc_top.u_SoC_top.u_apb_uart.download_en);
+    #50; 
     uart_download_itcm(ITCM_FULL_PATH);
     if(u_SoC_top.u_RISC_V_Core.inst[0] == 32'hx) begin // 数组初始值为x，读取失败则仍为x
         $finish;

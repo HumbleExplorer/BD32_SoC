@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`timescale 1ns / 1ps
 module CSR_Reg_Access #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -102,51 +103,51 @@ end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        mstatus             <= 'h00001800;
-        mie                 <= 'h0;
-        mtvec               <= 'h0;
-        mepc                <= 'h0;
-        mcause              <= 'h0;
-        mtval               <= 'h0;
-        mcounteren          <= 'h0;
-        mcountinhibit       <= 'h0;
-        mip                 <= 'h0;
-        mcycle_clear        <= 'h0;
-        minstret_clear      <= 'h0;
+        mstatus             <= #1 'h00001800;
+        mie                 <= #1 'h0;
+        mtvec               <= #1 'h0;
+        mepc                <= #1 'h0;
+        mcause              <= #1 'h0;
+        mtval               <= #1 'h0;
+        mcounteren          <= #1 'h0;
+        mcountinhibit       <= #1 'h0;
+        mip                 <= #1 'h0;
+        mcycle_clear        <= #1 'h0;
+        minstret_clear      <= #1 'h0;
     end else begin//优先级：异常>外部中断>软件中断>定时器中断
-        mip <= {mip[31:12],external_int,mip[10:8],timer_int,mip[6:4],software_int,mip[2:0]};
-        mcause <= mcause_temp;//写入异常原因 
+        mip     <= #1 {mip[31:12],external_int,mip[10:8],timer_int,mip[6:4],software_int,mip[2:0]};
+        mcause  <= #1 mcause_temp;//写入异常原因 
         if (exception_trap) begin//进入异常
-            mstatus[7] <= mstatus[3];//MPIE <- MIE
-            mstatus[3] <= 1'b0;//禁用全局中断
-            mepc <= exception_inst_addr;//保存异常PC值
-            mtval <= exception_val;//保存异常信息
+            mstatus[7]  <= #1 mstatus[3];//MPIE <- MIE
+            mstatus[3]  <= #1 1'b0;//禁用全局中断
+            mepc        <= #1 exception_inst_addr;//保存异常PC值
+            mtval       <= #1 exception_val;//保存异常信息
         end else if (mret_req) begin//从异常返回
-            mepc <= 'd0;
-            mstatus[3] <= mstatus[7];//MIE <- MPIE
-            mstatus[7] <= 1'b1;
+            mepc        <= #1 'd0;
+            mstatus[3]  <= #1 mstatus[7];//MIE <- MPIE
+            mstatus[7]  <= #1 1'b1;
         end else if(int_trap) begin
-            mepc <= next_inst_addr;
-            mstatus[7] <= mstatus[3];
-            mstatus[3] <= 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus
+            mepc        <= #1 next_inst_addr;
+            mstatus[7]  <= #1 mstatus[3];
+            mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus
         end else if(access_csr_en) begin
             case(csr_addr)
-                12'h300  : mstatus          <= {mstatus[31:8],wr_csr_data[7],mstatus[6:4],wr_csr_data[3],mstatus[2:0]};//特权模式保持M模式，写MIE和MPIE
-                12'h304  : mie              <= {mie[31:12],wr_csr_data[11],mie[10:8],wr_csr_data[7],mie[6:4],wr_csr_data[3],mie[2:0]};
-                12'h305  : mtvec            <= wr_csr_data;
-                12'h306  : mcounteren       <= wr_csr_data;
-                12'h320  : mcountinhibit    <= wr_csr_data;
-                12'h341  : mepc             <= wr_csr_data;
-                // 12'h342  : mcause           <= wr_csr_data;
-                // 12'h343  : mtval            <= wr_csr_data;
-                // 12'h344  : mip              <= wr_csr_data;
+                12'h300  : mstatus          <= #1 {mstatus[31:8],wr_csr_data[7],mstatus[6:4],wr_csr_data[3],mstatus[2:0]};//特权模式保持M模式，写MIE和MPIE
+                12'h304  : mie              <= #1 {mie[31:12],wr_csr_data[11],mie[10:8],wr_csr_data[7],mie[6:4],wr_csr_data[3],mie[2:0]};
+                12'h305  : mtvec            <= #1 wr_csr_data;
+                12'h306  : mcounteren       <= #1 wr_csr_data;
+                12'h320  : mcountinhibit    <= #1 wr_csr_data;
+                12'h341  : mepc             <= #1 wr_csr_data;
+                // 12'h342  : mcause           <= #1 wr_csr_data;
+                // 12'h343  : mtval            <= #1 wr_csr_data;
+                // 12'h344  : mip              <= #1 wr_csr_data;
                 //自定义寄存器
                 12'hbc4  : begin
 
                 end
                 12'hbc5  : begin
-                    mcycle_clear            <= wr_csr_data[0];
-                    minstret_clear          <= wr_csr_data[2];
+                    mcycle_clear            <= #1 wr_csr_data[0];
+                    minstret_clear          <= #1 wr_csr_data[2];
                 end
                 default  : ;
             endcase
@@ -182,24 +183,24 @@ end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)
-        mcycle <= 'h0;
+        mcycle <= #1 'h0;
     else if(mcycle_clear)
-        mcycle <= 'h0;
+        mcycle <= #1 'h0;
     else if(mcountinhibit[0])
-        mcycle <= mcycle;
+        mcycle <= #1 mcycle;
     else
-        mcycle <= mcycle + 'h1;
+        mcycle <= #1 mcycle + 'h1;
 end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)
-        minstret <= 'h0; 
+        minstret <= #1 'h0; 
     else if(minstret_clear) 
-        minstret <= 'h0;
+        minstret <= #1 'h0;
     else if(mcountinhibit[2])
-        minstret <= minstret;
+        minstret <= #1 minstret;
     else
-        minstret <= minstret + 'h1;
+        minstret <= #1 minstret + 'h1;
 end
 
 

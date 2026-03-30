@@ -2,6 +2,7 @@
 // 功能：将 async_sig 同步到 dst_clk 时钟域
 // 说明：这是一个标准 IP，不要随意修改内部逻辑
 // 用于同步简单的电平信号（比如复位信号、状态标志）。
+`timescale 1ns / 1ps
 module Cdc_Sync #(
     parameter WIDTH = 1,      // 信号位宽，通常为1
     parameter RESET_VAL = 0,   // 复位后的默认值
@@ -19,12 +20,12 @@ module Cdc_Sync #(
     always_ff @(posedge dst_clk or negedge dst_rst_n) begin
         if (!dst_rst_n) begin
             for (int n=0; n<DELAY_STAGES; n++) begin
-                sync_reg[n] <= {WIDTH{RESET_VAL}};
+                sync_reg[n] <= #1 {WIDTH{RESET_VAL}};
             end
         end else begin
             for (int n=0; n<DELAY_STAGES; n++) begin
-                if (n==0)   sync_reg[n] <= async_sig;
-                else        sync_reg[n] <= sync_reg[n-1];
+                if (n==0)   sync_reg[n] <= #1 async_sig;
+                else        sync_reg[n] <= #1 sync_reg[n-1];
             end
         end
     end

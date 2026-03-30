@@ -1,3 +1,4 @@
+`timescale 1ns / 1ps
 module uart_tx (
     input  logic          clk_uart,   // 1倍波特率发送时钟
     input  logic          rst_n,      // 异步复位（低有效）
@@ -49,66 +50,66 @@ end
 // 1. 核心发送状态机 + 单周期FIFO读使能
 always_ff @(posedge clk_uart or negedge rst_n) begin
     if(!rst_n) begin
-        tx_state       <= TX_IDLE;
-        data_bit_cnt   <= 3'd0;
-        stop_bit_cnt   <= 1'd0;
-        tx_shift       <= 8'd0;
-        parity_calc    <= 1'b0;
-        tx_o           <= 1'b1; // 空闲状态为高
+        tx_state       <= #1 TX_IDLE;
+        data_bit_cnt   <= #1 3'd0;
+        stop_bit_cnt   <= #1 1'd0;
+        tx_shift       <= #1 8'd0;
+        parity_calc    <= #1 1'b0;
+        tx_o           <= #1 1'b1; // 空闲状态为高
     end else begin
         case (tx_state)
             TX_IDLE: begin // 空闲状态：FIFO非空则触发发送
-                tx_o            <= 1'b1;
-                tx_state        <= tx_start ? TX_START : TX_IDLE;
-                tx_shift        <= tx_start ? tx_i : tx_shift;
-                data_bit_cnt    <= 3'd0;
-                parity_calc     <= 1'b0;
+                tx_o            <= #1 1'b1;
+                tx_state        <= #1 tx_start ? TX_START : TX_IDLE;
+                tx_shift        <= #1 tx_start ? tx_i : tx_shift;
+                data_bit_cnt    <= #1 3'd0;
+                parity_calc     <= #1 1'b0;
             end
             TX_START: begin 
-                tx_o            <= 1'b0;
-                tx_state        <= TX_DATA;
+                tx_o            <= #1 1'b0;
+                tx_state        <= #1 TX_DATA;
             end
             TX_DATA: begin // 数据位发送：低位先行，按LCR配置位数发送
-                tx_o <= tx_shift[0];
+                tx_o <= #1 tx_shift[0];
                 // 计算奇偶校验（仅校验使能时）
                 if(lcr[LCR_PARITY_EN]) begin
-                    parity_calc <= parity_calc ^ tx_shift[0];
+                    parity_calc <= #1 parity_calc ^ tx_shift[0];
                 end
-                tx_state <= s_data_bit_done ? (lcr[LCR_PARITY_EN] ? TX_PARITY : TX_STOP) : TX_DATA;
-                tx_shift     <= {1'b0, tx_shift[7:1]};
-                data_bit_cnt <= data_bit_cnt + 1'b1;
+                tx_state     <= #1 s_data_bit_done ? (lcr[LCR_PARITY_EN] ? TX_PARITY : TX_STOP) : TX_DATA;
+                tx_shift     <= #1 {1'b0, tx_shift[7:1]};
+                data_bit_cnt <= #1 data_bit_cnt + 1'b1;
             end
 
             TX_PARITY: begin // 校验位发送：奇偶/强制校验位
                 if(lcr[LCR_PARITY_FOR]) begin // 强制校验位
-                    tx_o <= lcr[LCR_PARITY_ODD] ? 1'b1 : 1'b0;
+                    tx_o <= #1 lcr[LCR_PARITY_ODD] ? 1'b1 : 1'b0;
                 end else begin // 正常奇偶校验
-                    tx_o <= lcr[LCR_PARITY_ODD] ? ~parity_calc : parity_calc;
+                    tx_o <= #1 lcr[LCR_PARITY_ODD] ? ~parity_calc : parity_calc;
                 end
-                tx_shift <= 'h0;
-                tx_state <= TX_STOP;
-                stop_bit_cnt <= 1'd0;
+                tx_shift <= #1 'h0;
+                tx_state <= #1 TX_STOP;
+                stop_bit_cnt <= #1 1'd0;
             end
 
             TX_STOP: begin // 停止位发送：高电平，按LCR配置位数发送
-                tx_o <= 1'b1;
+                tx_o <= #1 1'b1;
                 if(lcr[LCR_STOP]) begin // 1.5/2位停止位
                     if(stop_bit_cnt == 1'd1) begin
-                        tx_state <= tx_start ? TX_START : TX_IDLE;
-                        tx_shift <= tx_start ? tx_i : tx_shift;
-                        stop_bit_cnt <= 0;
+                        tx_state <= #1 tx_start ? TX_START : TX_IDLE;
+                        tx_shift <= #1 tx_start ? tx_i : tx_shift;
+                        stop_bit_cnt <= #1 0;
                     end else begin
-                        stop_bit_cnt <= stop_bit_cnt + 1'b1;
+                        stop_bit_cnt <= #1 stop_bit_cnt + 1'b1;
                     end
                 end else begin // 1位停止位
-                    tx_state <= tx_start ? TX_START : TX_IDLE;
-                    tx_shift <= tx_start ? tx_i : tx_shift;
+                    tx_state <= #1 tx_start ? TX_START : TX_IDLE;
+                    tx_shift <= #1 tx_start ? tx_i : tx_shift;
                 end
-                data_bit_cnt <= 0;
-                parity_calc  <= 0;
+                data_bit_cnt <= #1 0;
+                parity_calc  <= #1 0;
             end
 
-            default: tx_state <= TX_IDLE;
+            default: tx_state <= #1 TX_IDLE;
         endcase
     end
 end

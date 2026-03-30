@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`timescale 1ns / 1ps
 module MEM_WB #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -30,23 +31,23 @@ module MEM_WB #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
-        inst_o          <= `INST_NOP;
-        wr_reg_en_o     <= 1'b0;
-        wr_reg_addr_o   <= 'h0;
-        wr_reg_data_o   <= 'h0;
+        inst_addr_o     <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_o          <= #1 `INST_NOP;
+        wr_reg_en_o     <= #1 1'b0;
+        wr_reg_addr_o   <= #1 'h0;
+        wr_reg_data_o   <= #1 'h0;
     end else if(flush) begin
-        inst_addr_o     <= {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
-        inst_o          <= `INST_NOP;
-        wr_reg_en_o     <= 1'b0;
-        wr_reg_addr_o   <= 'h0;
-        wr_reg_data_o   <= 'h0;
+        inst_addr_o     <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_o          <= #1 `INST_NOP;
+        wr_reg_en_o     <= #1 1'b0;
+        wr_reg_addr_o   <= #1 'h0;
+        wr_reg_data_o   <= #1 'h0;
     end else if(!stall) begin//指令地址无需清零
-        inst_addr_o     <= inst_addr_i;
-        inst_o          <= inst_i;
-        wr_reg_en_o     <= wr_reg_en_i;
-        wr_reg_addr_o   <= wr_reg_addr_i;
-        wr_reg_data_o   <= wr_reg_data_i;
+        inst_addr_o     <= #1 inst_addr_i;
+        inst_o          <= #1 inst_i;
+        wr_reg_en_o     <= #1 wr_reg_en_i;
+        wr_reg_addr_o   <= #1 wr_reg_addr_i;
+        wr_reg_data_o   <= #1 wr_reg_data_i;
     end
 end
 

@@ -1,4 +1,5 @@
 `include "../../SoC_Config.sv"
+`timescale 1ns / 1ps
 module apb_uart #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -109,38 +110,39 @@ assign  timeout = timeout_cnt == 6'd63;
 // -------------------------- 1. 寄存器写逻辑 --------------------------
 always_ff @(posedge PCLK or negedge PSESETn) begin
     if (!PSESETn) begin
-        divisor        <= 16'd0;
-        ier            <= 4'd0;
-        fcr            <= 8'hC0;      // FIFO默认使能
-        lcr            <= 8'h03;      // 默认8N1，DLAB=0
-        mcr            <= 8'd0;
+        divisor        <= #1 16'd0;
+        ier            <= #1 4'd0;
+        fcr            <= #1 8'hC0;      // FIFO默认使能
+        lcr            <= #1 8'h03;      // 默认8N1，DLAB=0
+        mcr            <= #1 8'd0;
+        download_en    <= #1 1'b0;
     end else begin
         // FCR 独立写逻辑 (地址0x08)：读IIR，写FCR
         if (reg_wr_en && (uart_reg_sel_e'(reg_sel) == REG_SEL_2)) begin
-            fcr <= PWDATA[7:0];
+            fcr <= #1 PWDATA[7:0];
         end
         // FIFO 自清除逻辑：硬件自动清零（写1有效，自动回0）
         if (fcr[FCR_CLR_RX])
-            fcr[FCR_CLR_RX]  <= 1'b0;
+            fcr[FCR_CLR_RX]  <= #1 1'b0;
         if (fcr[FCR_CLR_TX])
-            fcr[FCR_CLR_TX]  <= 1'b0;
+            fcr[FCR_CLR_TX]  <= #1 1'b0;
 
         // 其他寄存器写逻辑 (含DLAB复用判断)
         if (reg_wr_en) begin
             case (uart_reg_sel_e'(reg_sel))
                 REG_SEL_0: begin // 0x00: THR/DLL
-                    if (lcr[DLAB_BIT]) divisor[7:0] <= PWDATA[7:0];
+                    if (lcr[DLAB_BIT]) divisor[7:0] <= #1 PWDATA[7:0];
                 end
                 REG_SEL_1: begin // 0x04: IER/DLM
-                    if (lcr[DLAB_BIT]) divisor[15:8] <= PWDATA[7:0];
-                    else ier <= PWDATA[3:0]; // IER仅低4位有效
+                    if (lcr[DLAB_BIT]) divisor[15:8] <= #1 PWDATA[7:0];
+                    else ier <= #1 PWDATA[3:0]; // IER仅低4位有效
                 end
                 REG_SEL_3: begin // 0x0C: LCR
                     // Break位(bit6)为1时，强制DLAB(bit7)为0（16550手册要求）
-                    lcr <= PWDATA[6] ? (PWDATA[7:0] & 8'h7F) : PWDATA[7:0];
+                    lcr <= #1 PWDATA[6] ? (PWDATA[7:0] & 8'h7F) : PWDATA[7:0];
                 end
-                REG_SEL_4: mcr <= PWDATA[7:0]; // 0x10: MCR
-                REG_SEL_7: download_en <= PWDATA[0]; // 0x1C: DBG_EN
+                REG_SEL_4: mcr <= #1 PWDATA[7:0]; // 0x10: MCR
+                REG_SEL_7: download_en <= #1 PWDATA[0]; // 0x1C: DBG_EN
                 default: ; // 只读寄存器（IIR/LSR/MSR）忽略写操作
             endcase
         end
@@ -189,58 +191,58 @@ end
 // -------------------------- 3. LSR 状态更新 --------------------------
 always_ff @(posedge PCLK or negedge PSESETn) begin
     if (!PSESETn) begin
-        lsr <= 8'h60; // THRE=1, TEMT=1
+        lsr <= #1 8'h60; // THRE=1, TEMT=1
     end else begin
-        lsr[0] <= ~rx_fifo_rd_empty; // DR：FIFO非空即数据就绪
-        lsr[1] <= rx_err[0] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[1]; // OE：溢出错误
-        lsr[2] <= rx_err[1] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[2]; // PE：奇偶错误
-        lsr[3] <= rx_err[2] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[3]; // FE：帧错误
-        lsr[4] <= rx_err[3] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[4]; // BI：断错误
-        lsr[5] <= tx_fifo_rd_empty; // THRE：发送FIFO空
-        lsr[6] <= (tx_fifo_rd_empty && ~tx_busy); // TEMT：发送器完全空（FIFO+移位寄存器）
-        lsr[7] <= (lsr[1] | lsr[2] | lsr[3] | lsr[4]); // EI：任意接收错误指示
+        lsr[0] <= #1 ~rx_fifo_rd_empty; // DR：FIFO非空即数据就绪
+        lsr[1] <= #1 rx_err[0] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[1]; // OE：溢出错误
+        lsr[2] <= #1 rx_err[1] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[2]; // PE：奇偶错误
+        lsr[3] <= #1 rx_err[2] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[3]; // FE：帧错误
+        lsr[4] <= #1 rx_err[3] ? 1'b1 : (reg_rd_en && reg_sel == REG_SEL_5) ? 1'b0 : lsr[4]; // BI：断错误
+        lsr[5] <= #1 tx_fifo_rd_empty; // THRE：发送FIFO空
+        lsr[6] <= #1 (tx_fifo_rd_empty && ~tx_busy); // TEMT：发送器完全空（FIFO+移位寄存器）
+        lsr[7] <= #1 (lsr[1] | lsr[2] | lsr[3] | lsr[4]); // EI：任意接收错误指示
     end
 end
 
 // -------------------------- 4. FIFO计数 + 接收超时 + 中断逻辑 --------------------------
 always_ff @(posedge PCLK or negedge PSESETn) begin
     if (!PSESETn) begin
-        timeout_cnt <= 6'd0;
-        irq_o       <= 1'b0;
-        iir         <= IIR_NO_INT;
+        timeout_cnt <= #1 6'd0;
+        irq_o       <= #1 1'b0;
+        iir         <= #1 IIR_NO_INT;
     end else begin
         // ===== 接收超时计数逻辑（0~63，对应4个字符时间） =====FIFO中至少有一个数据，且4个字符周期内没有操作
         if (rx_fifo_rd_empty || rx_fifo_wr_en || rx_fifo_rd_en) begin// 清零条件：FIFO空/新数据接收/数据读出
-            timeout_cnt <= 6'd0; 
+            timeout_cnt <= #1 6'd0; 
         end else if (timeout) begin
-            timeout_cnt <= 6'd0; 
+            timeout_cnt <= #1 6'd0; 
         end else begin
-            timeout_cnt <= timeout_cnt + 1'b1; // 未清零则计数+1，到63后保持
+            timeout_cnt <= #1 timeout_cnt + 1'b1; // 未清零则计数+1，到63后保持
         end
 
         // ===== 中断优先级判定（RLS > RDA/TOUT > THRE > MSR） =====
         if (ier[2] && (lsr[1] | lsr[2] | lsr[3] | lsr[4])) begin
-            irq_o <= 1'b1; iir <= IIR_RLS_INT; // 接收线状态中断（最高优先级）
+            irq_o <= #1 1'b1; iir <= #1 IIR_RLS_INT; // 接收线状态中断（最高优先级）
         end else if (ier[0] && rx_fifo_cnt >= get_trigger()) begin
-            irq_o <= 1'b1; iir <= timeout ? IIR_TOUT_INT : IIR_RDA_INT; // 接收数据/超时
+            irq_o <= #1 1'b1; iir <= #1 timeout ? IIR_TOUT_INT : IIR_RDA_INT; // 接收数据/超时
         end else if (ier[1] && tx_fifo_rd_empty) begin
-            irq_o <= 1'b1; iir <= IIR_THRE_INT; // 发送FIFO空
+            irq_o <= #1 1'b1; iir <= #1 IIR_THRE_INT; // 发送FIFO空
         end else if (ier[3] && (msr[0] | msr[1] | msr[2] | msr[3])) begin
-            irq_o <= 1'b1; iir <= IIR_MSR_INT; // 调制解调器状态
+            irq_o <= #1 1'b1; iir <= #1 IIR_MSR_INT; // 调制解调器状态
         end else begin
-            irq_o <= 1'b0; iir <= IIR_NO_INT;  // 无中断
+            irq_o <= #1 1'b0; iir <= #1 IIR_NO_INT;  // 无中断
         end
 
         // ===== 中断清除逻辑 =====
         if (reg_rd_en) begin
             if (reg_sel == REG_SEL_2 && (iir == IIR_THRE_INT)) begin // 读IIR清THRE中断
-                irq_o <= 1'b0; iir <= IIR_NO_INT;
+                irq_o <= #1 1'b0; iir <= #1 IIR_NO_INT;
             end else if (reg_sel == REG_SEL_5 && (iir == IIR_RLS_INT)) begin // 读LSR清RLS中断
-                irq_o <= 1'b0; iir <= IIR_NO_INT;
+                irq_o <= #1 1'b0; iir <= #1 IIR_NO_INT;
             end else if (reg_sel == REG_SEL_6 && (iir == IIR_MSR_INT)) begin // 读MSR清MSR中断
-                irq_o <= 1'b0; iir <= IIR_NO_INT;
+                irq_o <= #1 1'b0; iir <= #1 IIR_NO_INT;
             end else if (reg_sel == REG_SEL_0 && !lcr[DLAB_BIT] && (iir[3:0] == IIR_RDA_INT[3:0] || iir[3:0] == IIR_TOUT_INT[3:0])) begin // 读RBR清RDA/TOUT中断
-                irq_o <= 1'b0; iir <= IIR_NO_INT;
+                irq_o <= #1 1'b0; iir <= #1 IIR_NO_INT;
             end
         end
     end
@@ -325,15 +327,7 @@ fifo_async #(.DEPTH(16), .WIDTH(8)) tx_fifo_inst (
     // .almost_empty(tx_fifo_almost_empty)
 );
 
-// logic rx_data_valid_pulse;
-// Cdc_Pulse u_Cdc_Pulse(
-//     .dst_clk   	(PCLK                ),
-//     .dst_rst_n 	(PSESETn              ),
-//     .src_pulse 	(rx_data_valid      ),
-//     .dst_pulse 	(rx_data_valid_pulse)
-// );
-
-
+// 6. 下载模块：下载指令到ITCM
 uart_download #(
     .ADDR_WIDTH  	(ADDR_WIDTH  ),
     .DATA_WIDTH  	(DATA_WIDTH  ),
@@ -353,34 +347,34 @@ uart_download #(
 
 always_ff @(posedge clk_uart or negedge PSESETn) begin
     if (!PSESETn) begin
-        tx_fifo_clr   <= 1'b0;
+        tx_fifo_clr   <= #1 1'b0;
     end else begin
         // FIFO 自清除逻辑：硬件自动清零（写1有效，自动回0）
         if (fcr[FCR_CLR_TX])
-            tx_fifo_clr    <= 1'b1;
+            tx_fifo_clr    <= #1 1'b1;
         else
-            tx_fifo_clr    <= 1'b0;
+            tx_fifo_clr    <= #1 1'b0;
     end
 end
 
 always_ff @(posedge clk_sample or negedge PSESETn) begin
     if (!PSESETn) begin
-        rx_fifo_clr   <= 1'b0;
+        rx_fifo_clr   <= #1 1'b0;
     end else begin
         // FIFO 自清除逻辑：硬件自动清零（写1有效，自动回0）
         if (fcr[FCR_CLR_RX])
-            rx_fifo_clr    <= 1'b1;
+            rx_fifo_clr    <= #1 1'b1;
         else
-            rx_fifo_clr    <= 1'b0;
+            rx_fifo_clr    <= #1 1'b0;
     end
 end
 // always_ff @(posedge PCLK or negedge PSESETn) begin
-//     PREADY <= 1'b1;
+//     PREADY <= #1 1'b1;
 //     if (PSEL & ~lcr[DLAB_BIT] & reg_sel == REG_SEL_0)
 //         if(PWRITE) begin
-//             PREADY <= PREADY ? ~PREADY : tx_fifo_wr_en;
+//             PREADY <= #1 PREADY ? ~PREADY : tx_fifo_wr_en;
 //         end else begin
-//             PREADY <= rx_fifo_rd_en;
+//             PREADY <= #1 rx_fifo_rd_en;
 //         end
 // end
 assign PREADY = (PSEL && PENABLE && ~lcr[DLAB_BIT]) ? 

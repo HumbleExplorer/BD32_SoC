@@ -26,6 +26,7 @@
  *                              1=enable irq generation
  */
 `include "../SoC_Config.sv"
+`timescale 1ns / 1ps
 module apb_gpio #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -62,9 +63,10 @@ genvar i;
 generate
     for(i=0; i<GPIO_NUM; i++) begin : gpio_tristate
         assign gpio_io[i] = gpio_oe[i] ? gpio_o[i] : 1'bz;
+        assign gpio_i[i] = gpio_io[i];
     end
 endgenerate
-assign gpio_i = gpio_io;
+
 `endif
   //////////////////////////////////////////////////////////////////
   //
@@ -146,11 +148,6 @@ function automatic [DATA_WIDTH-1:0] get_clearonwrite_value (input [DATA_WIDTH-1:
     get_clearonwrite_value[n*8 +: 8] = PSTRB[n] ? original_val[n*8 +: 8] & ~PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
 endfunction : get_clearonwrite_value
 
-//////////////////////////////////////////////////////////////////
-//
-// Module Body
-//
-
 /*
 * APB accesses
 */
@@ -164,53 +161,53 @@ assign PSLVERR = 1'b0; //Never an error
 */
 //APB write to Mode register
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn               ) mode_reg <= {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(MODE)) mode_reg <= get_write_value(mode_reg);
+    if      (!PRESETn               ) mode_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(MODE)) mode_reg <= #1 get_write_value(mode_reg);
 
 //APB write to Direction register
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                    ) dir_reg <= {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(DIRECTION)) dir_reg <= get_write_value(dir_reg);
+    if      (!PRESETn                    ) dir_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(DIRECTION)) dir_reg <= #1 get_write_value(dir_reg);
 
 
 //APB write to Output register
 //treat writes to Input register same
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                   ) out_reg <= {DATA_WIDTH{1'b0}};
+    if      (!PRESETn                   ) out_reg <= #1 {DATA_WIDTH{1'b0}};
     else if ( is_write_to_addr(OUTPUT) ||
-              is_write_to_addr(INPUT )  ) out_reg <= get_write_value(out_reg);
+              is_write_to_addr(INPUT )  ) out_reg <= #1 get_write_value(out_reg);
 
 
 //APB write to Trigger Type register
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                  ) tr_type_reg <= {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(TR_TYPE)) tr_type_reg <= get_write_value(tr_type_reg);
+    if      (!PRESETn                  ) tr_type_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(TR_TYPE)) tr_type_reg <= #1 get_write_value(tr_type_reg);
 
 
 //APB write to Trigger Level/Edge0 register
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                  ) tr_lvl0_reg <= {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(TR_LVL0)) tr_lvl0_reg <= get_write_value(tr_lvl0_reg);
+    if      (!PRESETn                  ) tr_lvl0_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(TR_LVL0)) tr_lvl0_reg <= #1 get_write_value(tr_lvl0_reg);
 
 
 //APB write to Trigger Level/Edge1 register
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                  ) tr_lvl1_reg <= {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(TR_LVL1)) tr_lvl1_reg <= get_write_value(tr_lvl1_reg);
+    if      (!PRESETn                  ) tr_lvl1_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(TR_LVL1)) tr_lvl1_reg <= #1 get_write_value(tr_lvl1_reg);
 
 
 //APB write to Trigger Status register
 //Writing a '1' clears the status register
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                  ) tr_status_reg <= {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(TR_STAT)) tr_status_reg <= get_clearonwrite_value(tr_status_reg) | tr_status;
-    else                                 tr_status_reg <= tr_status_reg | tr_status;
+    if      (!PRESETn                  ) tr_status_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(TR_STAT)) tr_status_reg <= #1 get_clearonwrite_value(tr_status_reg) | tr_status;
+    else                                 tr_status_reg <= #1 tr_status_reg | tr_status;
 
 
 //APB write to Interrupt Enable register
 always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                  ) irq_ena_reg <= {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(IRQ_ENA)) irq_ena_reg <= get_write_value(irq_ena_reg);
+    if      (!PRESETn                  ) irq_ena_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(IRQ_ENA)) irq_ena_reg <= #1 get_write_value(irq_ena_reg);
 
 
 /*
@@ -234,31 +231,41 @@ end
 /*
 * Internals
 */
-always_ff @(posedge PCLK) begin
-    for (int n=0; n<INPUT_STAGES; n++) begin
-        if (n==0) input_regs[n] <= gpio_i;
-        else      input_regs[n] <= input_regs[n-1];
+always_ff @(posedge PCLK or negedge PRESETn) begin
+    if (!PRESETn) begin
+        for (int n=0; n<INPUT_STAGES; n++) input_regs[n] <= #1 {DATA_WIDTH{1'b0}};
+    end else begin
+        for (int n=0; n<INPUT_STAGES; n++) begin
+            if (n==0) input_regs[n] <= #1 (gpio_i[n] === 1'bz) ? 1'b0 : gpio_i[n];
+            else      input_regs[n] <= #1 input_regs[n-1];
+        end
     end
-    in_reg <= input_regs[INPUT_STAGES-1];
+    in_reg <= #1 input_regs[INPUT_STAGES-1];
 end
 
 // mode
 // 0=push-pull    drive out_reg value onto transmitter input
 // 1=open-drain   always_ff drive '0' onto transmitter
-always_ff @(posedge PCLK)
-    for (int n=0; n<DATA_WIDTH; n++)
-    gpio_o[n] <= mode_reg[n] ? 1'b0 : out_reg[n];
-
+always_ff @(posedge PCLK or negedge PRESETn)
+    if (!PRESETn) begin
+        gpio_o <= #1 {DATA_WIDTH{1'b0}};
+    end else begin
+        for (int n=0; n<DATA_WIDTH; n++)
+            gpio_o[n] <= #1 mode_reg[n] ? 1'b0 : out_reg[n];
+    end
 
 // direction  mode          out_reg
 // 0=input                           disable transmitter-enable (output enable)
 // 1=output   0=push-pull            always_ff enable transmitter
-//            1=open-drain  1=Hi-Z   disable transmitter
-//                          0=low    enable transmitter
-always_ff @(posedge PCLK)
-    for (int n=0; n<DATA_WIDTH; n++)
-    gpio_oe[n] <= dir_reg[n] & ~(mode_reg[n] ? out_reg[n] : 1'b0);
-
+//            1=open-drain 1=Hi-Z   disable transmitter
+//                         0=low    enable transmitter
+always_ff @(posedge PCLK or negedge PRESETn)
+    if (!PRESETn) begin
+        gpio_oe <= #1 {DATA_WIDTH{1'b0}};
+    end else begin
+        for (int n=0; n<DATA_WIDTH; n++)
+            gpio_oe[n] <= #1 dir_reg[n] & ~(mode_reg[n] ? out_reg[n] : 1'b0);
+    end
 
 /*
 * Triggers
@@ -267,14 +274,14 @@ always_ff @(posedge PCLK)
 
 //detect rising edge
 always_ff @(posedge PCLK, negedge PRESETn)
-    if (!PRESETn) tr_rising_edge_reg <= {DATA_WIDTH{1'b0}};
-    else          tr_rising_edge_reg <= ~in_reg & input_regs[INPUT_STAGES-1];
+    if (!PRESETn) tr_rising_edge_reg <= #1 {DATA_WIDTH{1'b0}};
+    else          tr_rising_edge_reg <= #1 ~in_reg & input_regs[INPUT_STAGES-1];
 
 
 //detect falling edge
 always_ff @(posedge PCLK, negedge PRESETn)
-    if (!PRESETn) tr_falling_edge_reg <= {DATA_WIDTH{1'b0}};
-    else          tr_falling_edge_reg <= ~input_regs[INPUT_STAGES-1] & in_reg;
+    if (!PRESETn) tr_falling_edge_reg <= #1 {DATA_WIDTH{1'b0}};
+    else          tr_falling_edge_reg <= #1 ~input_regs[INPUT_STAGES-1] & in_reg;
 
 
 //trigger status
@@ -294,6 +301,7 @@ end
 * Interrupt
 */
 always_ff @(posedge PCLK, negedge PRESETn)
-    if (!PRESETn) irq_o <= 1'b0;
-    else          irq_o <= |(irq_ena_reg & tr_status_reg);
+    if (!PRESETn) irq_o <= #1 1'b0;
+    else          irq_o <= #1 |(irq_ena_reg & tr_status_reg);
+
 endmodule
