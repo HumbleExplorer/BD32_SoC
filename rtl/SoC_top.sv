@@ -37,7 +37,7 @@ logic   sys_rst_n;
 // RISC_V_Core Output
 logic                       clint_sel;
 logic                       plic_sel;
-logic                       bus_sel;
+logic                       bus_transfer;
 logic   [ADDR_WIDTH-1:0]    access_addr;
 logic                       access_wr;
 logic   [DATA_WIDTH-1:0]    access_wr_data;
@@ -109,7 +109,7 @@ RISC_V_Core #(
     .plic_sel       (plic_sel        ),
     .bus_rdata      (bus_rdata       ),
     .bus_tran_done  (bus_tran_done   ),
-    .bus_sel        (bus_sel         ),
+    .bus_transfer   (bus_transfer    ),
     .access_addr    (access_addr     ),
     .access_wr      (access_wr       ),
     .access_wr_data (access_wr_data  ),
@@ -142,7 +142,7 @@ Bus_Access #(
 u_Bus_Access(
     .i_sys_clk     	(sys_clk        ),
     .i_rst_n       	(sys_rst_n      ),
-    .i_en          	(bus_sel        ),
+    .i_transfer     (bus_transfer   ),
     .i_write       	(access_wr      ),
     .i_addr        	(access_addr    ),
     .i_wdata       	(access_wr_data ),

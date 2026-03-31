@@ -10,7 +10,8 @@ module RISC_V_Core #(
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
     parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES,
-    parameter ALIGN_WIDTH = `ALIGN_WIDTH
+    parameter ALIGN_WIDTH = `ALIGN_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
 )(
     input   logic                       clk,
     input   logic                       rst_n,
@@ -33,7 +34,7 @@ module RISC_V_Core #(
     input   logic   [DATA_WIDTH-1:0]    bus_rdata,
     input   logic                       bus_tran_done,
     // to bus
-    output  logic                       bus_sel,
+    output  logic                       bus_transfer,
     // to clint/plic/bus
     output  logic   [ADDR_WIDTH-1:0]    access_addr,
     output  logic                       access_wr,
@@ -619,5 +620,7 @@ MEM_WB #(
 // assign access_wr = access_wr;
 assign access_wr_data = wr_mem_data;
 assign access_wr_mask = wr_mem_mask;
+assign bus_transfer = access_en_ex && (mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR)
+&& ~(ex_mem_flush ||ex_mem_stall);
 
 endmodule

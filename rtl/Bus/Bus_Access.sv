@@ -10,7 +10,7 @@ module Bus_Access #(
     input   logic                       i_rst_n,// 复位信号，低电平有效
     // connect User
     // 外部输入的User信号和i_sys_clk同源，不必做异步处理
-    input   logic                       i_en,
+    input   logic                       i_transfer,
     input   logic                       i_write,
     input   logic   [ADDR_WIDTH-1:0]    i_addr,
     input   logic   [DATA_WIDTH-1:0]    i_wdata,

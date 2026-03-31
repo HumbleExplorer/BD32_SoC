@@ -9,8 +9,7 @@ module APB_Master #(
     input   logic                       i_sys_clk,// 时钟信号
     input   logic                       i_rst_n,// 复位信号，低电平有效
     // connect User
-    // 外部输入的User信号和i_sys_clk同源，不必做异步处理
-    input   logic                       i_en,
+    input   logic                       i_transfer,
     input   logic                       i_write,
     input   logic   [ADDR_WIDTH-1:0]    i_addr,
     input   logic   [DATA_WIDTH-1:0]    i_wdata,
@@ -30,15 +29,14 @@ module APB_Master #(
 );
 
 /********************localparam*********************/
-
-localparam  IDLE            =  5'b00001;
-localparam  STA_WR          =  5'b00010;
-localparam  STA_RD          =  5'b00100;
-localparam  STA_ENABLE_WAIT =  5'b01000;
-localparam  STA_DONE        =  5'b10000;
+typedef enum logic [2:0] { 
+    IDLE    = 3'b001,
+    SETUP   = 3'b010,
+    ACCESS  = 3'b100
+} apb_state_e;
 /********************state*********************/
-logic    [4:0]   current_state  ;
-logic    [4:0]   next_state  ;
+apb_state_e current_state;
+apb_state_e next_state;
 
 /********************reg*********************/
 //connect to APB Slave
@@ -65,34 +63,21 @@ always_comb begin
     next_state = IDLE;
     if(i_rst_n) begin
         case(current_state)
-            IDLE:
-                begin
-                    if(i_write & i_en)
-                        next_state = STA_WR ;
-                    else if(!i_write & i_en)
-                        next_state = STA_RD ;
-                    else
-                        next_state = IDLE;
-                end
-            STA_WR:
-                begin
-                    next_state = STA_ENABLE_WAIT;
-                end
-            STA_RD:
-                begin
-                    next_state = STA_ENABLE_WAIT;
-                end
-            STA_ENABLE_WAIT:
-                begin
-                    if(i_PREADY)
-                        next_state = IDLE;
-                    else
-                        next_state = STA_ENABLE_WAIT;
-                end
-            // STA_DONE:
-            //     begin
-            //         next_state = IDLE;
-            //     end
+            IDLE: begin
+                if(i_transfer)
+                    next_state = SETUP;
+                else
+                    next_state = IDLE;
+            end
+            SETUP: begin
+                next_state = ACCESS;
+            end
+            ACCESS: begin
+                if(i_PREADY)
+                    next_state = i_transfer ? SETUP : IDLE;
+                else
+                    next_state = ACCESS;
+            end
             default:
                 begin
                     next_state = IDLE;
@@ -112,24 +97,16 @@ always_comb begin
     PRDATA    = 'h0;
     if (i_rst_n) begin
         case(current_state)
-            STA_WR:
+            SETUP:
                 begin
                     PADDR     = i_addr   ;
                     PWDATA    = i_wdata  ;
                     PSTRB     = i_wmask  ;
-                    PWRITE    = 1'b1     ;
+                    PWRITE    = i_write  ;
                     PSEL      = 1'b1     ;
                     PENABLE   = 1'b0     ;
                 end
-            STA_RD:
-                begin
-                    PADDR     = i_addr   ;
-                    //PWDATA  = i_wdata  ;
-                    PWRITE    = 1'b0     ;
-                    PSEL      = 1'b1     ;
-                    PENABLE   = 1'b0     ;
-                end
-            STA_ENABLE_WAIT:
+            ACCESS:
                 begin
                     PADDR     = i_addr;     // 保持地址稳定
                     PWDATA    = i_write ? i_wdata : 'h0;    // 写事务保持数据
@@ -140,13 +117,6 @@ always_comb begin
                     PRDATA    = i_PRDATA;   // 提前锁存读数据（不影响）
                     tran_done = i_PREADY;
                 end
-            // STA_DONE:
-            //     begin
-            //         tran_done = 1'b1     ;
-            //         PRDATA    = i_PRDATA ;
-            //         PSEL      = 1'b0;
-            //         PENABLE   = 1'b0;
-            //     end
             default:;
         endcase
     end
