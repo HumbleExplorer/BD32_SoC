@@ -67,25 +67,20 @@ module apb_timer #(
     //
 
     // 寄存器地址
-    localparam TIMx_PSC    = 4'h0;  // 0x00
-    localparam TIMx_CNT    = 4'h1;  // 0x04
-    localparam TIMx_ARR    = 4'h2;  // 0x08
-    localparam TIMx_CR     = 4'h3;  // 0x0c
-    localparam TIMx_IER    = 4'h4;  // 0x10
-    localparam TIMx_SR     = 4'h5;  // 0x14
-    localparam TIMx_CCMR   = 4'h6;  // 0x18
-    localparam TIMx_CCER   = 4'h7;  // 0x1c
-    localparam TIMx_CCR1   = 4'h8;  // 0x20
-    localparam TIMx_CCR2   = 4'h9;  // 0x24
-    localparam TIMx_CCR3   = 4'hA;  // 0x28
-    localparam TIMx_CCR4   = 4'hB;  // 0x2c
-
-    localparam CHANNEL_WIDTH = 1;  // 每个通道用1位表示使能/模式
-
-    // 触发边沿类型
-    localparam TRIG_RISING  = 2'b00;
-    localparam TRIG_FALLING = 2'b01;
-    localparam TRIG_BOTH    = 2'b10;
+    typedef enum logic [3:0] { 
+        TIMx_PSC    = 4'h0,  // 0x00
+        TIMx_CNT    = 4'h1,  // 0x04
+        TIMx_ARR    = 4'h2,  // 0x08
+        TIMx_CR     = 4'h3,  // 0x0c
+        TIMx_IER    = 4'h4,  // 0x10
+        TIMx_SR     = 4'h5,  // 0x14
+        TIMx_CCMR   = 4'h6,  // 0x18
+        TIMx_CCER   = 4'h7,  // 0x1c
+        TIMx_CCR1   = 4'h8,  // 0x20
+        TIMx_CCR2   = 4'h9,  // 0x24
+        TIMx_CCR3   = 4'hA,  // 0x28
+        TIMx_CCR4   = 4'hB   // 0x2c
+    } TIMx_reg_sel_e;
 
     //////////////////////////////////////////////////////////////////
     //
@@ -110,18 +105,18 @@ module apb_timer #(
 
     // 控制寄存器位域
     // TIMx_CR
-    logic                       timerx_en;     // 定时器使能
-    logic                       timerx_clr;    // 定时器复位
-    logic                       timerx_dir_sel; // 计数方向 (0=递增, 1=递减)
+    logic                       timer_en;     // 定时器使能
+    logic                       timer_clr;    // 定时器复位
+    logic                       timer_dir_sel; // 计数方向 (0=递增, 1=递减)
 
     // TIMx_PSC
-    logic [TIMER_WIDTH-1:0]     timerx_prescaler; // 预分频系数
+    logic [TIMER_WIDTH-1:0]     timer_prescaler; // 预分频系数
 
     // TIMx_ARR
-    logic [TIMER_WIDTH-1:0]     timerx_arr;    // 自动重载值
+    logic [TIMER_WIDTH-1:0]     timer_arr;    // 自动重载值
 
     // TIMx_CNT
-    logic [TIMER_WIDTH-1:0]     timerx_cnt;    // 当前计数值
+    logic [TIMER_WIDTH-1:0]     timer_cnt;    // 当前计数值
 
     // TIMx_IER
     logic                       timer_int_en;         // 定时器中断使能
@@ -129,13 +124,12 @@ module apb_timer #(
     logic [CHANNEL_NUM-1:0]     timer_ic_oc_int_en;   // 各通道中断使能
 
     // TIMx_SR
-    logic                       timer_int_pend;       // 定时器中断挂起
     logic                       timer_int_of_pend;    // 溢出中断挂起
     logic [CHANNEL_NUM-1:0]     timer_int_trigger_pend; // 各通道触发中断挂起
 
     // TIMx_CCMR
     logic [CHANNEL_NUM-1:0]     timer_ic_oc_mode;      // 各通道模式 (0=捕获, 1=比较)
-    logic [CHANNEL_NUM*11-1:0]  timer_filter_mode;     // 各通道滤波模式 (每个channel 11位)
+    logic [CHANNEL_NUM*4-1:0]   timer_filter_mode;     // 各通道滤波模式 (每个channel 4位)
 
     // TIMx_CCER
     logic [CHANNEL_NUM-1:0]     timer_ic_oc_en;        // 各通道使能
@@ -143,7 +137,8 @@ module apb_timer #(
     logic [CHANNEL_NUM*2-1:0]   timer_trigger_mode;    // 各通道触发边沿
 
     // TIMx_CCR1-4
-    logic [TIMER_WIDTH-1:0]     timer_ic_oc_num [CHANNEL_NUM]; // 各通道捕获/比较值
+    logic [TIMER_WIDTH-1:0]     timer_ccr_cmp [CHANNEL_NUM];   // APB 写比较值
+    logic [TIMER_WIDTH-1:0]     timer_ccr_cap [CHANNEL_NUM];   // 硬件捕获值
 
     // 内部信号
     logic                       timer_expired;     // 定时器溢出信号
@@ -159,31 +154,19 @@ module apb_timer #(
     //
 
     // Is this a valid read access?
-    function automatic is_read();
+    function automatic bit is_read();
         return PSEL & PENABLE & ~PWRITE;
     endfunction : is_read
 
     // Is this a valid write access?
-    function automatic is_write();
+    function automatic bit is_write();
         return PSEL & PENABLE & PWRITE;
     endfunction : is_write
 
     // Is this a valid write to address 0x...?
-    function automatic is_write_to_addr(input [3:0] addr);
-        return is_write() & (reg_sel == addr);
+    function automatic bit is_write_to_addr(input [3:0] addr);//不加bit直接assign会变成不定态
+        return is_write() & (TIMx_reg_sel_e'(reg_sel) == addr);
     endfunction : is_write_to_addr
-
-    // What data is written?
-    function automatic [DATA_WIDTH-1:0] get_write_value (input [DATA_WIDTH-1:0] original_val);
-        for (int n=0; n < ALIGN_BYTES; n++)
-            get_write_value[n*8 +: 8] = PSTRB[n] ? PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
-    endfunction : get_write_value
-
-    // Clear bits on write (写1清零)
-    function automatic [DATA_WIDTH-1:0] get_clearonwrite_value (input [DATA_WIDTH-1:0] original_val);
-        for (int n=0; n < ALIGN_BYTES; n++)
-            get_clearonwrite_value[n*8 +: 8] = PSTRB[n] ? original_val[n*8 +: 8] & ~PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
-    endfunction : get_clearonwrite_value
 
     //////////////////////////////////////////////////////////////////
     //
@@ -195,140 +178,116 @@ module apb_timer #(
 
     //////////////////////////////////////////////////////////////////
     //
-    // APB Writes
+    // APB Writes (PSTRB assumed always all 1's, simplified)
     //
 
     // TIMx_PSC - 预分频系数寄存器
     always_ff @(posedge PCLK or negedge PRESETn) begin
-        if (!PRESETn) begin
-            timerx_prescaler <= #1 {TIMER_WIDTH{1'b0}};
-        end else if (is_write_to_addr(TIMx_PSC)) begin
-            timerx_prescaler <= #1 get_write_value(timerx_prescaler);
-        end
-    end
-
-    // TIMx_CNT - 计数器寄存器 (软件可以写入)
-    always_ff @(posedge PCLK or negedge PRESETn) begin
-        if (!PRESETn) begin
-            timerx_cnt <= #1 {TIMER_WIDTH{1'b0}};
-        end else if (is_write_to_addr(TIMx_CNT)) begin
-            timerx_cnt <= #1 get_write_value(timerx_cnt);
-        end
+        if (!PRESETn)
+            timer_prescaler <= {TIMER_WIDTH{1'b0}};
+        else if (is_write_to_addr(TIMx_PSC))
+            timer_prescaler <= PWDATA[TIMER_WIDTH-1:0];
     end
 
     // TIMx_ARR - 自动重载寄存器
     always_ff @(posedge PCLK or negedge PRESETn) begin
-        if (!PRESETn) begin
-            timerx_arr <= #1 {TIMER_WIDTH{1'b0}};
-        end else if (is_write_to_addr(TIMx_ARR)) begin
-            timerx_arr <= #1 get_write_value(timerx_arr);
-        end
+        if (!PRESETn)
+            timer_arr <= {TIMER_WIDTH{1'b0}};
+        else if (is_write_to_addr(TIMx_ARR))
+            timer_arr <= PWDATA[TIMER_WIDTH-1:0];
     end
 
     // TIMx_CR - 控制寄存器
     always_ff @(posedge PCLK or negedge PRESETn) begin
         if (!PRESETn) begin
-            timerx_en <= #1 1'b0;
-            timerx_clr <= #1 1'b0;
-            timerx_dir_sel <= #1 1'b0;
+            timer_en      <= 1'b0;
+            timer_clr     <= 1'b0;
+            timer_dir_sel <= 1'b0;
         end else if (is_write_to_addr(TIMx_CR)) begin
-            timerx_en <= #1 get_write_value({31'b0, timerx_en})[0];
-            timerx_clr <= #1 get_write_value({31'b0, timerx_clr})[0];
-            timerx_dir_sel <= #1 get_write_value({31'b0, timerx_dir_sel})[0];
-        end else if (timerx_clr) begin
-            // 复位信号自动清除
-            timerx_clr <= #1 1'b0;
+            timer_en      <= PWDATA[0];
+            timer_clr     <= PWDATA[1];
+            timer_dir_sel <= PWDATA[2];
+        end else if (timer_clr) begin
+            timer_clr <= 1'b0;
         end
     end
 
     // TIMx_IER - 中断使能寄存器
     always_ff @(posedge PCLK or negedge PRESETn) begin
         if (!PRESETn) begin
-            timer_int_en <= #1 1'b0;
-            timer_of_int_en <= #1 1'b0;
-            timer_ic_oc_int_en <= #1 {CHANNEL_NUM{1'b0}};
+            timer_int_en       <= 1'b0;
+            timer_of_int_en    <= 1'b0;
+            timer_ic_oc_int_en <= {CHANNEL_NUM{1'b0}};
         end else if (is_write_to_addr(TIMx_IER)) begin
-            timer_int_en <= #1 get_write_value({31'b0, timer_int_en})[0];
-            timer_of_int_en <= #1 get_write_value({31'b0, timer_of_int_en})[0];
-            for (int i = 0; i < CHANNEL_NUM; i++) begin
-                timer_ic_oc_int_en[i] <= #1 get_write_value({31'b0, timer_ic_oc_int_en[i]})[0];
-            end
+            timer_int_en    <= PWDATA[0];
+            timer_of_int_en <= PWDATA[1];
+            for (int i = 0; i < CHANNEL_NUM; i++)
+                timer_ic_oc_int_en[i] <= PWDATA[2+i];
         end
     end
 
     // TIMx_SR - 状态寄存器 (写1清零)
     always_ff @(posedge PCLK or negedge PRESETn) begin
         if (!PRESETn) begin
-            timer_int_pend <= #1 1'b0;
-            timer_int_of_pend <= #1 1'b0;
-            timer_int_trigger_pend <= #1 {CHANNEL_NUM{1'b0}};
+            timer_int_of_pend      <= 1'b0;
+            timer_int_trigger_pend <= {CHANNEL_NUM{1'b0}};
         end else if (is_write_to_addr(TIMx_SR)) begin
-            timer_int_pend <= #1 get_clearonwrite_value({31'b0, timer_int_pend})[0];
-            timer_int_of_pend <= #1 get_clearonwrite_value({31'b0, timer_int_of_pend})[0];
-            for (int i = 0; i < CHANNEL_NUM; i++) begin
-                timer_int_trigger_pend[i] <= #1 get_clearonwrite_value({31'b0, timer_int_trigger_pend[i]})[0];
-            end
+            // 写1清零
+            if (PWDATA[0])
+                timer_int_of_pend <= 1'b0;
+            for (int i = 0; i < CHANNEL_NUM; i++)
+                if (PWDATA[1+i])
+                    timer_int_trigger_pend[i] <= 1'b0;
         end else begin
             // 中断挂起由硬件置位
-            if (timer_expired_req && timer_of_int_en) begin
-                timer_int_of_pend <= #1 1'b1;
-            end
-            for (int i = 0; i < CHANNEL_NUM; i++) begin
-                if (channel_ic_oc_irq[i] && timer_ic_oc_int_en[i]) begin
-                    timer_int_trigger_pend[i] <= #1 1'b1;
-                end
-            end
+            if (timer_expired_req && timer_of_int_en)
+                timer_int_of_pend <= 1'b1;
+            for (int i = 0; i < CHANNEL_NUM; i++)
+                if (channel_ic_oc_irq[i] && timer_ic_oc_int_en[i])
+                    timer_int_trigger_pend[i] <= 1'b1;
         end
     end
 
     // TIMx_CCMR - 输入捕获/输出比较模式寄存器
     always_ff @(posedge PCLK or negedge PRESETn) begin
         if (!PRESETn) begin
-            timer_ic_oc_mode <= #1 {CHANNEL_NUM{1'b0}};
-            timer_filter_mode <= #1 {CHANNEL_NUM*11{1'b0}};
+            timer_ic_oc_mode   <= {CHANNEL_NUM{1'b0}};
+            timer_filter_mode  <= {CHANNEL_NUM*4{1'b0}};
         end else if (is_write_to_addr(TIMx_CCMR)) begin
-            for (int i = 0; i < CHANNEL_NUM; i++) begin
-                timer_ic_oc_mode[i] <= #1 get_write_value({31'b0, timer_ic_oc_mode[i]})[0];
-            end
-            for (int i = 0; i < CHANNEL_NUM * 11; i++) begin
-                timer_filter_mode[i] <= #1 get_write_value({{DATA_WIDTH{1'b0}}, timer_filter_mode})[i];
-            end
+            // 假设PWDATA低位为 mode，接着为 filter_mode
+            for (int i = 0; i < CHANNEL_NUM; i++)
+                timer_ic_oc_mode[i] <= PWDATA[i];
+            for (int i = 0; i < CHANNEL_NUM*4; i++)
+                timer_filter_mode[i] <= PWDATA[CHANNEL_NUM + i];
         end
     end
 
     // TIMx_CCER - 输入捕获/输出比较使能寄存器
     always_ff @(posedge PCLK or negedge PRESETn) begin
         if (!PRESETn) begin
-            timer_ic_oc_en <= #1 {CHANNEL_NUM{1'b0}};
-            timer_ic_oc_polarity <= #1 {CHANNEL_NUM{1'b0}};
-            timer_trigger_mode <= #1 {CHANNEL_NUM*2{1'b0}};
+            timer_ic_oc_en      <= {CHANNEL_NUM{1'b0}};
+            timer_ic_oc_polarity<= {CHANNEL_NUM{1'b0}};
+            timer_trigger_mode  <= {CHANNEL_NUM*2{1'b0}};
         end else if (is_write_to_addr(TIMx_CCER)) begin
-            for (int i = 0; i < CHANNEL_NUM; i++) begin
-                timer_ic_oc_en[i] <= #1 get_write_value({31'b0, timer_ic_oc_en[i]})[0];
-            end
-            for (int i = 0; i < CHANNEL_NUM; i++) begin
-                timer_ic_oc_polarity[i] <= #1 get_write_value({31'b0, timer_ic_oc_polarity[i]})[0];
-            end
-            for (int i = 0; i < CHANNEL_NUM * 2; i++) begin
-                timer_trigger_mode[i] <= #1 get_write_value({{DATA_WIDTH{1'b0}}, timer_trigger_mode})[i];
-            end
+            for (int i = 0; i < CHANNEL_NUM; i++)
+                timer_ic_oc_en[i] <= PWDATA[i];
+            for (int i = 0; i < CHANNEL_NUM; i++)
+                timer_ic_oc_polarity[i] <= PWDATA[CHANNEL_NUM + i];
+            for (int i = 0; i < CHANNEL_NUM*2; i++)
+                timer_trigger_mode[i] <= PWDATA[2*CHANNEL_NUM + i];
         end
     end
 
-    // TIMx_CCR1-4 - 各通道捕获/比较值寄存器
+    // TIMx_CCR1-4 - 各通道比较值寄存器 (APB 只写比较值)
     genvar ch;
     generate
         for (ch = 0; ch < CHANNEL_NUM; ch++) begin : ccr_write_gen
-            localparam CCR_ADDR = (ch == 0) ? TIMx_CCR1 :
-                                  (ch == 1) ? TIMx_CCR2 :
-                                  (ch == 2) ? TIMx_CCR3 : TIMx_CCR4;
-
+            localparam [3:0] CCR_ADDR = 4'(TIMx_CCR1) + ch[3:0];
             always_ff @(posedge PCLK or negedge PRESETn) begin
-                if (!PRESETn) begin
-                    timer_ic_oc_num[ch] <= #1 {TIMER_WIDTH{1'b0}};
-                end else if (is_write_to_addr(CCR_ADDR)) begin
-                    timer_ic_oc_num[ch] <= #1 get_write_value(timer_ic_oc_num[ch]);
-                end
+                if (!PRESETn)
+                    timer_ccr_cmp[ch] <= {TIMER_WIDTH{1'b0}};
+                else if (is_write_to_addr(CCR_ADDR))
+                    timer_ccr_cmp[ch] <= PWDATA[TIMER_WIDTH-1:0];
             end
         end
     endgenerate
@@ -339,24 +298,19 @@ module apb_timer #(
     //
 
     always_comb begin
-        case (reg_sel)
-            TIMx_PSC:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timerx_prescaler};
-            TIMx_CNT:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timerx_cnt};
-            TIMx_ARR:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timerx_arr};
-            TIMx_CR:    PRDATA = {{(DATA_WIDTH-3){1'b0}}, timerx_dir_sel, timerx_clr, timerx_en};
-            TIMx_IER:   PRDATA = {{(DATA_WIDTH-2-CHANNEL_NUM){1'b0}}, timer_ic_oc_int_en, 1'b0, timer_of_int_en, timer_int_en};
-            TIMx_SR:    PRDATA = {{(DATA_WIDTH-2-CHANNEL_NUM){1'b0}}, timer_int_trigger_pend, 1'b0, timer_int_of_pend, timer_int_pend};
-            TIMx_CCMR:  begin
-                            PRDATA = {(DATA_WIDTH-1-CHANNEL_NUM*11){1'b0}};
-                            for (int i = 0; i < CHANNEL_NUM; i++) begin
-                                PRDATA[CHANNEL_NUM +: 11] = {timer_filter_mode[i*11+:11], timer_ic_oc_mode[i]};
-                            end
-                        end
-            TIMx_CCER:  PRDATA = {{(DATA_WIDTH-CHANNEL_NUM*4){1'b0}}, timer_trigger_mode, timer_ic_oc_polarity, timer_ic_oc_en};
-            TIMx_CCR1:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_num[0]};
-            TIMx_CCR2:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_num[1]};
-            TIMx_CCR3:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_num[2]};
-            TIMx_CCR4:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_num[3]};
+        case (TIMx_reg_sel_e'(reg_sel))
+            TIMx_PSC:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_prescaler};
+            TIMx_CNT:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_cnt};
+            TIMx_ARR:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_arr};
+            TIMx_CR:    PRDATA = {{(DATA_WIDTH-3){1'b0}}, timer_dir_sel, timer_clr, timer_en};
+            TIMx_IER:   PRDATA = {{(DATA_WIDTH-2-CHANNEL_NUM){1'b0}}, timer_ic_oc_int_en, timer_of_int_en, timer_int_en};
+            TIMx_SR:    PRDATA = {{(DATA_WIDTH-1-CHANNEL_NUM){1'b0}}, timer_int_trigger_pend, timer_int_of_pend};
+            TIMx_CCMR:  PRDATA = {{(DATA_WIDTH-CHANNEL_NUM-4*CHANNEL_NUM){1'b0}}, timer_filter_mode, timer_ic_oc_mode};
+            TIMx_CCER:  PRDATA = {{(DATA_WIDTH-CHANNEL_NUM-CHANNEL_NUM-2*CHANNEL_NUM){1'b0}}, timer_trigger_mode, timer_ic_oc_polarity, timer_ic_oc_en};
+            TIMx_CCR1:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[0] ? timer_ccr_cmp[0] : timer_ccr_cap[0]};
+            TIMx_CCR2:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[1] ? timer_ccr_cmp[1] : timer_ccr_cap[1]};
+            TIMx_CCR3:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[2] ? timer_ccr_cmp[2] : timer_ccr_cap[2]};
+            TIMx_CCR4:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[3] ? timer_ccr_cmp[3] : timer_ccr_cap[3]};
             default:    PRDATA = {DATA_WIDTH{1'b0}};
         endcase
     end
@@ -377,15 +331,15 @@ module apb_timer #(
         .clk            (PCLK),
         .rst_n          (PRESETn),
 
-        .prescale       (timerx_prescaler),
-        .autoload       (timerx_arr),
-        .timer_en       (timerx_en),
-        .timer_clr      (timerx_clr),
-        .timer_dir      (timerx_dir_sel),
+        .prescale       (timer_prescaler),
+        .autoload       (timer_arr),
+        .timer_en       (timer_en),
+        .timer_clr      (timer_clr),
+        .timer_dir      (timer_dir_sel),
 
         .cnt_wr_en      (cnt_wr_en),
         .cnt_wr_data    (cnt_wr_data),
-        .cnt_rd_data    (timerx_cnt),
+        .cnt_rd_data    (timer_cnt),
 
         .timer_expired  (timer_expired),
         .timer_expired_req (timer_expired_req)
@@ -393,13 +347,12 @@ module apb_timer #(
 
     // 中断输出逻辑
     always_ff @(posedge PCLK or negedge PRESETn) begin
-        if (!PRESETn) begin
-            irq_o <= #1 1'b0;
-        end else begin
-            irq_o <= #1 (timer_int_pend & timer_int_en) |
-                            (timer_int_of_pend & timer_of_int_en) |
-                            (|timer_int_trigger_pend & |timer_ic_oc_int_en);
-        end
+        if (!PRESETn)
+            irq_o <= 1'b0;
+        else
+            irq_o <= timer_int_en &
+                        ((timer_int_of_pend & timer_of_int_en) |
+                         (|(timer_int_trigger_pend & timer_ic_oc_int_en)));
     end
 
     //////////////////////////////////////////////////////////////////
@@ -417,22 +370,23 @@ module apb_timer #(
                 .rst_n          (PRESETn),
 
                 .ext_in         (channel_i[ch_inst]),
-                .ext_out         (channel_o[ch_inst]),
-                .ext_dir         (channel_oe[ch_inst]),
+                .ext_out        (channel_o[ch_inst]),
+                .ext_dir        (channel_oe[ch_inst]),
 
-                .timer_cnt       (timerx_cnt),
-                .timer_en        (timerx_en),
-                .timer_expired   (timer_expired),
+                .timer_cnt      (timer_cnt),
+                .timer_dir_sel  (timer_dir_sel),
+                .timer_en       (timer_en),
+                .timer_expired  (timer_expired),
 
-                .ic_oc_mode      (timer_ic_oc_mode[ch_inst]),
-                .filter_mode     (timer_filter_mode[ch_inst*11 +: 4]),
-                .ic_oc_en        (timer_ic_oc_en[ch_inst]),
-                .polarity        (timer_ic_oc_polarity[ch_inst]),
-                .trigger_mode    (timer_trigger_mode[ch_inst*2 +: 2]),
-                .cmp_value       (timer_ic_oc_num[ch_inst]),
-                .cap_value       (timer_ic_oc_num[ch_inst]),
+                .ic_oc_mode     (timer_ic_oc_mode[ch_inst]),
+                .filter_mode    (timer_filter_mode[ch_inst*4 +: 4]),
+                .ic_oc_en       (timer_ic_oc_en[ch_inst]),
+                .polarity       (timer_ic_oc_polarity[ch_inst]),
+                .trigger_mode   (timer_trigger_mode[ch_inst*2 +: 2]),
+                .cmp_value      (timer_ccr_cmp[ch_inst]),
+                .cap_value      (timer_ccr_cap[ch_inst]),
 
-                .ic_oc_irq       (channel_ic_oc_irq[ch_inst])
+                .ic_oc_irq      (channel_ic_oc_irq[ch_inst])
             );
         end
     endgenerate

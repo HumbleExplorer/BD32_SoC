@@ -14,7 +14,7 @@
  *   - timer_clr: 定时器复位
  *   - timer_dir: 计数方向 (0=递增, 1=递减)
  *
- * 作者：
+ * 作者：基于参考代码改编
  * 日期：2026/03/31
  */
 `include "../../SoC_Config.sv"
@@ -66,7 +66,7 @@ module basic_timer #(
     // 信号赋值
     //
 
-    assign prescale_match = (prescale_cnt == prescale_shadow);
+    assign prescale_match = (prescale_cnt == prescale_shadow) && (prescale_shadow != 0);//严禁将预分频系数设为0
     assign timer_cnt_match = timer_dir ? (timer_cnt == '0) : (timer_cnt == autoload);
 
     assign cnt_rd_data = timer_cnt;
@@ -108,7 +108,7 @@ module basic_timer #(
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             timer_cnt <= #1 '0;
-        end else if (timer_clr) begin
+        end else if (timer_clr || !timer_en) begin
             timer_cnt <= #1 '0;
         end else if (cnt_wr_en) begin
             // 软件写计数值

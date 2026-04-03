@@ -180,6 +180,7 @@ logic   [2:0]               rd_mem_func3;
 logic   [DATA_WIDTH-1:0]    wr_mem_data;
 logic   [ALIGN_BYTES-1:0]   wr_mem_mask;
 logic                       dtcm_sel;
+logic                       bus_sel;
 
 
 // WB

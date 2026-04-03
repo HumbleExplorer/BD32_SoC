@@ -77,18 +77,20 @@ task automatic write (
     input [PDATA_WIDTH/8-1:0] strb,
     input [PDATA_WIDTH  -1:0] data
 );
+// Setup
     PSEL    = 1'b1;
+    PENABLE = 1'b0;
     PADDR   = address;
     PSTRB   = strb;
     PWDATA  = data;
     PWRITE  = 1'b1;
     @(posedge PCLK);
     #1;
-
+// Enable
     PENABLE = 1'b1;
     @(posedge PCLK);
 
-    while (!PREADY) @(posedge PCLK);
+    while (!PREADY) @(posedge PCLK);// 没到ready就一直等
     #1;
     PSEL    = 1'b0;
     PADDR   = {PADDR_WIDTH{1'bx}};

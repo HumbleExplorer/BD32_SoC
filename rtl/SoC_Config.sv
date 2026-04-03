@@ -26,6 +26,7 @@
 `define GPIO_NUM 2
 
 // `define GPIO_SIM
+`define TIMER_SIM
 `ifdef MODELSIM
     `define PATH "./test_data/"//vsim路径
     `define ITCM_DEPTH 16*1024//16K

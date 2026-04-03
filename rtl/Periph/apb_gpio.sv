@@ -119,31 +119,31 @@ logic   [DATA_WIDTH-1:0]    input_regs  [INPUT_STAGES];
 //
 
 //Is this a valid read access?
-function automatic is_read();
+function automatic bit is_read();
     return PSEL & PENABLE & ~PWRITE;
 endfunction : is_read
 
 //Is this a valid write access?
-function automatic is_write();
+function automatic bit is_write();
     return PSEL & PENABLE & PWRITE;
 endfunction : is_write
 
 //Is this a valid write to address 0x...?
 //Take 'address' as an argument
-function automatic is_write_to_addr(input [3:0] reg_addr);
+function automatic bit is_write_to_addr(input [3:0] reg_addr);
     return is_write() & (gpio_reg_sel_e'(reg_sel) == reg_addr);
 endfunction : is_write_to_addr
 
 //What data is written?
 //- Handles PSTRB, takes previous register/data value as an argument
-function automatic [DATA_WIDTH-1:0] get_write_value (input [DATA_WIDTH-1:0] original_val);
+function automatic logic [DATA_WIDTH-1:0] get_write_value (input [DATA_WIDTH-1:0] original_val);
     for (int n=0; n < ALIGN_BYTES; n++)
     get_write_value[n*8 +: 8] = PSTRB[n] ? PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
 endfunction : get_write_value
 
 //Clear bits on write
 //- Handles PSTRB
-function automatic [DATA_WIDTH-1:0] get_clearonwrite_value (input [DATA_WIDTH-1:0] original_val);
+function automatic logic [DATA_WIDTH-1:0] get_clearonwrite_value (input [DATA_WIDTH-1:0] original_val);
     for (int n=0; n < ALIGN_BYTES; n++)
     get_clearonwrite_value[n*8 +: 8] = PSTRB[n] ? original_val[n*8 +: 8] & ~PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
 endfunction : get_clearonwrite_value

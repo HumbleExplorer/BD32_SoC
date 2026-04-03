@@ -12,7 +12,8 @@
  *   - ic_oc_en: 输入捕获/输出比较使能
  *   - polarity: 输出极性
  *   - trigger_mode: 捕获触发边沿类型 (00=上升沿, 01=下降沿, 10=双沿)
- *   - ic_oc_value: 捕获/比较值
+ *   - cmp_value: 比较值 (来自APB)
+ *   - cap_value: 捕获值 (输出到顶层)
  *
  * 作者：
  * 日期：2026/03/31
@@ -30,7 +31,7 @@ module timer_ic_oc #(
     // 外部信号接口
     input  logic                       ext_in,      // 外部输入信号 (捕获)
     output logic                       ext_out,     // 外部输出信号 (比较)
-    output logic                       ext_dir,     // 三态门方向 (0=输出, 1=输入)???
+    output logic                       ext_dir,     // 三态门方向 (0=输出, 1=输入)
 
     // 定时器接口
     input  logic [TIMER_WIDTH-1:0]     timer_cnt,   // 当前计数值
@@ -44,11 +45,11 @@ module timer_ic_oc #(
     input  logic                       ic_oc_en,    // 使能
     input  logic                       polarity,    // 输出极性
     input  logic [1:0]                 trigger_mode, // 触发边沿类型
-    input  logic [TIMER_WIDTH-1:0]     cmp_value,   // 比较值 (写)
-    output logic [TIMER_WIDTH-1:0]     cap_value,   // 捕获值 (读)
+    input  logic [TIMER_WIDTH-1:0]     cmp_value,   // 比较值 (来自APB)
+    output logic [TIMER_WIDTH-1:0]     cap_value,   // 捕获值 (输出到顶层)
 
     // 中断输出
-    output logic                       ic_irq    // 输入捕获中断
+    output logic                       ic_oc_irq    // 输入捕获中断
 );
 
     //////////////////////////////////////////////////////////////////
@@ -97,8 +98,8 @@ module timer_ic_oc #(
     logic                     cmp_output;       // 比较输出
     logic                     cmp_output_d;     // 延迟的比较输出
 
-    // 捕获/比较寄存器
-    logic [TIMER_WIDTH-1:0]   ic_oc_reg;        // 捕获/比较寄存器
+    // 内部比较寄存器
+    logic [TIMER_WIDTH-1:0]   cmp_reg;
 
     //////////////////////////////////////////////////////////////////
     //
@@ -118,13 +119,13 @@ module timer_ic_oc #(
     assign capture_trigger = (ic_state == IC_CAPTURE);
 
     assign cmp_match = timer_en & ic_oc_mode & ic_oc_en &
-          (timer_dir_sel ? (timer_cnt <= ic_oc_reg) : (timer_cnt >= ic_oc_reg)); // 输出比较匹配:timer_dir_sel为0递增1递减
+          (timer_dir_sel ? (timer_cnt <= cmp_reg) : (timer_cnt >= cmp_reg)); // 输出比较匹配
     assign cmp_output = polarity ? cmp_match : ~cmp_match;// 输出极性控制
 
-    assign cap_value = ic_oc_reg;
-    assign ic_irq = capture_trigger_d;
-    assign ext_out = cmp_output_d;
-    assign ext_dir = ~(ic_oc_mode & ic_oc_en);  // 比较模式且使能时为输出
+    assign cap_value   = captured_value;
+    assign ic_oc_irq   = capture_trigger_d;
+    assign ext_out     = cmp_output_d;
+    assign ext_dir     = ~(ic_oc_mode & ic_oc_en);  // 比较模式且使能时为输出
 
     //////////////////////////////////////////////////////////////////
     //
@@ -133,9 +134,9 @@ module timer_ic_oc #(
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            ext_in_dly <= #1 '0;
+            ext_in_dly <= '0;
         end else begin
-            ext_in_dly <= #1 {ext_in_dly[2:0], ext_in};
+            ext_in_dly <= {ext_in_dly[2:0], ext_in};
         end
     end
 
@@ -147,32 +148,32 @@ module timer_ic_oc #(
     // 状态机
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            ic_state <= #1 IC_IDLE;
+            ic_state <= IC_IDLE;
         end else begin
             case (ic_state)
                 IC_IDLE: begin
                     if (valid_edge) begin
-                        ic_state <= #1 IC_FILTER;
+                        ic_state <= IC_FILTER;
                     end
                 end
                 IC_FILTER: begin
                     if (filter_done) begin
-                        ic_state <= #1 IC_CONFIRM;
+                        ic_state <= IC_CONFIRM;
                     end
                 end
                 IC_CONFIRM: begin
                     // 确认边沿是否稳定
                     if (ext_in_dly[2] == captured_edge) begin
-                        ic_state <= #1 IC_CAPTURE;
+                        ic_state <= IC_CAPTURE;
                     end else begin
-                        ic_state <= #1 IC_IDLE;
+                        ic_state <= IC_IDLE;
                     end
                 end
                 IC_CAPTURE: begin
-                    ic_state <= #1 IC_IDLE;
+                    ic_state <= IC_IDLE;
                 end
                 default: begin
-                    ic_state <= #1 IC_IDLE;
+                    ic_state <= IC_IDLE;
                 end
             endcase
         end
@@ -181,29 +182,42 @@ module timer_ic_oc #(
     // 捕获值锁存
     always_ff @(posedge clk) begin
         if (ic_state == IC_IDLE && valid_edge) begin
-            captured_value <= #1 timer_cnt;
-            captured_edge  <= #1 rising_edge;
-            filter_th_latch <= #1 filter_mode;
+            captured_value <= timer_cnt;
+            captured_edge  <= rising_edge;
+            filter_th_latch <= filter_mode;
         end
     end
 
     // 滤波计数器
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            filter_cnt <= #1 '0;
+            filter_cnt <= '0;
         end else if (ic_state == IC_IDLE) begin
-            filter_cnt <= #1 '0;
+            filter_cnt <= '0;
         end else if (ic_state == IC_FILTER) begin
-            filter_cnt <= #1 filter_cnt + 1'b1;
+            filter_cnt <= filter_cnt + 1'b1;
         end
     end
 
     // 捕获触发延迟
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            capture_trigger_d <= #1 1'b0;
+            capture_trigger_d <= 1'b0;
         end else begin
-            capture_trigger_d <= #1 capture_trigger;
+            capture_trigger_d <= capture_trigger;
+        end
+    end
+
+    //////////////////////////////////////////////////////////////////
+    //
+    // 输出比较寄存器加载
+    //
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            cmp_reg <= '0;
+        end else if (!timer_en || timer_expired) begin
+            cmp_reg <= cmp_value;
         end
     end
 
@@ -214,28 +228,9 @@ module timer_ic_oc #(
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            cmp_output_d <= #1 1'b0;
+            cmp_output_d <= 1'b0;
         end else begin
-            cmp_output_d <= #1 cmp_output;
-        end
-    end
-
-    //////////////////////////////////////////////////////////////////
-    //
-    // 捕获/比较寄存器
-    //
-
-    always_ff @(posedge clk) begin
-        if (ic_oc_mode) begin
-            // 比较模式：在定时器禁用或溢出时加载比较值
-            if (!timer_en || timer_expired) begin
-                ic_oc_reg <= #1 cmp_value;
-            end
-        end else begin
-            // 捕获模式：在捕获触发时锁存计数值
-            if (capture_trigger) begin
-                ic_oc_reg <= #1 captured_value;
-            end
+            cmp_output_d <= cmp_output;
         end
     end
 
