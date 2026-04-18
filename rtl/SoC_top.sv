@@ -203,6 +203,7 @@ apb_gpio #(
     .gpio_io  	(gpio_io        )
 );
 
+
 // 暂时的
 assign external_int = uart_irq || gpio_irq;
 

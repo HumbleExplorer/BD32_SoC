@@ -48,7 +48,6 @@ module apb_timer #(
     output  logic   [DATA_WIDTH-1:0]    PRDATA,
     output  logic                       PREADY,
     output  logic                       PSLVERR,
-
     output  logic                       irq_o,  // 定时器中断输出
 
     // 外部通道接口 (输入捕获/输出比较)
@@ -351,8 +350,8 @@ module apb_timer #(
             irq_o <= 1'b0;
         else
             irq_o <= timer_int_en &
-                        ((timer_int_of_pend & timer_of_int_en) |
-                         (|(timer_int_trigger_pend & timer_ic_oc_int_en)));
+                    ((timer_int_of_pend & timer_of_int_en) |
+                    (|(timer_int_trigger_pend & timer_ic_oc_int_en)));
     end
 
     //////////////////////////////////////////////////////////////////

@@ -58,7 +58,7 @@ module timer_ic_oc #(
     //
 
     // 触发边沿类型
-    typedef enum logic [1:0] { 
+    typedef enum logic [1:0] {
         EDGE_RISING  = 2'b00,  // 上升沿
         EDGE_FALLING = 2'b01,  // 下降沿
         EDGE_BOTH    = 2'b10   // 双沿 

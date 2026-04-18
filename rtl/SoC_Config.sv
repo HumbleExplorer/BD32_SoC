@@ -28,7 +28,7 @@
 // `define GPIO_SIM
 `define TIMER_SIM
 `ifdef MODELSIM
-    `define PATH "./test_data/"//vsim路径
+    `define PATH "../../test_data/"//vsim路径
     `define ITCM_DEPTH 16*1024//16K
     `define DTCM_DEPTH 16*1024//16K
 `elsif XILINX
@@ -37,7 +37,7 @@
     `define ITCM_DEPTH 8*1024//8K
     `define DTCM_DEPTH 8*1024//8K
 `else
-    `define PATH "./test_data/"
+    `define PATH "../../test_data/"
     `define ITCM_DEPTH 8*1024//8K
     `define DTCM_DEPTH 8*1024//8K
 `endif
@@ -52,7 +52,7 @@
 `define DTCM_LENGTH (`DTCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 
 `define ITCM_FILE "test1.dat"
-`define DTCM_FILE "story.dat"
+`define DTCM_FILE "welcome_text.dat"
 `define MROM_FILE "mrom.dat"
 // `define TCM_Reg_or_BRAM "BRAM"
 `define TCM_Reg_or_BRAM "Reg"
