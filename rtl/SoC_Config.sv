@@ -24,22 +24,30 @@
 `define DDR_LENGTH 256*1024*1024*16/8//256M*16bit=512MB
 `define MAX_SIZE (`DDR_LENGTH > `FLASH_LENGTH:?`DDR_LENGTH:`FLASH_LENGTH)
 `define GPIO_NUM 2
+`define TIMER_CHANNEL_NUM 4
+`define TIMER_NUM 1
 
 // `define GPIO_SIM
-`define TIMER_SIM
+// `define TIMER_SIM
 `ifdef MODELSIM
     `define PATH "../../test_data/"//vsim路径
     `define ITCM_DEPTH 16*1024//16K
     `define DTCM_DEPTH 16*1024//16K
+    `define ITCM_FILE "test2_lite.dat"
+    `define DTCM_FILE "welcome_text_lite.dat"
 `elsif XILINX
     `define PATH "../test_data/"//Vivado路径
     // `define PATH "D:/Desktop/RV32_SoC/Working/test_data/"//Vivado路径
     `define ITCM_DEPTH 8*1024//8K
     `define DTCM_DEPTH 8*1024//8K
+    `define ITCM_FILE "test2_full.dat"
+    `define DTCM_FILE "welcome_text_full.dat"
 `else
     `define PATH "../../test_data/"
     `define ITCM_DEPTH 8*1024//8K
     `define DTCM_DEPTH 8*1024//8K
+    `define ITCM_FILE "test2_lite.dat"
+    `define DTCM_FILE "welcome_text_lite.dat"
 `endif
 // `define PATH "./test_data/"
 // `define ITCM_DEPTH 8*1024//8K
@@ -51,8 +59,7 @@
 `define ITCM_LENGTH (`ITCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 `define DTCM_LENGTH (`DTCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 
-`define ITCM_FILE "test1.dat"
-`define DTCM_FILE "welcome_text.dat"
+
 `define MROM_FILE "mrom.dat"
 // `define TCM_Reg_or_BRAM "BRAM"
 `define TCM_Reg_or_BRAM "Reg"

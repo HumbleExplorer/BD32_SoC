@@ -72,8 +72,8 @@ logic[7:0]     msr;            // 调制解调器状态（只读）
 // 子模块接口信号（统一信号名+位宽）
 (* mark_debug = "true" *)logic          clk_sample;     // 16倍波特率时钟
 (* mark_debug = "true" *)logic          clk_uart;       // 1倍波特率时钟
-(* mark_debug = "true" *)logic[7:0]     rx_data_out;    // 接收数据
-(* mark_debug = "true" *)logic          rx_data_valid;  // 接收数据就绪（与uart_rx的rx_data_ready对接）
+logic[7:0]     rx_data_out;    // 接收数据
+logic          rx_data_valid;  // 接收数据就绪（与uart_rx的rx_data_ready对接）
 logic[3:0]     rx_err;         // 接收错误 {BI[3], FE[2], PE[1], OE[0]} 16550标准位序
 logic[7:0]     tx_data_in;     // 发送数据
 logic          tx_start;       // 发送启动
@@ -97,8 +97,8 @@ logic   [5:0]   timeout_cnt;    // 接收超时计数（0~63，对应4个字符�
 logic           timeout;
 logic           reg_rd_en,reg_wr_en;
 
-(* mark_debug = "true" *)logic           download_en;
-(* mark_debug = "true" *)logic           download_done;
+logic           download_en;
+logic           download_done;
 
 
 assign  reg_sel = PADDR[5:2]; // 32位地址解码核心

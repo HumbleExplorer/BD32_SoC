@@ -7,6 +7,6 @@ del vsim.wlf
 del *.vstf
 del *.vcd
 del *.ini
-del transcript.
+del transcript
 
 :end

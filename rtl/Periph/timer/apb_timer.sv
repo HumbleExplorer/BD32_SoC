@@ -52,9 +52,9 @@ module apb_timer #(
 
     // 外部通道接口 (输入捕获/输出比较)
 `ifdef TIMER_SIM
-    (* mark_debug = "true" *)input   logic   [CHANNEL_NUM-1:0]    channel_i,   // 通道输入
-    (* mark_debug = "true" *)output  logic   [CHANNEL_NUM-1:0]    channel_o,   // 通道输出
-    (* mark_debug = "true" *)output  logic   [CHANNEL_NUM-1:0]    channel_oe   // 通道输出使能
+    input   logic   [CHANNEL_NUM-1:0]    channel_i,   // 通道输入
+    output  logic   [CHANNEL_NUM-1:0]    channel_o,   // 通道输出
+    output  logic   [CHANNEL_NUM-1:0]    channel_oe   // 通道输出使能
 `else
     inout   logic   [CHANNEL_NUM-1:0]    channel_io   // 通道双向信号
 `endif
@@ -90,6 +90,8 @@ module apb_timer #(
     logic   [CHANNEL_NUM-1:0]    channel_i;   // 通道输入
     logic   [CHANNEL_NUM-1:0]    channel_o;   // 通道输出
     logic   [CHANNEL_NUM-1:0]    channel_oe;   // 通道输出使能
+`endif
+    logic   [CHANNEL_NUM-1:0]    channel_oe_n; // channel_oe取反
     genvar g;
     generate
         for(g=0; g<CHANNEL_NUM; g++) begin : channel_tristate
@@ -97,7 +99,8 @@ module apb_timer #(
             assign channel_i[g] = channel_io[g];
         end
     endgenerate
-`endif
+
+    assign  channel_oe = ~channel_oe_n;
 
     logic [3:0] reg_sel;
     assign reg_sel = PADDR[5:2];
@@ -109,13 +112,13 @@ module apb_timer #(
     logic                       timer_dir_sel; // 计数方向 (0=递增, 1=递减)
 
     // TIMx_PSC
-    logic [TIMER_WIDTH-1:0]     timer_prescaler; // 预分频系数
+    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_prescaler; // 预分频系数
 
     // TIMx_ARR
-    logic [TIMER_WIDTH-1:0]     timer_arr;    // 自动重载值
+    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_arr;    // 自动重载值
 
     // TIMx_CNT
-    logic [TIMER_WIDTH-1:0]     timer_cnt;    // 当前计数值
+    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_cnt;    // 当前计数值
 
     // TIMx_IER
     logic                       timer_int_en;         // 定时器中断使能
@@ -136,7 +139,7 @@ module apb_timer #(
     logic [CHANNEL_NUM*2-1:0]   timer_trigger_mode;    // 各通道触发边沿
 
     // TIMx_CCR1-4
-    logic [TIMER_WIDTH-1:0]     timer_ccr_cmp [CHANNEL_NUM];   // APB 写比较值
+    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_ccr_cmp [CHANNEL_NUM];   // APB 写比较值
     logic [TIMER_WIDTH-1:0]     timer_ccr_cap [CHANNEL_NUM];   // 硬件捕获值
 
     // 内部信号
@@ -297,6 +300,7 @@ module apb_timer #(
     //
 
     always_comb begin
+        PRDATA = {DATA_WIDTH{1'b0}};
         case (TIMx_reg_sel_e'(reg_sel))
             TIMx_PSC:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_prescaler};
             TIMx_CNT:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_cnt};
@@ -370,7 +374,7 @@ module apb_timer #(
 
                 .ext_in         (channel_i[ch_inst]),
                 .ext_out        (channel_o[ch_inst]),
-                .ext_dir        (channel_oe[ch_inst]),
+                .ext_dir        (channel_oe_n[ch_inst]),
 
                 .timer_cnt      (timer_cnt),
                 .timer_dir_sel  (timer_dir_sel),

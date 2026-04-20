@@ -32,7 +32,7 @@ module apb_gpio #(
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES,
     parameter GPIO_NUM = `GPIO_NUM,
-    localparam INPUT_STAGES = 2 //异步转同步打拍次数
+    localparam INPUT_STAGES = 2 
 )(
     input   logic                       PCLK,
     input   logic                       PRESETn,
@@ -47,9 +47,9 @@ module apb_gpio #(
     output  logic                       PSLVERR,
     output  logic                       irq_o,
 `ifdef GPIO_SIM
-    (* mark_debug = "true" *)input   logic   [DATA_WIDTH-1:0]    gpio_i,
-    (* mark_debug = "true" *)output  logic   [DATA_WIDTH-1:0]    gpio_o,
-    (* mark_debug = "true" *)output  logic   [DATA_WIDTH-1:0]    gpio_oe
+    input   logic   [DATA_WIDTH-1:0]    gpio_i,
+    output  logic   [DATA_WIDTH-1:0]    gpio_o,
+    output  logic   [DATA_WIDTH-1:0]    gpio_oe
 `else
     inout   logic   [GPIO_NUM-1:0]    gpio_io
 `endif
@@ -94,20 +94,20 @@ assign reg_sel = PADDR[5:2];
 //
 
 //Control registers
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    mode_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    dir_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    out_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    in_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    tr_type_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    tr_lvl0_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    tr_lvl1_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    tr_status_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    irq_ena_reg;
+logic   [DATA_WIDTH-1:0]    mode_reg;
+logic   [DATA_WIDTH-1:0]    dir_reg;
+logic   [DATA_WIDTH-1:0]    out_reg;
+logic   [DATA_WIDTH-1:0]    in_reg;
+logic   [DATA_WIDTH-1:0]    tr_type_reg;
+logic   [DATA_WIDTH-1:0]    tr_lvl0_reg;
+logic   [DATA_WIDTH-1:0]    tr_lvl1_reg;
+logic   [DATA_WIDTH-1:0]    tr_status_reg;
+logic   [DATA_WIDTH-1:0]    irq_ena_reg;
 
 //Trigger registers
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    tr_rising_edge_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    tr_falling_edge_reg;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    tr_status;
+logic   [DATA_WIDTH-1:0]    tr_rising_edge_reg;
+logic   [DATA_WIDTH-1:0]    tr_falling_edge_reg;
+logic   [DATA_WIDTH-1:0]    tr_status;
 
 //Input register, to prevent metastability
 logic   [DATA_WIDTH-1:0]    input_regs  [INPUT_STAGES];
@@ -234,13 +234,15 @@ end
 always_ff @(posedge PCLK or negedge PRESETn) begin
     if (!PRESETn) begin
         for (int n=0; n<INPUT_STAGES; n++) input_regs[n] <= #1 {DATA_WIDTH{1'b0}};
+        in_reg <= #1 {DATA_WIDTH{1'b0}};
     end else begin
         for (int n=0; n<INPUT_STAGES; n++) begin
             if (n==0) input_regs[n] <= #1 (gpio_i[n] === 1'bz) ? 1'b0 : gpio_i[n];
             else      input_regs[n] <= #1 input_regs[n-1];
         end
+        in_reg <= #1 input_regs[INPUT_STAGES-1];
     end
-    in_reg <= #1 input_regs[INPUT_STAGES-1];
+    
 end
 
 // mode

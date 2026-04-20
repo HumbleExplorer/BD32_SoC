@@ -11,17 +11,21 @@ module SoC_top #(
     parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES,
     parameter ALIGN_WIDTH = `ALIGN_WIDTH,
-    parameter GPIO_NUM = `GPIO_NUM
+    parameter GPIO_NUM = `GPIO_NUM,
+    parameter TIMER_NUM = `TIMER_NUM,
+    parameter TIMER_CHANNEL_NUM = `TIMER_CHANNEL_NUM
 )(
     // System
-    input   logic   sys_clk,
-    input   logic   rst_n,
+    (* mark_debug = "true" *)input   logic   sys_clk,
+    (* mark_debug = "true" *)input   logic   rst_n,
     // input   logic   clk_timer,//1MHz
     // UART
     (* mark_debug = "true" *)input   logic   uart_rx,
     (* mark_debug = "true" *)output  logic   uart_tx,
-
-    inout  [GPIO_NUM-1:0]  gpio_io
+    // GPIO
+    (* mark_debug = "true" *)inout  [GPIO_NUM-1:0]  gpio_io,
+    // Timer
+    (* mark_debug = "true" *)inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0] timer_channel_io
     // I2C
     // SPI
 );
@@ -30,9 +34,9 @@ logic   sys_rst_n;
 // PLL Output
 // logic                       clk_timer;
 // Update Output
-(* mark_debug = "true" *)logic                       itcm_wr_en;
-(* mark_debug = "true" *)logic   [ADDR_WIDTH-1:0]    itcm_wr_addr;
-(* mark_debug = "true" *)logic   [DATA_WIDTH-1:0]    itcm_wr_data;
+logic                       itcm_wr_en;
+logic   [ADDR_WIDTH-1:0]    itcm_wr_addr;
+logic   [DATA_WIDTH-1:0]    itcm_wr_data;
 
 // RISC_V_Core Output
 logic                       clint_sel;
@@ -63,12 +67,20 @@ logic   [DATA_WIDTH-1:0]    periph_wdata;
 logic                       uart_psel;
 logic   [DATA_WIDTH-1:0]    uart_rdata;
 logic                       uart_ready;
+logic                       uart_err;
 logic                       uart_irq;
 // apb_gpio Output
 logic                       gpio_psel;
 logic   [DATA_WIDTH-1:0]    gpio_rdata;
 logic                       gpio_ready;
+logic                       gpio_err;
 logic                       gpio_irq;
+// apb_timer Output
+logic                       timer_psel;
+logic   [DATA_WIDTH-1:0]    timer_rdata;
+logic                       timer_ready;
+logic                       timer_err;
+logic                       timer_irq;
 
 // ------------------------ 用Cdc_Sync实现同步释放 ------------------------
 // 关键：Cdc_Sync的dst_rst_n直接接消抖后的异步复位信号（rst_n）
@@ -152,6 +164,7 @@ u_Bus_Access(
     .o_periph_addr  (periph_addr    ),
     .o_gpio_psel   	(gpio_psel      ),
     .o_uart_psel   	(uart_psel      ),
+    .o_timer_psel   (timer_psel     ),
     .o_periph_enable(periph_enable  ),
     .o_periph_write (periph_write   ),
     .o_periph_wmask (periph_wmask   ),
@@ -159,7 +172,9 @@ u_Bus_Access(
     .i_gpio_rdata 	(gpio_rdata     ),
     .i_gpio_ready 	(gpio_ready     ),
     .i_uart_rdata 	(uart_rdata     ),
-    .i_uart_ready 	(uart_ready     )
+    .i_uart_ready 	(uart_ready     ),
+    .i_timer_rdata  (timer_rdata    ),
+    .i_timer_ready  (timer_ready    )
 );
 
 apb_uart #(
@@ -175,7 +190,7 @@ apb_uart #(
     .PWDATA         (periph_wdata   ),
     .PRDATA         (uart_rdata     ),
     .PREADY         (uart_ready     ),
-    // .pslverr    (pslverr  ),
+    .PSLVERR        (uart_err       ),
     .irq_o          (uart_irq       ),
     .uart_rx_i      (uart_rx        ),
     .uart_tx_o      (uart_tx        ),
@@ -199,12 +214,35 @@ apb_gpio #(
     .PWDATA  	(periph_wdata   ),
     .PRDATA  	(gpio_rdata     ),
     .PREADY  	(gpio_ready     ),
+    .PSLVERR 	(gpio_err       ),
     .irq_o   	(gpio_irq       ),
     .gpio_io  	(gpio_io        )
 );
 
+apb_timer #(
+    .ADDR_WIDTH     (ADDR_WIDTH    ),
+    .DATA_WIDTH     (DATA_WIDTH    ),
+    .ALIGN_BYTES    (ALIGN_BYTES   ),
+    .TIMER_WIDTH    (16            ),
+    .CHANNEL_NUM    (TIMER_CHANNEL_NUM)
+)u_apb_timer(
+    .PCLK           (sys_clk       ),
+    .PRESETn        (sys_rst_n     ),
+    .PADDR          (periph_addr   ),
+    .PSEL           (timer_psel    ),
+    .PENABLE        (periph_enable ),
+    .PWRITE         (periph_write  ),
+    .PSTRB          (periph_wmask  ),
+    .PWDATA         (periph_wdata  ),
+    .PRDATA         (timer_rdata   ),
+    .PREADY         (timer_ready   ),
+    .PSLVERR        (timer_err     ),
+    .irq_o          (timer_irq     ),
+    .channel_io     (timer_channel_io    )
+);
+
 
 // 暂时的
-assign external_int = uart_irq || gpio_irq;
+assign external_int = uart_irq || gpio_irq || timer_irq;
 
 endmodule

@@ -30,21 +30,21 @@ module Pipeline_Ctrl #(
     input   logic   [DATA_WIDTH-1:0]    exception_val_id,
     input   logic   [DATA_WIDTH-1:0]    exception_val_ex,
     input   logic   [DATA_WIDTH-1:0]    exception_val_mem,
-    (* mark_debug = "true" *)input   logic                       bus_sel,
+    input   logic                       bus_sel,
 
     // to pc
-    (* mark_debug = "true" *)output  logic                       pc_stall,
-    (* mark_debug = "true" *)output  logic                       ctrl_jump_en,
-    (* mark_debug = "true" *)output  logic   [ADDR_WIDTH-1:0]    ctrl_jump_addr,
+    output  logic                       pc_stall,
+    output  logic                       ctrl_jump_en,
+    output  logic   [ADDR_WIDTH-1:0]    ctrl_jump_addr,
     // to pipeline reg
-    (* mark_debug = "true" *)output  logic                       if_id_stall,
-    (* mark_debug = "true" *)output  logic                       if_id_flush,
-    (* mark_debug = "true" *)output  logic                       id_ex_stall,
-    (* mark_debug = "true" *)output  logic                       id_ex_flush,
-    (* mark_debug = "true" *)output  logic                       ex_mem_stall,
-    (* mark_debug = "true" *)output  logic                       ex_mem_flush,
-    (* mark_debug = "true" *)output  logic                       mem_wb_stall,
-    (* mark_debug = "true" *)output  logic                       mem_wb_flush,
+    output  logic                       if_id_stall,
+    output  logic                       if_id_flush,
+    output  logic                       id_ex_stall,
+    output  logic                       id_ex_flush,
+    output  logic                       ex_mem_stall,
+    output  logic                       ex_mem_flush,
+    output  logic                       mem_wb_stall,
+    output  logic                       mem_wb_flush,
     // to CSR
     output  logic   [ADDR_WIDTH-1:0]    exception_inst_addr,
     output  logic                       exception_trap,
@@ -173,22 +173,20 @@ always_comb begin
         if(sel_stage == 2'b11) ex_mem_flush = 1'b1;//MEM 异常
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
-    end else if (~mem_access_ready) begin
+    end else if (bus_sel && ~mem_access_ready) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
-    end else if(~bus_sel) begin
-        if(branch_jump_en) begin
-            if_id_flush = 1'b1;
-            id_ex_flush = 1'b1;
-            ctrl_jump_en = 1'b1;
-            ctrl_jump_addr = branch_jump_addr;
-        end else if (stall) begin
-            pc_stall        = 1'b1;
-            if_id_stall     = 1'b1;
-            id_ex_stall     = 1'b1;
-        end
+    end else if (branch_jump_en) begin
+        if_id_flush = 1'b1;
+        id_ex_flush = 1'b1;
+        ctrl_jump_en = 1'b1;
+        ctrl_jump_addr = branch_jump_addr;
+    end else if (stall) begin
+        pc_stall        = 1'b1;
+        if_id_stall     = 1'b1;
+        id_ex_stall     = 1'b1;
     end
 end
 

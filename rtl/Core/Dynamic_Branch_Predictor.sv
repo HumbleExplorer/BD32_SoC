@@ -194,12 +194,13 @@ assign predict_taken =  predict_btb_hit &&
 // 预测目标地址
 // 对于RET指令: 从RAS获取返回地址
 // 对于其他指令: 从BTB获取目标地址
-assign predict_target = predict_btb_hit ?
-                        (btb_pop_ras_array[predict_btb_idx] ? 
+assign predict_target = predict_btb_hit ? // 命中BTB?
+                        (btb_pop_ras_array[predict_btb_idx] ? // RET指令？
                         {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_TAG_WIDTH],ras_stack[spec_ras_ptr-1],{ALIGN_WIDTH{1'b0}}} :  // RET: 从RAS取
-                        (predict_pht_taken && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) ?
-                        {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_BTA_WIDTH],btb_target_array[predict_btb_idx],{ALIGN_WIDTH{1'b0}}} : 0):// 从BTB取(但实际上当B类指令pht判断为不跳时应该取pc+4)
-                        0;// 其他: 直接为0，默认值
+                        ((predict_pht_taken && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) || 
+                        btb_inst_type_array[predict_btb_idx][1]) ? // 非RET指令，且跳转
+                        {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_BTA_WIDTH],btb_target_array[predict_btb_idx],{ALIGN_WIDTH{1'b0}}} : 0): // 从BTB取(预测为不跳时直接取0，因为EX阶段不跳时也取0，原因是暂停时或者刚开始时EX阶段的PC为0)
+                        0;// 其他
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin

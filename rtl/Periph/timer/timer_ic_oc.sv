@@ -120,7 +120,7 @@ module timer_ic_oc #(
 
     assign cmp_match = timer_en & ic_oc_mode & ic_oc_en &
           (timer_dir_sel ? (timer_cnt <= cmp_reg) : (timer_cnt >= cmp_reg)); // 输出比较匹配
-    assign cmp_output = polarity ? cmp_match : ~cmp_match;// 输出极性控制
+    assign cmp_output = polarity ? ~cmp_match : cmp_match;// 输出极性控制
 
     assign cap_value   = captured_value;
     assign ic_oc_irq   = capture_trigger_d;
@@ -180,8 +180,12 @@ module timer_ic_oc #(
     end
 
     // 捕获值锁存
-    always_ff @(posedge clk) begin
-        if (ic_state == IC_IDLE && valid_edge) begin
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            captured_value <= '0;
+            captured_edge  <= 1'b0;
+            filter_th_latch <= '0;
+        end else if (ic_state == IC_IDLE && valid_edge) begin
             captured_value <= timer_cnt;
             captured_edge  <= rising_edge;
             filter_th_latch <= filter_mode;

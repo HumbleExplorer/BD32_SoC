@@ -94,6 +94,7 @@ link为x1或x5
 logic rd_link;
 logic rs1_link;
 logic rs1_eq_rd;
+logic [ADDR_WIDTH-1:0] inst_addr_plus_4;
 
 
 
@@ -125,11 +126,26 @@ assign  rd_link = (rd == 'd1 || rd == 'd5);
 assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
 assign  rs1_eq_rd = (inst[19:15] == rd);
 assign  is_fence_i = (opcode == `INST_FENCE) && (func3[0]);
+assign  inst_addr_plus_4 = inst_addr + 4;
 
 assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);
 assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
-assign  branch_jump_addr= (((branch_taken && ~predict_taken) || (predict_target != branch_target)) && ~is_fence_i) ?//跳被预测为不跳，或者跳不准
-                         branch_target : inst_addr + 4;//不跳被预测为跳
+always_comb begin
+    if (is_fence_i) begin
+        branch_jump_addr <= inst_addr_plus_4;
+    end else if (branch_predict_success) begin //预测成功
+        branch_jump_addr <= predict_target;
+    end else if (branch_taken && ~predict_taken) begin //跳被预测为不跳
+        branch_jump_addr <= branch_target;
+    end else if (~branch_taken && predict_taken) begin //不跳被预测为跳
+        branch_jump_addr <= inst_addr_plus_4;
+    end else if (predict_target != branch_target) begin //预测地址不正确（默认是跳被预测为跳，因为如果不跳被预测为不跳，那两个地址应都为inst_addr+4）
+        branch_jump_addr <= branch_target;
+    end else begin //其他
+        branch_jump_addr <= inst_addr_plus_4;
+    end
+
+end
 
 always_comb begin
     wr_reg_addr     = 5'h0;
@@ -204,31 +220,14 @@ always_comb begin
             branch_inst_type= 2'b01;
             branch_req      = 1'b1;
             case(func3)
-                `INST_BEQ: begin
-                    branch_taken     = equal;
-                    branch_target   = equal ? jump_imm : 'h0;
-                end
-                `INST_BNE: begin
-                    branch_taken     = ~equal;
-                    branch_target   = ~equal ? jump_imm : 'h0;
-                end
-                `INST_BLT: begin
-                    branch_taken     = less_signed;
-                    branch_target   = less_signed ? jump_imm : 'h0;
-                end
-                `INST_BGE: begin
-                    branch_taken     = ~less_signed;
-                    branch_target   = ~less_signed ? jump_imm : 'h0;
-                end
-                `INST_BLTU: begin
-                    branch_taken     = less_unsigned;
-                    branch_target   = less_unsigned ? jump_imm : 'h0;
-                end
-                `INST_BGEU: begin
-                    branch_taken     = ~less_unsigned;
-                    branch_target   = ~less_unsigned ? jump_imm : 'h0;
-                end
+                `INST_BEQ: branch_taken     = equal;
+                `INST_BNE: branch_taken     = ~equal;
+                `INST_BLT: branch_taken     = less_signed;
+                `INST_BGE: branch_taken     = ~less_signed;
+                `INST_BLTU:branch_taken     = less_unsigned;
+                `INST_BGEU:branch_taken     = ~less_unsigned;
             endcase
+            branch_target   = branch_taken ? jump_imm : 0;
         end
         `INST_TYPE_S:begin
             case(func3)
@@ -313,7 +312,7 @@ always_comb begin
         */
         `INST_JAL:begin
             wr_reg_addr     = rd;
-            wr_reg_data     = inst_addr + 32'h4;
+            wr_reg_data     = inst_addr_plus_4;
             branch_taken    = 1'b1;
             branch_target   = inst_addr + alu_op2;
             branch_inst_type= 2'b10;
@@ -322,7 +321,7 @@ always_comb begin
         end
         `INST_JALR:begin
             wr_reg_addr     = rd;
-            wr_reg_data     = inst_addr + 32'h4;
+            wr_reg_data     = inst_addr_plus_4;
             branch_taken    = 1'b1;
             branch_target   = alu_op1 + alu_op2;
             branch_inst_type= 2'b11;

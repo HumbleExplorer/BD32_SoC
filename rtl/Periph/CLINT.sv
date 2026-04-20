@@ -9,7 +9,7 @@ module CLINT #(
     input   logic                       clk,
     input   logic                       rst_n,
     // from PLL
-    // input   logic                       clk_timer,
+    input   logic                       clk_ext,
     // from Core
     input   logic                       clint_sel,
     input   logic   [ADDR_WIDTH-1:0]    mmio_addr,
@@ -23,6 +23,11 @@ module CLINT #(
     output  logic                       timer_int
 );
 
+// 跨时钟域：
+// 将 mtimecmp 同步到 clk_ext 域
+// 在 clk_ext 域进行硬件比较
+// 将 timer_int_raw 同步回 clk 域
+// 将 mtime 同步到 clk 域供读取
 logic   [2*DATA_WIDTH-1:0]  mtime;// 0x0200BFF8 (64bit)
 logic   [2*DATA_WIDTH-1:0]  mtimecmp;// 0x02004000 (64bit)
 logic   [DATA_WIDTH-1:0]    msip;// 0x02000000 (32bit)
@@ -37,21 +42,9 @@ assign software_int = msip[0];
 assign timer_int = mtime >= mtimecmp;
 
 // assign wr_addr_misalign = clint_sel && (wr_mask != 'hF);
-//==================================================
-// 1. 跨时钟域处理 (CDC)：慢 -> 快
-//==================================================
-// 目的：将 clk_timer (1MHz) 的上升沿转换为 clk (100MHz) 域的单周期脉冲
-// logic time_inc_pulse; // 在 clk 域下的递增脉冲
-
-// Cdc_Pulse u_timer_tick_cdc (
-//     .dst_clk    (clk),           // 目标是系统时钟
-//     .dst_rst_n  (rst_n),
-//     .src_pulse  (clk_timer),     // 源是慢速时钟
-//     .dst_pulse  (time_inc_pulse) // 输出同步后的脉冲
-// );
 
 // mtime 计数
-always_ff @(posedge clk or negedge rst_n) begin
+always_ff @(posedge clk_ext or negedge rst_n) begin
     if(!rst_n) begin
         mtime <= #1 'h0;
     // end else if (time_inc_pulse) begin
@@ -61,8 +54,6 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 always_ff @(posedge clk or negedge rst_n) begin
-    msip    <= #1 'h0;
-    mtimecmp <= #1 {2*DATA_WIDTH{1'b1}};
     if(!rst_n) begin
         msip <= #1 'h0;
         mtimecmp <= #1 {2*DATA_WIDTH{1'b1}};
@@ -71,7 +62,7 @@ always_ff @(posedge clk or negedge rst_n) begin
             case(mmio_addr[15:2])
                 MTIMECMP_ADDR[15:2]: mtimecmp[DATA_WIDTH-1:0] <= #1 wr_data;
                 MTIMECMP_ADDR[15:2] + 1: mtimecmp[2*DATA_WIDTH-1:DATA_WIDTH] <= #1 wr_data;
-                MSIP_ADDR : msip[0] <= #1 wr_data;
+                MSIP_ADDR[15:2] : msip[0] <= #1 wr_data;
                 default : ;
             endcase
         end

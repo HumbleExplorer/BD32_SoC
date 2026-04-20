@@ -25,7 +25,10 @@ wire    [GPIO_NUM-1:0]  gpio_io;
 logic   uart_rx;
 logic   uart_tx;
 logic   download_done;
-// 新增：存储指令的内存数组（32位宽，足够大的深度）
+// Timer PWM channel outputs (4 channels)
+wire    [`TIMER_CHANNEL_NUM-1:0] timer_channel_io;
+
+// 存储指令的内存数组（32位宽，足够大的深度）
 logic   [DATA_WIDTH-1:0] itcm_mem [0:`ITCM_DEPTH-1];
 integer inst_cnt; // 实际读取的指令条数
 assign  gpio_io[0] = download_en;
@@ -153,7 +156,54 @@ logic tx_data_valid_d;
 always_ff @(posedge clk) begin
     tx_data_valid_d <= #1 tx_data_valid;
     if (tx_data_valid && ~tx_data_valid_d) begin
-        $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
+        // $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
+    end
+end
+
+// ------------------------ PWM Output Monitoring ------------------------
+// 功能：监测 timer_channel_io 各通道的 PWM 波形，统计每个周期的时长和占空比
+// 工作机制：
+//   1. 每个周期结束时（检测到上升沿）输出统计信息
+//   2. period_count：累计本周期已过的时钟数
+//   3. high_count：累计本周期中高电平持续的时钟数（持续累加，不只在边沿计数）
+//   4. prev_pwm：记录上一拍的 PWM 电平，用于边沿检测
+//   5. 跳过第一个周期（prev_pwm 全 0 时 period_count 为 0），避免初始态干扰
+logic [`TIMER_CHANNEL_NUM-1:0] prev_pwm;
+integer period_cnt [`TIMER_CHANNEL_NUM];  // 本周期已过的时钟数
+integer high_cnt  [`TIMER_CHANNEL_NUM];   // 本周期中高电平的时钟数
+integer pwm_ch;
+
+always @(posedge clk) begin
+    if (~rst_n) begin
+        prev_pwm <= 0;
+        for (pwm_ch = 0; pwm_ch < `TIMER_CHANNEL_NUM; pwm_ch++) begin
+            period_cnt[pwm_ch] <= 0;
+            high_cnt[pwm_ch]   <= 0;
+        end
+    end else begin
+        for (pwm_ch = 0; pwm_ch < `TIMER_CHANNEL_NUM; pwm_ch++) begin
+            // 上升沿检测：上一拍低、当前拍高 → 本周期结束，输出统计
+            if (timer_channel_io[pwm_ch] && ~prev_pwm[pwm_ch]) begin
+                // 跳过第一个周期（period_cnt 为 0 表示尚未开始计数）
+                if (period_cnt[pwm_ch] > 0) begin
+                    $display("[%t] PWM Ch%0d: Period=%0d clocks, Duty=%0d%%",
+                             $time, pwm_ch, period_cnt[pwm_ch] + 1,
+                             ((high_cnt[pwm_ch]+1) * 100) / (period_cnt[pwm_ch]+1));
+                end
+                // 重置本通道计数器，开始统计下一个周期
+                period_cnt[pwm_ch] <= 0;
+                high_cnt[pwm_ch]   <= 0;
+            end else begin
+                // 周期计数器：每个时钟 +1，上限防溢出
+                if (period_cnt[pwm_ch] < 100000)
+                    period_cnt[pwm_ch] <= period_cnt[pwm_ch] + 1;
+
+                // 高电平计数器：当前为高则 +1（持续累加，不是边沿触发）
+                if (timer_channel_io[pwm_ch])
+                    high_cnt[pwm_ch] <= high_cnt[pwm_ch] + 1;
+            end
+        end
+        prev_pwm <= timer_channel_io;
     end
 end
 
@@ -165,6 +215,14 @@ initial begin
     uart_rx = 1'b1;// UART空闲电平为高
     #35;
     rst_n   = 1'b1;
+    $display("\n============================================================");
+    $display("              RISC-V SoC Simulation Started                  ");
+    $display("============================================================");
+    $display("Timer Base Address: 0x%08h", `TIMER_BASE_ADDR);
+    $display("Timer Channels: %0d", `TIMER_CHANNEL_NUM);
+    $display("Expected PWM Period (ARR=255, PSC=1): 512 clocks");
+    $display("Expected PWM Duty Cycle: 25%% (CCR1=64)");
+    $display("============================================================\n");
 
 end
 initial  begin
@@ -196,7 +254,8 @@ SoC_top #(
     // .clk_timer      (clk_timer),
     .uart_rx     	(uart_rx    ),
     .uart_tx     	(uart_tx    ),
-    .gpio_io     	(gpio_io    )
+    .gpio_io     	(gpio_io    ),
+    .timer_channel_io   (timer_channel_io )
 );
 
 
