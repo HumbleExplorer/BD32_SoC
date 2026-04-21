@@ -22,6 +22,7 @@ module Bus_Access #(
     output  logic                       o_gpio_psel,// 选择信号
     output  logic                       o_uart_psel,// 选择信号
     output  logic                       o_timer_psel,// 选择信号
+    output  logic                       o_clint_psel,// 选择信号
     output  logic                       o_periph_enable,// 使能信号
     output  logic                       o_periph_write,// 写信号
     output  logic   [ALIGN_BYTES-1:0]   o_periph_wmask, // 写使能信号
@@ -31,7 +32,9 @@ module Bus_Access #(
     input   logic   [DATA_WIDTH-1:0]    i_uart_rdata,// 读数据总线
     input   logic                       i_uart_ready,// 准备就绪信号
     input   logic   [DATA_WIDTH-1:0]    i_timer_rdata,// 读数据总线
-    input   logic                       i_timer_ready// 准备就绪信号
+    input   logic                       i_timer_ready,// 准备就绪信号
+    input   logic   [DATA_WIDTH-1:0]    i_clint_rdata,// 读数据总线
+    input   logic                       i_clint_ready// 准备就绪信号
 );
 logic PSEL;
 logic [DATA_WIDTH-1:0] PRDATA;

@@ -39,7 +39,6 @@ logic   [ADDR_WIDTH-1:0]    itcm_wr_addr;
 logic   [DATA_WIDTH-1:0]    itcm_wr_data;
 
 // RISC_V_Core Output
-logic                       clint_sel;
 logic                       plic_sel;
 logic                       bus_transfer;
 logic   [ADDR_WIDTH-1:0]    access_addr;
@@ -48,7 +47,6 @@ logic   [DATA_WIDTH-1:0]    access_wr_data;
 logic   [ALIGN_BYTES-1:0]   access_wr_mask;
 
 // CLINT Output
-logic   [DATA_WIDTH-1:0]    clint_rdata;
 logic   [2*DATA_WIDTH-1:0]  mtime_shadow;
 logic                       software_int;
 logic                       timer_int;
@@ -62,6 +60,11 @@ logic                       periph_enable;
 logic                       periph_write;
 logic   [ALIGN_BYTES-1:0]   periph_wmask;
 logic   [DATA_WIDTH-1:0]    periph_wdata;
+// CLINT via Bus_Access
+logic                       clint_psel;
+logic   [DATA_WIDTH-1:0]    clint_rdata;
+logic                       clint_ready;
+logic                       clint_err;
 // logic                       periph_ready;
 // apb_uart Output
 logic                       uart_psel;
@@ -112,11 +115,9 @@ RISC_V_Core #(
     .itcm_wr_en     (itcm_wr_en      ),
     .itcm_wr_addr   (itcm_wr_addr    ),
     .itcm_wr_data   (itcm_wr_data    ),
-    .clint_rdata    (clint_rdata     ),
     .mtime_shadow   (mtime_shadow    ),
     .software_int   (software_int    ),
     .timer_int      (timer_int       ),
-    .clint_sel      (clint_sel       ),
     .external_int   (external_int    ),
     .plic_sel       (plic_sel        ),
     .bus_rdata      (bus_rdata       ),
@@ -126,25 +127,6 @@ RISC_V_Core #(
     .access_wr      (access_wr       ),
     .access_wr_data (access_wr_data  ),
     .access_wr_mask (access_wr_mask  )
-);
-
-CLINT #(
-    .ADDR_WIDTH     (ADDR_WIDTH    ),
-    .DATA_WIDTH     (DATA_WIDTH    ),
-    .ALIGN_BYTES    (ALIGN_BYTES   )
-)u_CLINT(
-    .clk            (sys_clk       ),
-    .rst_n          (sys_rst_n     ),
-    // .clk_timer      (clk_timer     ),
-    .clint_sel      (clint_sel     ),
-    .mmio_addr      (access_addr   ),
-    .wr_en          (access_wr     ),
-    .wr_data        (access_wr_data),
-    .wr_mask        (access_wr_mask),
-    .rd_data        (clint_rdata   ),
-    .mtime_shadow   (mtime_shadow  ),
-    .software_int   (software_int  ),
-    .timer_int      (timer_int     )
 );
 
 Bus_Access #(
@@ -165,6 +147,7 @@ u_Bus_Access(
     .o_gpio_psel   	(gpio_psel      ),
     .o_uart_psel   	(uart_psel      ),
     .o_timer_psel   (timer_psel     ),
+    .o_clint_psel   (clint_psel     ),
     .o_periph_enable(periph_enable  ),
     .o_periph_write (periph_write   ),
     .o_periph_wmask (periph_wmask   ),
@@ -174,7 +157,30 @@ u_Bus_Access(
     .i_uart_rdata 	(uart_rdata     ),
     .i_uart_ready 	(uart_ready     ),
     .i_timer_rdata  (timer_rdata    ),
-    .i_timer_ready  (timer_ready    )
+    .i_timer_ready  (timer_ready    ),
+    .i_clint_rdata  (clint_rdata    ),
+    .i_clint_ready  (clint_ready    )
+);
+
+CLINT #(
+    .ADDR_WIDTH     (ADDR_WIDTH    ),
+    .DATA_WIDTH     (DATA_WIDTH    ),
+    .ALIGN_BYTES    (ALIGN_BYTES   )
+)u_CLINT(
+    .PCLK           (sys_clk       ),
+    .PRESETn        (sys_rst_n     ),
+    .PADDR          (periph_addr   ),
+    .PSEL           (clint_psel    ),
+    .PENABLE        (periph_enable ),
+    .PWRITE         (periph_write  ),
+    .PSTRB          (periph_wmask  ),
+    .PWDATA         (periph_wdata  ),
+    .PRDATA         (clint_rdata   ),
+    .PREADY         (clint_ready   ),
+    .PSLVERR        (clint_err     ),
+    .mtime_shadow   (mtime_shadow  ),
+    .software_int   (software_int  ),
+    .timer_int      (timer_int     )
 );
 
 apb_uart #(

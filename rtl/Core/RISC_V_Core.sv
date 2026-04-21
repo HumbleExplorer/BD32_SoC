@@ -20,12 +20,9 @@ module RISC_V_Core #(
     input   logic   [ADDR_WIDTH-1:0]    itcm_wr_addr,
     input   logic   [DATA_WIDTH-1:0]    itcm_wr_data,
     // from clint
-    input   logic   [DATA_WIDTH-1:0]    clint_rdata,
     input   logic   [2*DATA_WIDTH-1:0]  mtime_shadow,
     input   logic                       software_int,
     input   logic                       timer_int,
-    // to clint
-    output  logic                       clint_sel,
     // from plic
     input   logic                       external_int,
     // to plic
@@ -174,7 +171,6 @@ logic                       access_en;
 
 
 logic   [DATA_WIDTH-1:0]    rd_dtcm_data;
-logic   [DATA_WIDTH-1:0]    rd_clint_data;
 logic   [DATA_WIDTH-1:0]    rd_plic_data;
 logic   [2:0]               rd_mem_func3;
 logic   [DATA_WIDTH-1:0]    wr_mem_data;
@@ -563,13 +559,11 @@ Mem_Access #(
     .access_wr                  (access_wr),
     .bus_tran_done              (bus_tran_done),
     .rd_dtcm_data               (rd_dtcm_data),
-    .rd_clint_data              (rd_clint_data),
     .rd_plic_data               (rd_plic_data),
     .rd_bus_data                (bus_rdata),
     .rd_mem_func3               (rd_mem_func3),
     .wr_reg_data_from_ex_mem    (wr_reg_data_from_ex_mem),
     .dtcm_sel                   (dtcm_sel),
-    .clint_sel                  (clint_sel),
     .plic_sel                   (plic_sel),
     .bus_sel                    (bus_sel),
     .mem_access_ready           (mem_access_ready),
@@ -621,7 +615,9 @@ MEM_WB #(
 // assign access_wr = access_wr;
 assign access_wr_data = wr_mem_data;
 assign access_wr_mask = wr_mem_mask;
-assign bus_transfer = access_en_ex && (mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR)
-&& ~(ex_mem_flush ||ex_mem_stall);
+assign bus_transfer = access_en_ex && (
+    (mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) ||
+    (mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `CLINT_BASE_ADDR)
+) && ~(ex_mem_flush || ex_mem_stall);
 
 endmodule

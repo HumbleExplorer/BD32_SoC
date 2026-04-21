@@ -11,15 +11,13 @@ module Mem_Access #(//模块内的mem指所有用到load、store的部分
     input   logic                       access_wr,
     input   logic                       bus_tran_done,
     input   logic   [DATA_WIDTH-1:0]    rd_dtcm_data,
-    input   logic   [DATA_WIDTH-1:0]    rd_clint_data,
     input   logic   [DATA_WIDTH-1:0]    rd_plic_data,
     input   logic   [DATA_WIDTH-1:0]    rd_bus_data,
     input   logic   [2:0]               rd_mem_func3,
     input   logic   [DATA_WIDTH-1:0]    wr_reg_data_from_ex_mem,
-    //to dtcm/clint/plic/bus
+    //to dtcm/plic/bus
     output  logic                       dtcm_sel,
     output  logic                       bus_sel,
-    output  logic                       clint_sel,
     output  logic                       plic_sel,
     //to crtl
     output  logic                       mem_access_ready,
@@ -36,11 +34,11 @@ logic [DATA_WIDTH-1:0] rd_direct_data;
 logic                  access_illegal;
 
 assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `DTCM_BASE_ADDR) ;
-assign clint_sel    = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `CLINT_BASE_ADDR);
 assign plic_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `PLIC_BASE_ADDR);
-assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR);
-assign direct_sel   = dtcm_sel || clint_sel || plic_sel;
-assign rd_direct_data = plic_sel ? rd_plic_data : (clint_sel ? rd_clint_data : (dtcm_sel ? rd_dtcm_data : 'h0));
+assign bus_sel      = access_en & ((access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) |
+                                    (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `CLINT_BASE_ADDR));
+assign direct_sel   = dtcm_sel || plic_sel;
+assign rd_direct_data = plic_sel ? rd_plic_data : (dtcm_sel ? rd_dtcm_data : 'h0);
 // assign mem_access_ready = access_en ? (direct_sel ? 1'b1 : (bus_sel ? bus_tran_done : 1'b0)): 1'b1;
 assign mem_access_ready = bus_sel ? bus_tran_done : 1'b1;
 // assign rd_mem_en = access_en & ~access_wr;

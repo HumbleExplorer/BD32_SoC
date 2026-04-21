@@ -132,17 +132,17 @@ assign  branch_predict_success = (predict_taken == branch_taken) && (predict_tar
 assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
 always_comb begin
     if (is_fence_i) begin
-        branch_jump_addr <= inst_addr_plus_4;
+        branch_jump_addr = inst_addr_plus_4;
     end else if (branch_predict_success) begin //预测成功
-        branch_jump_addr <= predict_target;
+        branch_jump_addr = predict_target;
     end else if (branch_taken && ~predict_taken) begin //跳被预测为不跳
-        branch_jump_addr <= branch_target;
+        branch_jump_addr = branch_target;
     end else if (~branch_taken && predict_taken) begin //不跳被预测为跳
-        branch_jump_addr <= inst_addr_plus_4;
+        branch_jump_addr = inst_addr_plus_4;
     end else if (predict_target != branch_target) begin //预测地址不正确（默认是跳被预测为跳，因为如果不跳被预测为不跳，那两个地址应都为inst_addr+4）
-        branch_jump_addr <= branch_target;
+        branch_jump_addr = branch_target;
     end else begin //其他
-        branch_jump_addr <= inst_addr_plus_4;
+        branch_jump_addr = inst_addr_plus_4;
     end
 
 end
@@ -323,7 +323,7 @@ always_comb begin
             wr_reg_addr     = rd;
             wr_reg_data     = inst_addr_plus_4;
             branch_taken    = 1'b1;
-            branch_target   = alu_op1 + alu_op2;
+            branch_target   = (alu_op1 + alu_op2) & ~32'h1;
             branch_inst_type= 2'b11;
             branch_req      = 1'b1;
             push_ras        = rd_link;

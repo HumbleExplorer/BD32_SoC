@@ -151,6 +151,7 @@ always_comb begin
     endcase
 end
 
+logic stall;
 assign stall = (load_use_flag) | (~mul_div_ready);
 assign next_inst_addr = trap_jump ? trap_jump_addr : branch_jump_en ? branch_jump_addr : inst_addr_id;
 assign exception_trap = ~exception_code[DATA_WIDTH-2];//简化逻辑

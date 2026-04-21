@@ -156,7 +156,7 @@ logic tx_data_valid_d;
 always_ff @(posedge clk) begin
     tx_data_valid_d <= #1 tx_data_valid;
     if (tx_data_valid && ~tx_data_valid_d) begin
-        // $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
+        $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
     end
 end
 
