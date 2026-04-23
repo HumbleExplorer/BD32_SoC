@@ -1,7 +1,8 @@
 `include "../SoC_Config.sv"
 `include "../RV32_Inst_Define.sv"
 `timescale 1ns / 1ps
-module CLINT #(    parameter ADDR_WIDTH = `ADDR_WIDTH,
+module CLINT #(
+    parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES
 )(
@@ -46,9 +47,9 @@ logic   [DATA_WIDTH-1:0]    msip;          // 0x02000000 (32bit)
 
 // logic                       illegal_inst;
 // logic                       wr_addr_misalign;
-localparam MTIME_ADDR    = 32'h0200BFF8;
-localparam MTIMECMP_ADDR = 32'h02004000;
-localparam MSIP_ADDR     = 32'h02000000;
+localparam MTIME_ADDR    = 16'hBFF8;
+localparam MTIMECMP_ADDR = 16'h4000;
+localparam MSIP_ADDR     = 16'h0000;
 
 assign mtime_shadow = mtime;
 assign software_int = msip[0];

@@ -13,22 +13,28 @@ module Cdc_Sync #(
     input  logic [WIDTH-1:0]    async_sig,// 异步输入信号
     output logic [WIDTH-1:0]    sync_sig  // 同步输出信号
 );
+generate
+    if (DELAY_STAGES == 0) begin
+        assign sync_sig = async_sig;
+    end else begin
+        // 使用两级触发器进行同步
+        logic [WIDTH-1:0] sync_reg [DELAY_STAGES-1:0];
 
-    // 使用两级触发器进行同步
-    logic [WIDTH-1:0] sync_reg [DELAY_STAGES-1:0];
-
-    always_ff @(posedge dst_clk or negedge dst_rst_n) begin
-        if (!dst_rst_n) begin
-            for (int n=0; n<DELAY_STAGES; n++) begin
-                sync_reg[n] <= #1 {WIDTH{RESET_VAL}};
-            end
-        end else begin
-            for (int n=0; n<DELAY_STAGES; n++) begin
-                if (n==0)   sync_reg[n] <= #1 async_sig;
-                else        sync_reg[n] <= #1 sync_reg[n-1];
+        always_ff @(posedge dst_clk or negedge dst_rst_n) begin
+            if (!dst_rst_n) begin
+                for (int n=0; n<DELAY_STAGES; n++) begin
+                    sync_reg[n] <= #1 RESET_VAL;
+                end
+            end else begin
+                for (int n=0; n<DELAY_STAGES; n++) begin
+                    if (n==0)   sync_reg[n] <= #1 async_sig;
+                    else        sync_reg[n] <= #1 sync_reg[n-1];
+                end
             end
         end
+        assign sync_sig = sync_reg[DELAY_STAGES-1];
     end
-    assign sync_sig = sync_reg[DELAY_STAGES-1];
+endgenerate
+    
 
 endmodule

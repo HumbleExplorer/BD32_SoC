@@ -13,7 +13,8 @@ module SoC_top #(
     parameter ALIGN_WIDTH = `ALIGN_WIDTH,
     parameter GPIO_NUM = `GPIO_NUM,
     parameter TIMER_NUM = `TIMER_NUM,
-    parameter TIMER_CHANNEL_NUM = `TIMER_CHANNEL_NUM
+    parameter TIMER_CHANNEL_NUM = `TIMER_CHANNEL_NUM,
+    localparam NUM_TARGETS = 1  // PLIC targets (harts)
 )(
     // System
     (* mark_debug = "true" *)input   logic   sys_clk,
@@ -39,7 +40,6 @@ logic   [ADDR_WIDTH-1:0]    itcm_wr_addr;
 logic   [DATA_WIDTH-1:0]    itcm_wr_data;
 
 // RISC_V_Core Output
-logic                       plic_sel;
 logic                       bus_transfer;
 logic   [ADDR_WIDTH-1:0]    access_addr;
 logic                       access_wr;
@@ -84,6 +84,12 @@ logic   [DATA_WIDTH-1:0]    timer_rdata;
 logic                       timer_ready;
 logic                       timer_err;
 logic                       timer_irq;
+// apb_plic Output
+logic                       plic_psel;
+logic   [DATA_WIDTH-1:0]    plic_rdata;
+logic                       plic_ready;
+logic                       plic_err;
+logic   [NUM_TARGETS-1:0]    plic_irq;
 
 // ------------------------ 用Cdc_Sync实现同步释放 ------------------------
 // 关键：Cdc_Sync的dst_rst_n直接接消抖后的异步复位信号（rst_n）
@@ -119,7 +125,6 @@ RISC_V_Core #(
     .software_int   (software_int    ),
     .timer_int      (timer_int       ),
     .external_int   (external_int    ),
-    .plic_sel       (plic_sel        ),
     .bus_rdata      (bus_rdata       ),
     .bus_tran_done  (bus_tran_done   ),
     .bus_transfer   (bus_transfer    ),
@@ -148,6 +153,7 @@ u_Bus_Access(
     .o_uart_psel   	(uart_psel      ),
     .o_timer_psel   (timer_psel     ),
     .o_clint_psel   (clint_psel     ),
+    .o_plic_psel    (plic_psel      ),
     .o_periph_enable(periph_enable  ),
     .o_periph_write (periph_write   ),
     .o_periph_wmask (periph_wmask   ),
@@ -159,7 +165,9 @@ u_Bus_Access(
     .i_timer_rdata  (timer_rdata    ),
     .i_timer_ready  (timer_ready    ),
     .i_clint_rdata  (clint_rdata    ),
-    .i_clint_ready  (clint_ready    )
+    .i_clint_ready  (clint_ready    ),
+    .i_plic_rdata   (plic_rdata     ),
+    .i_plic_ready   (plic_ready     )
 );
 
 CLINT #(
@@ -247,8 +255,27 @@ apb_timer #(
     .channel_io     (timer_channel_io    )
 );
 
+PLIC #(
+    .NUM_SOURCES    (16             ),
+    .MAX_PRIORITY (7              ),
+    .NUM_TARGETS    (1              )
+) u_PLIC (
+    .PCLK           (sys_clk        ),
+    .PRESETn        (sys_rst_n      ),
+    .PADDR          (periph_addr    ),
+    .PSEL           (plic_psel      ),
+    .PENABLE        (periph_enable  ),
+    .PWRITE         (periph_write   ),
+    .PSTRB          (periph_wmask   ),
+    .PWDATA         (periph_wdata   ),
+    .PRDATA         (plic_rdata     ),
+    .PREADY         (plic_ready     ),
+    .PSLVERR        (plic_err       ),
+    .irq_i          ({12'b0, timer_irq, gpio_irq, uart_irq}),
+    .irq_o          (plic_irq       )
+);
 
-// 暂时的
-assign external_int = uart_irq || gpio_irq || timer_irq;
+// PLIC irq_o drives external_int (single target)
+assign external_int = plic_irq[0];
 
 endmodule

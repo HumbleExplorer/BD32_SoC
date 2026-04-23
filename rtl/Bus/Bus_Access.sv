@@ -23,6 +23,7 @@ module Bus_Access #(
     output  logic                       o_uart_psel,// 选择信号
     output  logic                       o_timer_psel,// 选择信号
     output  logic                       o_clint_psel,// 选择信号
+    output  logic                       o_plic_psel,// 选择信号
     output  logic                       o_periph_enable,// 使能信号
     output  logic                       o_periph_write,// 写信号
     output  logic   [ALIGN_BYTES-1:0]   o_periph_wmask, // 写使能信号
@@ -34,7 +35,9 @@ module Bus_Access #(
     input   logic   [DATA_WIDTH-1:0]    i_timer_rdata,// 读数据总线
     input   logic                       i_timer_ready,// 准备就绪信号
     input   logic   [DATA_WIDTH-1:0]    i_clint_rdata,// 读数据总线
-    input   logic                       i_clint_ready// 准备就绪信号
+    input   logic                       i_clint_ready,// 准备就绪信号
+    input   logic   [DATA_WIDTH-1:0]    i_plic_rdata,// 读数据总线
+    input   logic                       i_plic_ready // 准备就绪信号
 );
 logic PSEL;
 logic [DATA_WIDTH-1:0] PRDATA;
@@ -63,7 +66,25 @@ APB_Interconnect #(
     .PDATA_WIDTH 	(DATA_WIDTH  ))
 u_APB_Interconnect(
     .PADDR          (o_periph_addr),
-    .*
+    .PSEL           (PSEL),
+    .i_gpio_rdata   (i_gpio_rdata),
+    .i_gpio_ready   (i_gpio_ready),
+    .i_uart_rdata   (i_uart_rdata),
+    .i_uart_ready   (i_uart_ready),
+    .i_timer_rdata  (i_timer_rdata),
+    .i_timer_ready  (i_timer_ready),
+    .i_clint_rdata  (i_clint_rdata),
+    .i_clint_ready  (i_clint_ready),
+    .i_plic_rdata   (i_plic_rdata),
+    .i_plic_ready   (i_plic_ready),
+    .o_gpio_psel    (o_gpio_psel),
+    .o_uart_psel    (o_uart_psel),
+    .o_timer_psel   (o_timer_psel),
+    .o_clint_psel   (o_clint_psel),
+    .o_plic_psel    (o_plic_psel),
+    .PRDATA         (PRDATA),
+    .PREADY         (PREADY),
+    .PSLVERR        (PSLVERR)
 );
 
 

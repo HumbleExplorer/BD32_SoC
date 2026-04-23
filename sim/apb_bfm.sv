@@ -114,12 +114,12 @@ task automatic read (
     #1;
 
     PENABLE = 1'b1;
-    @(posedge PCLK);
 
     while (!PREADY) @(posedge PCLK);
     #1;
     data = PRDATA;
-
+    @(posedge PCLK);
+    #1;
     PSEL    = 1'b0;
     PADDR   = {PADDR_WIDTH{1'bx}};
     PWRITE  = 1'bx;

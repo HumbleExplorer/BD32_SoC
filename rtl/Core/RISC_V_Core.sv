@@ -25,8 +25,6 @@ module RISC_V_Core #(
     input   logic                       timer_int,
     // from plic
     input   logic                       external_int,
-    // to plic
-    output  logic                       plic_sel,
     // from bus
     input   logic   [DATA_WIDTH-1:0]    bus_rdata,
     input   logic                       bus_tran_done,
