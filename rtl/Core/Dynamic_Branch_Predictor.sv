@@ -116,8 +116,8 @@ typedef enum logic [1:0] {
 // } branch_jump_type_t;
 
 // BTB相关信号
-logic [BTB_TAG_WIDTH-1:0]  btb_tag_array [BTB_ENTRIES-1:0];      // BTB中存储的PC
-logic [BTB_BTA_WIDTH-1:0]  btb_target_array [BTB_ENTRIES-1:0];  // BTB中存储的目标地址
+(* RAM_STYLE="distributed"*) logic [BTB_TAG_WIDTH-1:0]  btb_tag_array [BTB_ENTRIES-1:0];      // BTB中存储的PC
+(* RAM_STYLE="distributed"*) logic [BTB_BTA_WIDTH-1:0]  btb_target_array [BTB_ENTRIES-1:0];  // BTB中存储的目标地址
 logic                   btb_valid_array [BTB_ENTRIES-1:0];                           // BTB有效标志
 logic [1:0]             btb_inst_type_array [BTB_ENTRIES-1:0];     // BTB中存储的指令类
 logic                   btb_push_ras_array [BTB_ENTRIES-1:0];      // BTB中存储的push_ras
@@ -131,10 +131,9 @@ logic [PC_HASH_WIDTH-1:0] pc_hash;    // PC哈希值
 logic [GHR_WIDTH-1:0]   spec_global_history;         // 推测全局历史 (IF 预测用)
 logic [GHR_WIDTH-1:0]   real_global_history;          // 真实全局历史 (EX 更新用)
 logic [GHR_WIDTH-1:0]   spec_global_history_next;
-logic [GHR_WIDTH-1:0]   real_global_history_next;
 
 // RAS：推测RAS + 真实RAS
-logic [RAS_DATA_WIDTH-1:0] ras_stack [RAS_DEPTH-1:0];           // 返回地址堆栈
+(* RAM_STYLE="distributed"*)logic [RAS_DATA_WIDTH-1:0] ras_stack [RAS_DEPTH-1:0];           // 返回地址堆栈
 logic [RAS_ADDR_WIDTH:0] spec_ras_ptr;                 // 推测 RAS 指针
 logic [RAS_ADDR_WIDTH:0] real_ras_ptr;                 // 真实 RAS 指针
 logic [RAS_ADDR_WIDTH:0] spec_ras_ptr_next;
@@ -208,23 +207,23 @@ always_ff @(posedge clk or negedge rst_n) begin
         for (int i = 0; i < PHT_ENTRIES; i++) begin
             pht_array[i] <= #1 WEAKLY_NOT_TAKEN;
         end
-    end else if (branch_req && branch_inst_type == BRANCH_INST_TYPE_B && !stall) begin
-        case (pht_array[update_pht_idx])
+    end else if (ghr_pht_update_en_latched) begin
+        case (pht_array[pht_update_idx_latched])
             STRONGLY_NOT_TAKEN: begin
                 // 00 -> 01 (如果跳转) 或 00 (如果不跳转)
-                pht_array[update_pht_idx] <= #1 branch_taken ? WEAKLY_NOT_TAKEN : STRONGLY_NOT_TAKEN;
+                pht_array[pht_update_idx_latched] <= #1 pht_update_taken_latched ? WEAKLY_NOT_TAKEN : STRONGLY_NOT_TAKEN;
             end
             WEAKLY_NOT_TAKEN: begin
                 // 01 -> 10 (如果跳转) 或 00 (如果不跳转)
-                pht_array[update_pht_idx] <= #1 branch_taken ? WEAKLY_TAKEN : STRONGLY_NOT_TAKEN;
+                pht_array[pht_update_idx_latched] <= #1 pht_update_taken_latched ? WEAKLY_TAKEN : STRONGLY_NOT_TAKEN;
             end
             WEAKLY_TAKEN: begin
                 // 10 -> 11 (如果跳转) 或 01 (如果不跳转)
-                pht_array[update_pht_idx] <= #1 branch_taken ? STRONGLY_TAKEN : WEAKLY_NOT_TAKEN;
+                pht_array[pht_update_idx_latched] <= #1 pht_update_taken_latched ? STRONGLY_TAKEN : WEAKLY_NOT_TAKEN;
             end
             STRONGLY_TAKEN: begin
                 // 11 -> 11 (如果跳转) 或 10 (如果不跳转)
-                pht_array[update_pht_idx] <= #1 branch_taken ? STRONGLY_TAKEN : WEAKLY_TAKEN;
+                pht_array[pht_update_idx_latched] <= #1 pht_update_taken_latched ? STRONGLY_TAKEN : WEAKLY_TAKEN;
             end
             default: begin
                 ;
@@ -234,7 +233,42 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 // ========================================================================
-// 时序逻辑: BTB更新
+// BTB 更新请求与数据锁存
+// 目的：将 37 级 LUT 的长组合逻辑从 FDCE 的 CE 引脚移除。
+// 机制：在 !stall 时捕获 branch_req && branch_taken 及全部更新数据，
+//       下一拍无条件执行更新。更新后使能自动清零。
+// 注意：必须同时锁存数据和使能，否则 update_btb_idx 等信号在下一拍
+//       变化会导致写入错误的 BTB 条目，造成预测永远失败。
+// ========================================================================
+
+logic btb_update_en_latched;
+logic [BTB_ADDR_WIDTH-1:0] btb_update_idx_latched;
+logic [BTB_TAG_WIDTH-1:0]  btb_update_tag_latched;
+logic [BTB_BTA_WIDTH-1:0]  btb_update_target_latched;
+logic [1:0]                btb_update_type_latched;
+logic                      btb_update_pop_ras_latched;
+logic                      btb_update_push_ras_latched;
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n || is_fence_i) begin
+        btb_update_en_latched <= 1'b0;
+    end else if (btb_update_en_latched) begin
+        // 上一拍捕获的更新请求在本拍执行，执行后清零
+        btb_update_en_latched <= 1'b0;
+    end else if (!stall) begin
+        // 无待处理请求且当前不 stall，捕获新的更新请求和数据
+        btb_update_en_latched <= branch_req && branch_taken;
+        btb_update_idx_latched     <= update_btb_idx;
+        btb_update_tag_latched     <= branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_update_target_latched  <= branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_update_type_latched    <= branch_inst_type;
+        btb_update_pop_ras_latched <= pop_ras;
+        btb_update_push_ras_latched<= push_ras;
+    end
+end
+
+// ========================================================================
+// 时序逻辑: BTB更新（使用锁存的使能和数据）
 // ========================================================================
 
 always_ff @(posedge clk or negedge rst_n) begin
@@ -248,18 +282,48 @@ always_ff @(posedge clk or negedge rst_n) begin
             btb_push_ras_array[i]   <= #1 1'b0;
             btb_pop_ras_array[i]    <= #1 1'b0;
         end
-    end else if (branch_req && branch_taken && !stall) begin//分支跳转指令，仅实际跳转时会更新
-        // 更新BTB表项
-        btb_valid_array[update_btb_idx]     <= #1 1'b1;
-        btb_tag_array[update_btb_idx]       <= #1 branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_target_array[update_btb_idx]    <= #1 branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_inst_type_array[update_btb_idx] <= #1 branch_inst_type;
-        btb_pop_ras_array[update_btb_idx]   <= #1 pop_ras;
-        btb_push_ras_array[update_btb_idx]  <= #1 push_ras;
+    end else if (btb_update_en_latched) begin//使用锁存的使能信号更新BTB
+        // 更新BTB表项（使用锁存的数据，避免信号变化导致写入错误位置）
+        btb_valid_array[btb_update_idx_latched]     <= #1 1'b1;
+        btb_tag_array[btb_update_idx_latched]       <= #1 btb_update_tag_latched;
+        btb_target_array[btb_update_idx_latched]    <= #1 btb_update_target_latched;
+        btb_inst_type_array[btb_update_idx_latched] <= #1 btb_update_type_latched;
+        btb_pop_ras_array[btb_update_idx_latched]   <= #1 btb_update_pop_ras_latched;
+        btb_push_ras_array[btb_update_idx_latched]  <= #1 btb_update_push_ras_latched;
     end
 end
 
 
+
+// ========================================================================
+// GHR + PHT 更新请求与数据锁存
+// 目的：将 real_global_history_next 的组合逻辑路径从关键时序路径中移除，
+//       与 BTB 更新锁存采用相同模式：捕获1拍、下一拍执行。
+// 机制：在 !stall 时捕获 B 类分支的 GHR/PHT 更新请求及全部数据，
+//       下一拍无条件执行更新。更新后使能自动清零。
+// 注意：必须同时锁存数据和使能，否则 update_pht_idx 等信号在下一拍
+//       变化会导致写入错误的 PHT 条目。
+// ========================================================================
+
+logic                      ghr_pht_update_en_latched;
+logic [GHR_WIDTH-1:0]      ghr_update_value_latched;
+logic [PHT_ADDR_WIDTH-1:0] pht_update_idx_latched;
+logic                      pht_update_taken_latched;
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n || is_fence_i) begin
+        ghr_pht_update_en_latched <= 1'b0;
+    end else if (ghr_pht_update_en_latched) begin
+        // 上一拍捕获的更新请求在本拍执行，执行后清零
+        ghr_pht_update_en_latched <= 1'b0;
+    end else if (!stall && branch_req && branch_inst_type == BRANCH_INST_TYPE_B) begin
+        // 无待处理请求且当前不 stall，捕获新的 GHR/PHT 更新请求和数据
+        ghr_pht_update_en_latched <= 1'b1;
+        ghr_update_value_latched  <= {real_global_history[GHR_WIDTH-2:0], branch_taken};
+        pht_update_idx_latched    <= update_pht_idx;
+        pht_update_taken_latched  <= branch_taken;
+    end
+end
 
 //========================================================================
 // REAL RAS 指针 next 计算 (EX 阶段)
@@ -295,17 +359,15 @@ always_comb begin
 end
 
 //========================================================================
-// REAL GHR next
-//========================================================================
-assign real_global_history_next = (branch_req && branch_inst_type == BRANCH_INST_TYPE_B) ?
-    {real_global_history[GHR_WIDTH-2:0], branch_taken} : real_global_history;
-
-//========================================================================
 // SPEC GHR next
+// 注意：预测错误时使用 real_global_history（寄存器输出）而非组合逻辑
+// 的 real_global_history_next，以切断关键时序路径。
+// 这意味着预测错误恢复后 spec GHR 少移入1位当前分支结果，
+// 下一拍 real_global_history 通过锁存更新后自然纠正。
 //========================================================================
 always_comb begin
     if (!branch_predict_success && branch_req) begin// 预测错误
-        spec_global_history_next = real_global_history_next;
+        spec_global_history_next = real_global_history;
     end else if (predict_btb_hit && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) begin // 预测成功
         spec_global_history_next = {spec_global_history[GHR_WIDTH-2:0], predict_taken};
     end else begin
@@ -327,14 +389,23 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 //========================================================================
-// 时序：更新 REAL GHR + REAL RAS
+// 时序：更新 REAL GHR（使用锁存的使能和数据，延迟1拍更新）
 //========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         real_global_history <= #1 '0;
+    end else if (ghr_pht_update_en_latched) begin
+        real_global_history <= #1 ghr_update_value_latched;
+    end
+end
+
+//========================================================================
+// 时序：更新 REAL RAS
+//========================================================================
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
         real_ras_ptr <= #1 '0;
     end else if (!stall) begin
-        real_global_history <= #1 real_global_history_next;
         real_ras_ptr <= #1 real_ras_ptr_next;
     end
 end

@@ -65,11 +65,11 @@ module timer_ic_oc #(
     }trigger_mode_e;
 
     // 输入捕获状态
-    typedef enum logic [1:0] {
-        IC_IDLE     = 2'b00,  // 空闲
-        IC_FILTER   = 2'b01,  // 滤波中
-        IC_CONFIRM  = 2'b10,  // 确认
-        IC_CAPTURE  = 2'b11   // 捕获
+    typedef enum logic [3:0] {
+        IC_IDLE     = 4'b0001,  // 空闲
+        IC_FILTER   = 4'b0010,  // 滤波中
+        IC_CONFIRM  = 4'b0100,  // 确认
+        IC_CAPTURE  = 4'b1000   // 捕获
     }ic_state_e;
 
     //////////////////////////////////////////////////////////////////

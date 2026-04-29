@@ -20,12 +20,12 @@ localparam LCR_BREAK_CTRL  = 6;   // Break控制（预留）
 localparam LCR_DLAB        = 7;   // DLAB位（预留）
 
 // 发送状态机枚举
-typedef enum logic[2:0] {
-    TX_IDLE    = 3'b000,
-    TX_START   = 3'b001,
-    TX_DATA    = 3'b010,
-    TX_PARITY  = 3'b011,
-    TX_STOP    = 3'b100
+typedef enum logic[4:0] {
+    TX_IDLE    = 5'b00001,
+    TX_START   = 5'b00010,
+    TX_DATA    = 5'b00100,
+    TX_PARITY  = 5'b01000,
+    TX_STOP    = 5'b10000
 } uart_tx_state_e;
 
 // 内部信号

@@ -1,5 +1,5 @@
 // File: Cdc_Sync.sv
-// 功能：将 async_sig 同步到 dst_clk 时钟域
+// 功能：将 async_sig 同步到 dst_clk 时钟域（慢到快）
 // 说明：这是一个标准 IP，不要随意修改内部逻辑
 // 用于同步简单的电平信号（比如复位信号、状态标志）。
 `timescale 1ns / 1ps
@@ -18,7 +18,7 @@ generate
         assign sync_sig = async_sig;
     end else begin
         // 使用两级触发器进行同步
-        logic [WIDTH-1:0] sync_reg [DELAY_STAGES-1:0];
+        (* ASYNC_REG = "TRUE" *)logic [WIDTH-1:0] sync_reg [DELAY_STAGES-1:0];
 
         always_ff @(posedge dst_clk or negedge dst_rst_n) begin
             if (!dst_rst_n) begin

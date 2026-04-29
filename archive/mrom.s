@@ -1,11 +1,11 @@
 # MROM Bootloader - Boot from flash or download mode
 # Base addresses:
-#   0xE0000000 - GPIO
-#   0xE0010000 - UART 
+#   0x80000000 - GPIO
+#   0x80010000 - UART 
 
 # Step 1: Check boot mode by reading SPI status
 # SET GPIO mode = push-pull
-li ra, 0xE0000000           # GPIO base address
+li ra, 0x80000000           # GPIO base address
 sw zero, 0x00(ra)           
 # SET GPIO[1] output ,GPIO[0] input
 li t1, 0x00000002           
@@ -18,7 +18,7 @@ beqz t1, normal_mode        # If bit[0]=0, boot from ITCM/Flash, otherwise UART
 # Download mode: Load program from UART to ITCM/Flash
 download_cfg:
 # SET UART Divisor Register
-    li ra, 0xE0010000       # UART base address
+    li ra, 0x80010000       # UART base address
     li t3, 0x00000080        
     sw t3, 0x0C(ra)         # SET LCR[DLAB_BIT]
     li t3, 27                # Baud rate 115200(50MHz)
@@ -38,7 +38,7 @@ download_mode:
 
 # Normal boot mode: Jump to user program in ITCM/Flash
 normal_mode:
-    li ra, 0xE0000000        # GPIO base address
+    li ra, 0x80000000        # GPIO base address
     # SET GPIO[1] output to indicate normal mode
     li t1, 0x2               
     sw t1, 0x08(ra)          

@@ -13,10 +13,13 @@ module divider #(
     output  logic                    ready           // 就绪信号: 空闲=高,运算中=低,结果出的周期=高
 );
 
-localparam IDLE = 2'b00;
-localparam CALCULATE = 2'b01;
-localparam DONE = 2'b10;
-logic [1:0] state;
+typedef enum logic [2:0] {
+    IDLE      = 3'b001,
+    CALCULATE = 3'b010,   // 等待 AW/W 都完成
+    DONE      = 3'b100   // 等待写响应
+} state_t;
+
+state_t state;
 
 logic  div_rem;         // 0:除法  1:取余
 logic  is_unsigned;     // 1:无符号运算  0:有符号运算

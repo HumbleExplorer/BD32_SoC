@@ -1,7 +1,7 @@
 # Breathing LED Test via PWM (polling mode)
-# Timer Base: 0x80040000
-# CLINT Base: 0x02000000 (4KB block)
-# UART Base:  0x80010000
+# Timer Base: 0xE0040000
+# CLINT Base: 0xF2000000 (4KB block)
+# UART Base:  0xE0010000
 #
 # PWM output compare logic (up-counting, polarity=0):
 #   cmp_match  = (timer_cnt >= cmp_reg)
@@ -31,7 +31,7 @@
 #   [7:4]   = timer_ic_oc_polarity[3:0] (1bit/ch, 0=high-active output)
 #   [15:8]  = timer_trigger_mode[7:0]   (2bits/ch)
 
-.eqv TIMER_BASE,    0x80040000
+.eqv TIMER_BASE,    0xE0020000
 .eqv TIMx_PSC,      0x00
 .eqv TIMx_CNT,      0x04
 .eqv TIMx_ARR,      0x08
@@ -41,9 +41,9 @@
 .eqv TIMx_CCMR,     0x18
 .eqv TIMx_CCER,     0x1C
 .eqv TIMx_CCR1,     0x20
-.eqv MTIME_ADDR,    0x0200BFF8
-.eqv MTIMECMP_ADDR, 0x02004000
-.eqv UART_BASE,     0x80010000
+.eqv MTIME_ADDR,    0xF200BFF8
+.eqv MTIMECMP_ADDR, 0xF2004000
+.eqv UART_BASE,     0xE0010000
 .eqv UART_THR,      0x00        # UART Transmit Holding Register
 # 10ms @ 50MHz = 500000 cycles
 .eqv DELAY_10MS,    500000

@@ -26,10 +26,10 @@ module uart_download #(
 localparam START_FRAME = 32'hBBAABBAA;//传0xAA 0xBB 0xAA 0xBB
 localparam END_FRAME   = 32'hFFEEFFEE;//传0xEE 0xFF 0xEE 0xFF
 // 状态机定义
-typedef enum logic [1:0] {
-    IDLE,        // 空闲（一直在检测）
-    RECV_DATA,   // 接收数据并拼接
-    NORMAL_MODE  // 切换到用户模式
+typedef enum logic [2:0] {
+    IDLE         = 3'b001, // 空闲（一直在检测）
+    RECV_DATA    = 3'b010, // 接收数据并拼接
+    NORMAL_MODE  = 3'b100  // 切换到用户模式
 } download_state_t;
 
 // 内部寄存器
@@ -93,31 +93,29 @@ always_comb begin
     next_state = current_state;
     itcm_wr_data = 'h0;
     itcm_wr_en = 1'b0;
-    if(rst_n) begin
-        case(current_state)
-            IDLE: begin
-                // 检测到启动帧，进入数据接收状态
-                if(detect_start_frame) begin
-                    next_state = RECV_DATA;
+    case(current_state)
+        IDLE: begin
+            // 检测到启动帧，进入数据接收状态
+            if(detect_start_frame) begin
+                next_state = RECV_DATA;
+            end
+        end
+        RECV_DATA: begin
+            if (itcm_addr_access_valid) begin
+                if(detect_start_frame) begin 
+                    itcm_wr_en = 1'b0;
+                end else if (detect_end_frame) begin// 检测结束帧，退出数据接收
+                    next_state = NORMAL_MODE;
+                    itcm_wr_en = 1'b0; // 停止写ITCM
+                end else if (word_ready) begin
+                    itcm_wr_data = recv_data_n;
+                    itcm_wr_en = 1'b1;
                 end
             end
-            RECV_DATA: begin
-                if (itcm_addr_access_valid) begin
-                    if(detect_start_frame) begin 
-                        itcm_wr_en = 1'b0;
-                    end else if (detect_end_frame) begin// 检测结束帧，退出数据接收
-                        next_state = NORMAL_MODE;
-                        itcm_wr_en = 1'b0; // 停止写ITCM
-                    end else if (word_ready) begin
-                        itcm_wr_data = recv_data_n;
-                        itcm_wr_en = 1'b1;
-                    end
-                end
-            end
-            NORMAL_MODE:;
-            default: next_state = IDLE;
-        endcase
-    end
+        end
+        NORMAL_MODE:;
+        default: next_state = IDLE;
+    endcase
 end
 
 // 核心状态机

@@ -8,7 +8,7 @@ module apb_uart #(
 )(
     // APB总线接口（4字节对齐）
     input   logic                       PCLK,        // 总线时钟
-    input   logic                       PSESETn,      // 异步复位（低有效）
+    input   logic                       PRESETn,      // 异步复位（低有效）
     input   logic   [ADDR_WIDTH-1:0]    PADDR,   // 32位地址（低2位必须为0）
     input   logic                       PSEL,  
     input   logic                       PENABLE,  
@@ -108,8 +108,8 @@ assign  timeout = timeout_cnt == 6'd63;
 
 
 // -------------------------- 1. 寄存器写逻辑 --------------------------
-always_ff @(posedge PCLK or negedge PSESETn) begin
-    if (!PSESETn) begin
+always_ff @(posedge PCLK or negedge PRESETn) begin
+    if (!PRESETn) begin
         divisor        <= #1 16'd0;
         ier            <= #1 4'd0;
         fcr            <= #1 8'hC0;      // FIFO默认使能
@@ -189,8 +189,8 @@ always_comb begin
 end
 
 // -------------------------- 3. LSR 状态更新 --------------------------
-always_ff @(posedge PCLK or negedge PSESETn) begin
-    if (!PSESETn) begin
+always_ff @(posedge PCLK or negedge PRESETn) begin
+    if (!PRESETn) begin
         lsr <= #1 8'h60; // THRE=1, TEMT=1
     end else begin
         lsr[0] <= #1 ~rx_fifo_rd_empty; // DR：FIFO非空即数据就绪
@@ -205,8 +205,8 @@ always_ff @(posedge PCLK or negedge PSESETn) begin
 end
 
 // -------------------------- 4. FIFO计数 + 接收超时 + 中断逻辑 --------------------------
-always_ff @(posedge PCLK or negedge PSESETn) begin
-    if (!PSESETn) begin
+always_ff @(posedge PCLK or negedge PRESETn) begin
+    if (!PRESETn) begin
         timeout_cnt <= #1 6'd0;
         irq_o       <= #1 1'b0;
         iir         <= #1 IIR_NO_INT;
@@ -263,7 +263,7 @@ endfunction
 // 1. 波特率时钟分频模块
 uart_clk_div uart_clk_div_inst (
     .clk        (PCLK),
-    .rst_n      (PSESETn),
+    .rst_n      (PRESETn),
     .divisor    (divisor),
     .clk_sample (clk_sample),
     .clk_uart   (clk_uart)
@@ -272,7 +272,7 @@ uart_clk_div uart_clk_div_inst (
 // 2. 接收模块：LCR合并为8位输入，子模块内部拆分
 uart_rx u_uart_rx(
     .clk_sample         (clk_sample       ),
-    .rst_n              (PSESETn          ),
+    .rst_n              (PRESETn          ),
     .rx_i               (uart_rx_i        ),
     .lcr                (lcr              ),
     .rx_fifo_wr_full    (rx_fifo_wr_full  ),
@@ -284,7 +284,7 @@ uart_rx u_uart_rx(
 // 3. 发送模块：LCR合并为8位输入，子模块内部拆分
 uart_tx u_uart_tx(
     .clk_uart           (clk_uart  ),
-    .rst_n              (PSESETn   ),
+    .rst_n              (PRESETn   ),
     .tx_i               (tx_data_in),
     .tx_start           (tx_start  ),
     .lcr                (lcr       ),
@@ -297,7 +297,7 @@ uart_tx u_uart_tx(
 fifo_async #(.DEPTH(16), .WIDTH(8)) rx_fifo_inst(
     .wclk               (clk_sample       ),
     .rclk               (PCLK             ),
-    .rst_n              (PSESETn          ),
+    .rst_n              (PRESETn          ),
     .clr                (rx_fifo_clr      ),
     .wr_en              (rx_fifo_wr_en    ),
     .rd_en              (rx_fifo_rd_en    ),
@@ -315,7 +315,7 @@ fifo_async #(.DEPTH(16), .WIDTH(8)) rx_fifo_inst(
 fifo_async #(.DEPTH(16), .WIDTH(8)) tx_fifo_inst (
     .wclk        (PCLK),
     .rclk        (clk_uart),
-    .rst_n       (PSESETn),
+    .rst_n       (PRESETn),
     .clr         (tx_fifo_clr),
     .wr_en       (tx_fifo_wr_en),
     .rd_en       (tx_fifo_rd_en),
@@ -335,7 +335,7 @@ uart_download #(
     .ALIGN_WIDTH 	(ALIGN_WIDTH )
 )u_uart_download(
     .clk            (PCLK           ),
-    .rst_n          (PSESETn        ),
+    .rst_n          (PRESETn        ),
     .download_en    (download_en    ),
     .uart_rec_byte  (rx_fifo_rdata  ),
     .uart_rx_valid  (rx_fifo_rd_en  ),
@@ -345,8 +345,8 @@ uart_download #(
     .download_done  (download_done  )
 );
 
-always_ff @(posedge clk_uart or negedge PSESETn) begin
-    if (!PSESETn) begin
+always_ff @(posedge clk_uart or negedge PRESETn) begin
+    if (!PRESETn) begin
         tx_fifo_clr   <= #1 1'b0;
     end else begin
         // FIFO 自清除逻辑：硬件自动清零（写1有效，自动回0）
@@ -357,8 +357,8 @@ always_ff @(posedge clk_uart or negedge PSESETn) begin
     end
 end
 
-always_ff @(posedge clk_sample or negedge PSESETn) begin
-    if (!PSESETn) begin
+always_ff @(posedge clk_sample or negedge PRESETn) begin
+    if (!PRESETn) begin
         rx_fifo_clr   <= #1 1'b0;
     end else begin
         // FIFO 自清除逻辑：硬件自动清零（写1有效，自动回0）
@@ -368,7 +368,7 @@ always_ff @(posedge clk_sample or negedge PSESETn) begin
             rx_fifo_clr    <= #1 1'b0;
     end
 end
-// always_ff @(posedge PCLK or negedge PSESETn) begin
+// always_ff @(posedge PCLK or negedge PRESETn) begin
 //     PREADY <= #1 1'b1;
 //     if (PSEL & ~lcr[DLAB_BIT] & reg_sel == REG_SEL_0)
 //         if(PWRITE) begin

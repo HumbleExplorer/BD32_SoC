@@ -33,6 +33,25 @@ generate
         // .dina   (wr_data),
         // .douta  (rd_data)
         // );
+        (* RAM_STYLE="distributed"*) logic [DATA_WIDTH-1:0] ram_mem [0:DTCM_DEPTH-1];
+
+        initial begin
+            $readmemh(FULL_PATH,ram_mem);
+        end
+
+        integer i;
+        always_ff @(posedge clk) begin
+            if(wr_en) begin
+                for (i=0;i<ALIGN_BYTES;i=i+1) begin
+                    // 按wr_mask逐字节更新，未掩码的字节保持原样
+                    if(wr_mask[i]) begin
+                        ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]][i*8+:8] <= #1 wr_data[i*8+:8];
+                    end
+                end
+            end
+        end
+
+        assign rd_data = (!rst_n)? 'h0 :ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]];
     end else if(`TCM_Reg_or_BRAM=="Reg") begin
         logic [DATA_WIDTH-1:0] ram_mem [0:DTCM_DEPTH-1];
 

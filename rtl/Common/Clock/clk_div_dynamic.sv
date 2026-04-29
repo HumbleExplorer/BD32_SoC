@@ -53,7 +53,7 @@ always_ff @(negedge clk_in or negedge rst_n) begin
         clkn_div_r <= 1'b1;
     end
 end
-assign clk_out = divisor[0] ? clkp_div_r | clkn_div_r://奇数分频
-(div_cnt < divisor[DIV_WIDTH-1:1])? clkp_div_r : clkn_div_r;//偶数分频
+assign clk_out = divisor[0] ? clkp_div_r | clkn_div_r: //奇数分频
+(div_cnt < divisor[DIV_WIDTH-1:1])? clkp_div_r : clkn_div_r; //偶数分频
 
 endmodule

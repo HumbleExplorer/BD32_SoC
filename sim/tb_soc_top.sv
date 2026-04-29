@@ -218,7 +218,6 @@ initial begin
     $display("\n============================================================");
     $display("              RISC-V SoC Simulation Started                  ");
     $display("============================================================");
-    $display("Timer Base Address: 0x%08h", `TIMER_BASE_ADDR);
     $display("Timer Channels: %0d", `TIMER_CHANNEL_NUM);
     $display("Expected PWM Period (ARR=255, PSC=1): 512 clocks");
     $display("Expected PWM Duty Cycle: 25%% (CCR1=64)");
@@ -250,7 +249,7 @@ SoC_top #(
     .GPIO_NUM       	(GPIO_NUM        )
 )u_SoC_top(
     .sys_clk     	(clk        ),
-    .rst_n   	    (rst_n      ),
+    .sys_rst_n   	    (rst_n      ),
     // .clk_timer      (clk_timer),
     .uart_rx     	(uart_rx    ),
     .uart_tx     	(uart_tx    ),

@@ -90,9 +90,9 @@ module PLIC #(
     // ========================================================================
     // 内部信号 - 寄存器
     // ========================================================================
-    logic   [PRIO_WIDTH-1:0]    prio_regs   [NUM_SOURCES];    // 每源优先级
+    (* RAM_STYLE="distributed"*)logic   [PRIO_WIDTH-1:0]    prio_regs   [NUM_SOURCES];    // 每源优先级
     logic   [NUM_SOURCES-1:0]   pending_bits;                  // 来自 gateway
-    logic   [NUM_SOURCES-1:0]   enable_bits [NUM_TARGETS];    // 每目标使能
+    (* RAM_STYLE="distributed"*)logic   [NUM_SOURCES-1:0]   enable_bits [NUM_TARGETS];    // 每目标使能
     logic   [PRIO_WIDTH-1:0]    threshold_q [NUM_TARGETS];    // 每目标阈值
 
     // ========================================================================
@@ -357,8 +357,9 @@ module PLIC #(
                 .claimed_id     (target_claimed_id[g_tgt]),
                 .eip            (target_eip[g_tgt])
             );
-
-            assign irq_o[g_tgt] = target_eip[g_tgt];
+            always_ff @(posedge PCLK) begin
+                irq_o[g_tgt] <= target_eip[g_tgt];
+            end
         end
     endgenerate
 
@@ -376,13 +377,11 @@ module PLIC #(
     // ========================================================================
     // 读数据选择
     // ========================================================================
-    always_comb begin
-        PRDATA = 32'h0;
-
+    always_ff @(posedge PCLK) begin
         if (is_prio) begin
             // Priority 寄存器读
             if (src_idx < NUM_SOURCES)
-                PRDATA[PRIO_WIDTH-1:0] = prio_regs[src_idx];
+                PRDATA[PRIO_WIDTH-1:0] <= prio_regs[src_idx];
 
         end else if (is_pending) begin
             // Pending 位读 (只读, 每 word 32 位)
@@ -390,7 +389,7 @@ module PLIC #(
                 int loop_src;
                 loop_src = word_idx * 32 + loop_bit;
                 if (loop_src < NUM_SOURCES)
-                    PRDATA[loop_bit] = pending_bits[loop_src];
+                    PRDATA[loop_bit] <= pending_bits[loop_src];
             end
 
         end else if (is_target_enable) begin
@@ -400,19 +399,21 @@ module PLIC #(
                     int loop_src;
                     loop_src = word_idx * 32 + loop_bit;
                     if (loop_src < NUM_SOURCES)
-                        PRDATA[loop_bit] = enable_bits[tgt_idx][loop_src];
+                        PRDATA[loop_bit] <= enable_bits[tgt_idx][loop_src];
                 end
             end
 
         end else if (is_target_threshold) begin
             // Threshold 读
             if (tgt_idx < NUM_TARGETS)
-                PRDATA[PRIO_WIDTH-1:0] = threshold_q[tgt_idx];
+                PRDATA[PRIO_WIDTH-1:0] <= threshold_q[tgt_idx];
 
         end else if (is_target_claim) begin
             // Claim 读: 返回对应 target 的 claimed_id
             if (tgt_idx < NUM_TARGETS)
-                PRDATA = {{(32-SRC_ID_WIDTH){1'b0}}, target_claimed_id[tgt_idx]};
+                PRDATA <= {{(32-SRC_ID_WIDTH){1'b0}}, target_claimed_id[tgt_idx]};
+        end else begin
+            PRDATA <= 32'h0;
         end
     end
 

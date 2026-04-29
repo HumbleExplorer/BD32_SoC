@@ -32,9 +32,7 @@ logic [DATA_WIDTH-1:0] rd_direct_data;
 logic                  access_illegal;
 
 assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `DTCM_BASE_ADDR) ;
-assign bus_sel      = access_en & ((access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) |
-                                    (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `CLINT_BASE_ADDR) |
-                                    (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `PLIC_BASE_ADDR));
+assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) ;
 assign direct_sel   = dtcm_sel;
 assign rd_direct_data = dtcm_sel ? rd_dtcm_data : 'h0;
 assign mem_access_ready = bus_sel ? bus_tran_done : 1'b1;
@@ -83,6 +81,7 @@ always_comb begin
                     default:wr_reg_data = {16'h0,rd_mem_data[15:0]};
                 endcase
             end
+            default : wr_reg_data = wr_reg_data_from_ex_mem;
         endcase
     end else begin
         wr_reg_data = wr_reg_data_from_ex_mem;

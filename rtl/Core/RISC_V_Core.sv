@@ -30,11 +30,10 @@ module RISC_V_Core #(
     input   logic                       bus_tran_done,
     // to bus
     output  logic                       bus_transfer,
-    // to clint/plic/bus
-    output  logic   [ADDR_WIDTH-1:0]    access_addr,
-    output  logic                       access_wr,
-    output  logic   [DATA_WIDTH-1:0]    access_wr_data,
-    output  logic   [ALIGN_BYTES-1:0]   access_wr_mask
+    output  logic                       bus_access_write,
+    output  logic   [ADDR_WIDTH-1:0]    bus_access_addr,
+    output  logic   [ALIGN_BYTES-1:0]   bus_access_wstrb,
+    output  logic   [DATA_WIDTH-1:0]    bus_access_wdata
 );
 
 // Pipeline Ctrl
@@ -94,6 +93,7 @@ logic   [DATA_WIDTH-1:0]    wr_reg_data;
 
 // IF
 logic   [ADDR_WIDTH-1:0]    pc;
+logic   [ADDR_WIDTH-1:0]    inst_addr_if;   // 当前指令地址（延迟一拍的 pc）
 logic   [DATA_WIDTH-1:0]    inst;
 logic                       predict_taken_if;
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
@@ -165,11 +165,13 @@ logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_mem;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_from_ex_mem;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_mem;
 logic                       access_en;
-// logic   [ADDR_WIDTH-1:0]    access_addr;
+logic   [ADDR_WIDTH-1:0]    access_addr;
+logic                       access_wr;
+// logic   [DATA_WIDTH-1:0]    access_wr_data;
+// logic   [ALIGN_BYTES-1:0]   access_wr_mask;
 
 
 logic   [DATA_WIDTH-1:0]    rd_dtcm_data;
-logic   [DATA_WIDTH-1:0]    rd_plic_data;
 logic   [2:0]               rd_mem_func3;
 logic   [DATA_WIDTH-1:0]    wr_mem_data;
 logic   [ALIGN_BYTES-1:0]   wr_mem_mask;
@@ -193,7 +195,7 @@ Pipeline_Ctrl #(
     .load_use_flag       	(load_use_flag        ),
     .mem_access_ready    	(mem_access_ready     ),
     .mul_div_ready       	(mul_div_ready        ),
-    .inst_addr_if        	(pc                   ),
+    .inst_addr_if        	(inst_addr_if         ),
     .inst_addr_id        	(inst_addr_id         ),
     .inst_addr_ex        	(inst_addr_ex         ),
     .inst_addr_mem       	(inst_addr_mem        ),
@@ -274,7 +276,7 @@ Dynamic_Branch_Predictor #(
     .rst_n           (rst_n          ),
     .is_fence_i      (is_fence_i     ),
     .stall           (pc_stall       ),
-    .pc              (pc             ),
+    .pc              (inst_addr_if   ),
     .branch_pc       (inst_addr_ex   ),
     .branch_taken    (branch_taken   ),
     .branch_target   (branch_target  ),  
@@ -297,10 +299,31 @@ PC_counter #(
     .predict_taken  (predict_taken_if),
     .predict_target (predict_target_if),
     .stall          (pc_stall),
-    .pc             (pc),
+    .pc             (pc),               // 下一条指令地址，给 BootROM/ITCM 读地址
     .exception_code (exception_code_if),
-    .exception_val  (exception_val_if)
-    // .inst_addr_o    (inst_addr_if)
+    .exception_val  (exception_val_if),
+    .inst_addr_o    (inst_addr_if)      // 当前指令地址，给流水线
+);
+
+// 指令来源 MUX（选择信号基于 inst_addr_if = 当前取出的指令地址）
+logic [DATA_WIDTH-1:0]    bootrom_inst;
+logic [DATA_WIDTH-1:0]    itcm_inst;
+logic                     bootrom_sel;
+logic                     itcm_sel;
+
+assign bootrom_sel = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_ADDR);
+assign itcm_sel    = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_ADDR);
+
+BootROM #(
+    .MROM_DEPTH     (`MROM_DEPTH),
+    .ADDR_WIDTH     (ADDR_WIDTH),
+    .DATA_WIDTH     (DATA_WIDTH),
+    .ALIGN_WIDTH    (ALIGN_WIDTH)
+)u_BootROM(
+    .clk            (clk),
+    .rst_n          (rst_n),
+    .inst_addr      (pc),               // 提前一拍送地址
+    .inst_o         (bootrom_inst)      // 同步读，下一拍输出
 );
 
 ITCM #(
@@ -316,9 +339,14 @@ ITCM #(
     .itcm_wr_en     (itcm_wr_en),
     .itcm_wr_addr   (itcm_wr_addr),
     .itcm_wr_data   (itcm_wr_data),
-    .inst_addr      (pc),
-    .inst_o         (inst)
-);  
+    .inst_addr      (pc),               // 提前一拍送地址
+    .inst_o         (itcm_inst)         // 同步读，下一拍输出
+);
+
+// 指令选择：BootROM → ITCM → NOP（非本地地址，未来走总线取指时扩展）
+assign inst = bootrom_sel ? bootrom_inst :
+              itcm_sel    ? itcm_inst    :
+              `INST_NOP;
 
 IF_ID #(
     .ADDR_WIDTH         (ADDR_WIDTH),
@@ -328,8 +356,7 @@ IF_ID #(
     .rst_n              (rst_n),
     .stall              (if_id_stall),
     .flush              (if_id_flush),
-    .inst_addr_i        (pc),
-    // .inst_i         (inst),
+    .inst_addr_i        (inst_addr_if),     // 当前指令地址（延迟一拍的 pc）
     .inst_i             (inst),
     .predict_taken_i    (predict_taken_if),
     .predict_target_i   (predict_target_if),
@@ -557,12 +584,10 @@ Mem_Access #(
     .access_wr                  (access_wr),
     .bus_tran_done              (bus_tran_done),
     .rd_dtcm_data               (rd_dtcm_data),
-    .rd_plic_data               (rd_plic_data),
     .rd_bus_data                (bus_rdata),
     .rd_mem_func3               (rd_mem_func3),
     .wr_reg_data_from_ex_mem    (wr_reg_data_from_ex_mem),
     .dtcm_sel                   (dtcm_sel),
-    .plic_sel                   (plic_sel),
     .bus_sel                    (bus_sel),
     .mem_access_ready           (mem_access_ready),
     .exception_code             (exception_code_mem),
@@ -609,13 +634,12 @@ MEM_WB #(
     .wr_reg_data_o  (wr_reg_data)
 );
 
-// assign access_addr = access_addr;
-// assign access_wr = access_wr;
-assign access_wr_data = wr_mem_data;
-assign access_wr_mask = wr_mem_mask;
-assign bus_transfer = access_en_ex && (
-    (mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) ||
-    (mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `CLINT_BASE_ADDR)
-) && ~(ex_mem_flush || ex_mem_stall);
+assign bus_transfer   = access_en_ex && 
+                        mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR
+                        && ~(ex_mem_flush || ex_mem_stall);
+assign bus_access_write  = access_wr_ex;
+assign bus_access_wdata  = wr_mem_data_ex;
+assign bus_access_addr  = mem_addr_ex;
+assign bus_access_wstrb  = wr_mem_mask_ex;
 
 endmodule

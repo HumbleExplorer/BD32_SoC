@@ -6,5 +6,6 @@
 ../../rtl/Core/*.sv
 ../../rtl/Core/Mul_Div/*.sv
 ../../rtl/Periph/*.sv
+../../rtl/Periph/plic/*.sv
 ../../rtl/Periph/uart/*.sv
 ../../rtl/Periph/timer/*.sv

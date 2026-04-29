@@ -6,26 +6,59 @@
 `define ALIGN_BYTES 4
 `define ALIGN_WIDTH 2
 `define DEVICE_TAG_WIDTH 16
+
+// ============================================================
+// AXI 地址映射（2026-04-24 修订）
+// ============================================================
+// AXI_Interconnect 1→4 路由（地址高4位 [31:28] 译码）
+// `define AXI_MROM_BASE_ADDR     32'h8000_0000  // [31:28]=4'h8, 256MB
+`define AXI_FLASH_BASE_ADDR    32'h9000_0000  // [31:28]=4'h9/A, 512MB
+`define AXI_DDR_BASE_ADDR      32'hB000_0000  // [31:28]=4'hB/C, 512MB
+`define AXI_APB_BRIDGE_BASE    32'hE000_0000  // [31:28]=4'hE/F, 512MB
+
+// AXI-APB Bridge 内部地址映射（PSEL 解码）
+// 每个 APB 从机占 64KB 地址空间，基址按 [31:16] 匹配
+`define APB_SLAVE_ADDR_WIDTH   16             // [15:0] 为从机内部偏移
+`define APB_NUM_SLAVES         16             // 可配置 APB 从机数量
+
+// APB 从机基址（32位完整地址，Bridge 内部用 [31:16] 匹配）
+`define APB_CLINT_BASE_ADDR    32'hF200_0000  // PSEL[0]
+`define APB_PLIC_BASE_ADDR     32'hFC00_0000  // PSEL[1]
+`define APB_GPIO_BASE_ADDR     32'hE000_0000  // PSEL[2]
+`define APB_UART_BASE_ADDR     32'hE001_0000  // PSEL[3]
+`define APB_TIMER_BASE_ADDR    32'hE002_0000  // PSEL[4]
+`define APB_SPI_BASE_ADDR      32'hE003_0000  // PSEL[5]
+`define APB_I2C_BASE_ADDR      32'hE004_0000  // PSEL[6]
+
+// 总线地址阈值（16位标签）：地址高16位 >= 此值则走 AXI 总线
+`define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000
+
+// 兼容旧代码的 16 位设备标签（APB 内部偏移计算用）
+`define CLINT_BASE_TAG  `DEVICE_TAG_WIDTH'hF200
+`define PLIC_BASE_TAG   `DEVICE_TAG_WIDTH'hFC00
+`define GPIO_BASE_TAG   `DEVICE_TAG_WIDTH'hE000
+`define UART_BASE_TAG   `DEVICE_TAG_WIDTH'hE001
+`define TIMER_BASE_TAG  `DEVICE_TAG_WIDTH'hE002
+`define SPI_BASE_TAG    `DEVICE_TAG_WIDTH'hE003
+`define I2C_BASE_TAG    `DEVICE_TAG_WIDTH'hE004
+
+// CPU 启动地址
 `define BOOT_BASE_ADDR  `DEVICE_TAG_WIDTH'h0000
+
+// ITCM / DTCM
 `define ITCM_BASE_ADDR  `DEVICE_TAG_WIDTH'h0001
 `define DTCM_BASE_ADDR  `DEVICE_TAG_WIDTH'h0002
-`define CLINT_BASE_ADDR `DEVICE_TAG_WIDTH'h0200
-`define PLIC_BASE_ADDR  `DEVICE_TAG_WIDTH'h0C00
-`define BUS_BASE_ADDR   `DEVICE_TAG_WIDTH'h8000
-`define GPIO_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000
-`define UART_BASE_ADDR  `DEVICE_TAG_WIDTH'h8001
-`define SPI_BASE_ADDR   `DEVICE_TAG_WIDTH'h8002
-`define I2C_BASE_ADDR   `DEVICE_TAG_WIDTH'h8003
-`define TIMER_BASE_ADDR `DEVICE_TAG_WIDTH'h8004
 
-`define FLASH_BASE_ADDR `DEVICE_TAG_WIDTH'h8200
-`define FLASH_LENGTH 128*1024*1024/8//128Mbit/8=16MB
-`define DDR_BASE_ADDR   `DEVICE_TAG_WIDTH'(`FLASH_BASE_ADDR+`FLASH_LENGTH)//'h8400
-`define DDR_LENGTH 256*1024*1024*16/8//256M*16bit=512MB
-`define MAX_SIZE (`DDR_LENGTH > `FLASH_LENGTH:?`DDR_LENGTH:`FLASH_LENGTH)
+// Flash / DDR（AXI 地址空间，当前留空由 err_slave 返回 0）
+`define FLASH_LENGTH 128*1024*1024/8  // 128Mbit/8=16MB
+`define DDR_LENGTH   256*1024*1024*16/8  // 256M*16bit=512MB
+
+`define MAX_SIZE ((`DDR_LENGTH > `FLASH_LENGTH)? `DDR_LENGTH : `FLASH_LENGTH)
 `define GPIO_NUM 2
 `define TIMER_CHANNEL_NUM 4
 `define TIMER_NUM 1
+
+`define APB_ACCESS_MIN_STAGES 2
 
 // `define GPIO_SIM
 // `define TIMER_SIM
@@ -35,31 +68,43 @@
     `define DTCM_DEPTH 16*1024//16K
     `define ITCM_FILE "test2_lite.dat"
     `define DTCM_FILE "welcome_text_lite.dat"
+    `define TCM_Reg_or_BRAM "Reg"
 `elsif XILINX
     `define PATH "../test_data/"//Vivado路径
-    // `define PATH "D:/Desktop/RV32_SoC/Working/test_data/"//Vivado路径
-    `define ITCM_DEPTH 8*1024//8K
-    `define DTCM_DEPTH 8*1024//8K
+    `define ITCM_DEPTH 16*1024//8K
+    `define DTCM_DEPTH 16*1024//8K
     `define ITCM_FILE "test2_full.dat"
     `define DTCM_FILE "welcome_text_full.dat"
+    `define TCM_Reg_or_BRAM "BRAM"
 `else
     `define PATH "../../test_data/"
-    `define ITCM_DEPTH 8*1024//8K
-    `define DTCM_DEPTH 8*1024//8K
+    `define ITCM_DEPTH 16*1024//8K
+    `define DTCM_DEPTH 16*1024//8K
     `define ITCM_FILE "test2_lite.dat"
     `define DTCM_FILE "welcome_text_lite.dat"
+    `define TCM_Reg_or_BRAM "Reg"
 `endif
-// `define PATH "./test_data/"
-// `define ITCM_DEPTH 8*1024//8K
-// `define DTCM_DEPTH 8*1024//8K
 
 `define MROM_DEPTH 1*1024//1K
-
 
 `define ITCM_LENGTH (`ITCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 `define DTCM_LENGTH (`DTCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 
-
 `define MROM_FILE "mrom.dat"
-// `define TCM_Reg_or_BRAM "BRAM"
-`define TCM_Reg_or_BRAM "Reg"
+
+
+// ============================================================
+// AXI 总线配置 - BIU 架构（2026-04-24）
+// CPU 通过 AXI_Lite_Master → AXI_Interconnect → 各 AXI 从机
+// 端口保留 AXI-Full 信号，内部按 AXI-Lite 运行
+// ============================================================
+`define AXI_ID_WIDTH     4
+`define AXI_LEN_WIDTH    8
+`define AXI_SIZE_WIDTH   3
+`define AXI_BURST_WIDTH  2
+`define AXI_CACHE_WIDTH  4
+`define AXI_PROT_WIDTH   3
+`define AXI_QOS_WIDTH    4
+`define AXI_REGION_WIDTH 4
+`define AXI_RESP_WIDTH   2
+`define AXI_STRB_WIDTH   `ALIGN_BYTES  // 4 bytes

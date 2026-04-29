@@ -1,3 +1,5 @@
+memory_initialization_radix=16;
+memory_initialization_vector=
 e00000b7
 00008093
 0000a023
@@ -28,4 +30,4 @@ e00000b7
 00030313
 00030067
 00000013
-00000013
+00000013;
