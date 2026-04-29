@@ -103,9 +103,9 @@ assign  rd              =   inst[11:7];
 assign  func3           =   inst[14:12];
 assign  zimm            =   inst[19:15];
 assign  func7           =   inst[31:25];
-assign  equal           =   (alu_op1 == alu_op2) ? 1'b1 : 1'b0;
-assign  less_signed     =   ($signed(alu_op1) < $signed(alu_op2)) ? 1'b1 : 1'b0;
-assign  less_unsigned   =   (alu_op1 < alu_op2) ? 1'b1 : 1'b0;
+assign  equal           =   (alu_op1 == alu_op2);
+assign  less_signed     =   ($signed(alu_op1) < $signed(alu_op2));
+assign  less_unsigned   =   (alu_op1 < alu_op2);
 assign  jump_imm        =   inst_addr + imm;
 
 assign  sr_shift        =   alu_op1 >> alu_op2[4:0];

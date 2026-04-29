@@ -39,6 +39,9 @@ module RISC_V_Core #(
 // Pipeline Ctrl
 logic                       branch_jump_en;
 logic   [ADDR_WIDTH-1:0]    branch_jump_addr;
+// EX_MEM delayed branch signals (always declared; used by Pipeline_Ctrl when BRANCH_JUMP_DELAYED)
+logic                       ex_mem_branch_jump_en;
+logic   [ADDR_WIDTH-1:0]    ex_mem_branch_jump_addr;
 logic                       trap_jump;
 logic   [ADDR_WIDTH-1:0]    trap_jump_addr;
 logic   [1:0]               priv_mode;
@@ -189,6 +192,8 @@ Pipeline_Ctrl #(
 )u_Pipeline_Ctrl(
     .branch_jump_en      	(branch_jump_en       ),
     .branch_jump_addr    	(branch_jump_addr     ),
+    .ex_mem_branch_jump_en (ex_mem_branch_jump_en),
+    .ex_mem_branch_jump_addr(ex_mem_branch_jump_addr),
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
     .priv_mode           	(priv_mode            ),
@@ -562,6 +567,8 @@ EX_MEM #(
     .rd_mem_func3_i (rd_mem_func3_ex),
     .wr_mem_data_i  (wr_mem_data_ex),
     .wr_mem_mask_i  (wr_mem_mask_ex),
+    .branch_jump_en_i  (branch_jump_en),
+    .branch_jump_addr_i(branch_jump_addr),
     .inst_addr_o    (inst_addr_mem),
     .inst_o         (inst_mem),
     .access_en_o    (access_en),
@@ -570,6 +577,8 @@ EX_MEM #(
     .rd_mem_func3_o (rd_mem_func3),
     .wr_mem_data_o  (wr_mem_data),
     .wr_mem_mask_o  (wr_mem_mask),
+    .branch_jump_en_o  (ex_mem_branch_jump_en),
+    .branch_jump_addr_o(ex_mem_branch_jump_addr),
     .wr_reg_en_o    (wr_reg_en_mem),
     .wr_reg_addr_o  (wr_reg_addr_mem),
     .wr_reg_data_o  (wr_reg_data_from_ex_mem)

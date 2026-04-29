@@ -153,6 +153,12 @@ logic [BTB_ADDR_WIDTH-1:0] update_btb_idx;                   // 更新时的BTB�
 logic [PHT_ADDR_WIDTH-1:0] update_pht_idx;                   // 更新时的PHT索引
 logic [PC_HASH_WIDTH-1:0]  update_pc_hash;                   // 更新时的PC哈希值
 
+
+logic                      ghr_pht_update_en_latched;
+logic [GHR_WIDTH-1:0]      ghr_update_value_latched;
+logic [PHT_ADDR_WIDTH-1:0] pht_update_idx_latched;
+logic                      pht_update_taken_latched;
+
 // 预测时的索引计算
 // BTB索引: 使用PC的低位
 assign predict_btb_idx = pc[BTB_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
@@ -305,10 +311,6 @@ end
 //       变化会导致写入错误的 PHT 条目。
 // ========================================================================
 
-logic                      ghr_pht_update_en_latched;
-logic [GHR_WIDTH-1:0]      ghr_update_value_latched;
-logic [PHT_ADDR_WIDTH-1:0] pht_update_idx_latched;
-logic                      pht_update_taken_latched;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin
@@ -368,7 +370,7 @@ end
 always_comb begin
     if (!branch_predict_success && branch_req) begin// 预测错误
         spec_global_history_next = real_global_history;
-    end else if (predict_btb_hit && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) begin // 预测成功
+    end else if (branch_predict_success && branch_req) begin // 预测成功
         spec_global_history_next = {spec_global_history[GHR_WIDTH-2:0], predict_taken};
     end else begin
         spec_global_history_next = spec_global_history;

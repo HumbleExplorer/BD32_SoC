@@ -60,6 +60,15 @@
 
 `define APB_ACCESS_MIN_STAGES 2
 
+// ============================================================
+// 分支跳转延迟1拍（EX_MEM锁存）— 时序优化
+// ============================================================
+// 启用后，EX阶段的 branch_jump_en/addr 先经 EX_MEM 寄存器，
+// 下一拍再由 Pipeline_Ctrl 响应，切断 EX→PC 的长组合路径。
+// 代价：预测失败多浪费1拍（3拍 vs 2拍），正确预测零开销。
+// 注释下行则以原始方式（EX 直通）运行：
+`define BRANCH_JUMP_DELAYED
+
 // `define GPIO_SIM
 // `define TIMER_SIM
 `ifdef MODELSIM
