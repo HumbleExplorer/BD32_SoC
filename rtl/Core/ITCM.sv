@@ -26,7 +26,7 @@ module ITCM #(
 );
 
 generate 
-    if(`TCM_Reg_or_BRAM=="BRAM") begin : BRAM
+    `ifdef XILINX
         logic [DATA_WIDTH-1:0] inst;
         // 例化 Xilinx BRAM IP
         imem u_imem (
@@ -39,9 +39,13 @@ generate
             .doutb(inst)          // output wire [31 : 0] doutb
         );
         assign inst_o = rst_n ? inst : `INST_NOP;
-    end else if(`TCM_Reg_or_BRAM=="Reg") begin : REG
+    `else
         logic [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1];
-
+        `ifdef CORE_TEST
+            initial begin
+                $readmemh(ITCM_FULL_PATH, itcm_mem);
+            end
+        `endif
         // 同步读：地址在上升沿采样，下一拍输出数据
         always_ff @(posedge clk or negedge rst_n) begin
             if (!rst_n)
@@ -56,7 +60,7 @@ generate
                 itcm_mem[itcm_wr_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]] <= #1 itcm_wr_data;
             end
         end
-    end
+    `endif
 endgenerate
 
 endmodule

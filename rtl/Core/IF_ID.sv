@@ -27,12 +27,12 @@ module IF_ID #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= #1 `INST_NOP;
         predict_taken_o <= #1 1'b0;
         predict_target_o<= #1 'h0;
     end else if(flush) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= #1 `INST_NOP;
         predict_taken_o <= #1 1'b0;
         predict_target_o<= #1 'h0;

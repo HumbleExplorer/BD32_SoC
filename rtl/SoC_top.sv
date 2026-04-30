@@ -45,16 +45,7 @@ module SoC_top #(
 // =========================================================================
 // 异步复位同步释放
 // =========================================================================
-logic rst_n_sync;
-logic rst_n_bufg;
-`ifdef XILINX
-    BUFG u_rst_n_bufg (
-        .I(rst_n_sync),
-        .O(rst_n_bufg)
-    );
-`else
-    assign rst_n_bufg = rst_n_sync;
-`endif
+(* MAX_FANOUT = 32 *)logic rst_n_sync;
 Cdc_Sync #(
     .WIDTH      (1),
     .RESET_VAL  (0),
@@ -237,7 +228,7 @@ RISC_V_Core #(
     .ALIGN_WIDTH    (ALIGN_WIDTH    )
 ) u_RISC_V_Core (
     .clk                (sys_clk         ),
-    .rst_n              (rst_n_bufg       ),
+    .rst_n              (rst_n_sync       ),
     .itcm_wr_en         (itcm_wr_en      ),
     .itcm_wr_addr       (itcm_wr_addr    ),
     .itcm_wr_data       (itcm_wr_data    ),
@@ -266,7 +257,7 @@ Bus_Access #(
     .LEN_WIDTH   (LEN_WIDTH   )
 ) u_Bus_Access (
     .clk          (sys_clk      ),
-    .rst_n        (rst_n_bufg    ),
+    .rst_n        (rst_n_sync    ),
     // CPU 侧
     .i_transfer   (bus_transfer  ),
     .i_write      (bus_access_write),
@@ -327,7 +318,7 @@ AXI_Interconnect #(
     .ID_WIDTH    (ID_WIDTH    )
 ) u_AXI_Interconnect (
     .clk          (sys_clk      ),
-    .rst_n        (rst_n_bufg    ),
+    .rst_n        (rst_n_sync    ),
     // Master 侧
     .s_awid       (axi_awid      ), .s_awaddr    (axi_awaddr   ),
     .s_awlen      (axi_awlen     ), .s_awsize    (axi_awsize   ),
@@ -427,7 +418,7 @@ AXI_APB_Bridge #(
     .ID_WIDTH        (ID_WIDTH        )
 ) u_AXI_APB_Bridge (
     .clk          (sys_clk       ),
-    .rst_n        (rst_n_bufg     ),
+    .rst_n        (rst_n_sync     ),
     // AW
     .s_awid       (apb_awid      ), .s_awaddr   (apb_awaddr   ),
     .s_awlen      (apb_awlen     ), .s_awsize   (apb_awsize   ),
@@ -494,7 +485,7 @@ axi_err_slave #(
     .ID_WIDTH    (ID_WIDTH    )
 ) u_mrom_flash_err (
     .clk          (sys_clk       ),
-    .rst_n        (rst_n_bufg     ),
+    .rst_n        (rst_n_sync     ),
     .s_awid       (mrom_flash_awid      ), .s_awaddr   (mrom_flash_awaddr  ),
     .s_awlen      (mrom_flash_awlen     ), .s_awsize   (mrom_flash_awsize  ),
     .s_awburst    (mrom_flash_awburst   ), .s_awlock   (mrom_flash_awlock  ),
@@ -527,7 +518,7 @@ axi_err_slave #(
     .ID_WIDTH    (ID_WIDTH    )
 ) u_ddr_err (
     .clk          (sys_clk       ),
-    .rst_n        (rst_n_bufg     ),
+    .rst_n        (rst_n_sync     ),
     .s_awid       (ddr_awid      ), .s_awaddr   (ddr_awaddr   ),
     .s_awlen      (ddr_awlen     ), .s_awsize   (ddr_awsize   ),
     .s_awburst    (ddr_awburst   ), .s_awlock   (ddr_awlock   ),
@@ -561,7 +552,7 @@ CLINT #(
     .ALIGN_BYTES (ALIGN_BYTES )
 ) u_CLINT (
     .PCLK         (sys_clk       ),
-    .PRESETn      (rst_n_bufg     ),
+    .PRESETn      (rst_n_sync     ),
     .PADDR        (apb_paddr     ),
     .PSEL         (apb_psel[0]   ),
     .PENABLE      (apb_penable   ),
@@ -583,7 +574,7 @@ PLIC #(
     .NUM_TARGETS    (1            )
 ) u_PLIC (
     .PCLK         (sys_clk       ),
-    .PRESETn      (rst_n_bufg     ),
+    .PRESETn      (rst_n_sync     ),
     .PADDR        (apb_paddr     ),
     .PSEL         (apb_psel[1]   ),
     .PENABLE      (apb_penable   ),
@@ -606,7 +597,7 @@ apb_gpio #(
     .ALIGN_BYTES (ALIGN_BYTES )
 ) u_apb_gpio (
     .PCLK         (sys_clk       ),
-    .PRESETn      (rst_n_bufg     ),
+    .PRESETn      (rst_n_sync     ),
     .PADDR        (apb_paddr     ),
     .PSEL         (apb_psel[2]   ),
     .PENABLE      (apb_penable   ),
@@ -626,7 +617,7 @@ apb_uart #(
     .DATA_WIDTH (DATA_WIDTH)
 ) u_apb_uart (
     .PCLK         (sys_clk        ),
-    .PRESETn      (rst_n_bufg      ),
+    .PRESETn      (rst_n_sync      ),
     .PADDR        (apb_paddr      ),
     .PSEL         (apb_psel[3]    ),
     .PENABLE      (apb_penable    ),
@@ -652,7 +643,7 @@ apb_timer #(
     .CHANNEL_NUM    (TIMER_CHANNEL_NUM )
 ) u_apb_timer (
     .PCLK         (sys_clk            ),
-    .PRESETn      (rst_n_bufg          ),
+    .PRESETn      (rst_n_sync          ),
     .PADDR        (apb_paddr          ),
     .PSEL         (apb_psel[4]        ),
     .PENABLE      (apb_penable        ),

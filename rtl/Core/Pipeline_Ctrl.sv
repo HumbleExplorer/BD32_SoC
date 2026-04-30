@@ -33,21 +33,20 @@ module Pipeline_Ctrl #(
     input   logic   [DATA_WIDTH-1:0]    exception_val_id,
     input   logic   [DATA_WIDTH-1:0]    exception_val_ex,
     input   logic   [DATA_WIDTH-1:0]    exception_val_mem,
-    input   logic                       bus_sel,
 
     // to pc
     output  logic                       pc_stall,
     output  logic                       ctrl_jump_en,
     output  logic   [ADDR_WIDTH-1:0]    ctrl_jump_addr,
     // to pipeline reg
-    output  logic                       if_id_stall,
-    output  logic                       if_id_flush,
-    output  logic                       id_ex_stall,
-    output  logic                       id_ex_flush,
-    output  logic                       ex_mem_stall,
-    output  logic                       ex_mem_flush,
-    output  logic                       mem_wb_stall,
-    output  logic                       mem_wb_flush,
+    (* max_fanout = 32 *)output  logic                       if_id_stall,
+    (* max_fanout = 32 *)output  logic                       if_id_flush,
+    (* max_fanout = 32 *)output  logic                       id_ex_stall,
+    (* max_fanout = 32 *)output  logic                       id_ex_flush,
+    (* max_fanout = 32 *)output  logic                       ex_mem_stall,
+    (* max_fanout = 32 *)output  logic                       ex_mem_flush,
+    (* max_fanout = 32 *)output  logic                       mem_wb_stall,
+    (* max_fanout = 32 *)output  logic                       mem_wb_flush,
     // to CSR
     output  logic   [ADDR_WIDTH-1:0]    exception_inst_addr,
     output  logic                       exception_trap,
@@ -154,8 +153,9 @@ always_comb begin
     endcase
 end
 
-logic stall;
-assign stall = (load_use_flag) | (~mul_div_ready);
+logic stall;//只涉及PC、IF-ID、ID-EX寄存器，不涉及EX-MEM寄存器
+assign stall = load_use_flag | ~mul_div_ready;
+
 assign next_inst_addr = trap_jump ? trap_jump_addr :
 `ifdef BRANCH_JUMP_DELAYED
                         ex_mem_branch_jump_en ? ex_mem_branch_jump_addr :
@@ -176,18 +176,18 @@ always_comb begin
     ex_mem_flush    = 1'b0;
     mem_wb_stall    = 1'b0;
     mem_wb_flush    = 1'b0;
-    ctrl_jump_addr  = `BOOT_BASE_ADDR;
+    ctrl_jump_addr  = `BOOT_BASE_TAG;
     if(trap_jump) begin
         if_id_flush = 1'b1;
         id_ex_flush = 1'b1;
         if(sel_stage == 2'b11) ex_mem_flush = 1'b1;//MEM 异常
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
-    end else if (bus_sel && ~mem_access_ready) begin
+    end else if (~mem_access_ready) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
-        id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
+        id_ex_stall     = 1'b1;
     end else if (
 `ifdef BRANCH_JUMP_DELAYED
         ex_mem_branch_jump_en

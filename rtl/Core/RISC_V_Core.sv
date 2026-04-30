@@ -75,9 +75,6 @@ logic   [DATA_WIDTH-1:0]    exception_val;
 logic   [ADDR_WIDTH-1:0]    next_inst_addr;
 
 // Data_Hazard
-logic   [1:0]   forward_A;
-logic   [1:0]   forward_B;
-logic           forward_C;
 logic   [DATA_WIDTH-1:0]    alu_op1_from_id_ex;
 logic   [DATA_WIDTH-1:0]    alu_op2_from_id_ex;
 logic   [DATA_WIDTH-1:0]    alu_op1_forward;
@@ -95,8 +92,8 @@ logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr;
 logic   [DATA_WIDTH-1:0]    wr_reg_data;
 
 // IF
-logic   [ADDR_WIDTH-1:0]    pc;
-logic   [ADDR_WIDTH-1:0]    inst_addr_if;   // 当前指令地址（延迟一拍的 pc）
+(*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    pc;
+(*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_if;   // 当前指令地址（延迟一拍的 pc）
 logic   [DATA_WIDTH-1:0]    inst;
 logic                       predict_taken_if;
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
@@ -117,7 +114,7 @@ logic                       access_csr_en_id;
 logic   [CSR_ADDR_WIDTH-1:0]csr_addr_id;
 
 // EX
-logic   [ADDR_WIDTH-1:0]    inst_addr_ex;
+(*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_ex;
 logic   [DATA_WIDTH-1:0]    inst_ex;
 logic                       predict_taken_ex;
 logic   [ADDR_WIDTH-1:0]    predict_target_ex;
@@ -212,7 +209,6 @@ Pipeline_Ctrl #(
     .exception_val_id    	(exception_val_id     ),
     .exception_val_ex    	(exception_val_ex     ),
     .exception_val_mem   	(exception_val_mem    ),
-    .bus_sel                (bus_sel),
     .pc_stall            	(pc_stall             ),
     .ctrl_jump_en        	(ctrl_jump_en         ),
     .ctrl_jump_addr      	(ctrl_jump_addr       ),
@@ -259,10 +255,8 @@ Data_Hazard_Forward #(
     .wr_reg_data_wb     	(wr_reg_data        ),
     .bus_sel                (bus_sel            ),
     .bus_done               (bus_tran_done      ),
+    .mem_access_ready       (mem_access_ready   ),
     .mem_addr_ex            (mem_addr_ex        ),
-    .forward_A          	(forward_A          ),
-    .forward_B          	(forward_B          ),
-    .forward_C          	(forward_C          ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
     .alu_op2_o          	(alu_op2_forward    ),
@@ -316,8 +310,8 @@ logic [DATA_WIDTH-1:0]    itcm_inst;
 logic                     bootrom_sel;
 logic                     itcm_sel;
 
-assign bootrom_sel = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_ADDR);
-assign itcm_sel    = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_ADDR);
+assign bootrom_sel = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
+assign itcm_sel    = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
 
 BootROM #(
     .MROM_DEPTH     (`MROM_DEPTH),
@@ -588,6 +582,8 @@ Mem_Access #(
     .ADDR_WIDTH (ADDR_WIDTH),
     .DATA_WIDTH (DATA_WIDTH)
 )u_Mem_Access(
+    .clk                        (clk),
+    .rst_n                      (rst_n),
     .access_addr                (access_addr),
     .access_en                  (access_en),
     .access_wr                  (access_wr),

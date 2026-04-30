@@ -22,7 +22,7 @@ module PC_counter #(
 logic [ADDR_WIDTH-1:0] inst_addr;
 
 // 异常检查基于 inst_addr（已寄存器化的当前取指地址），避免与 pc 形成组合回路
-assign exception_code = (inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_ADDR || inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_ADDR) ?
+assign exception_code = (inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_TAG || inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_TAG) ?
     (inst_addr[ALIGN_WIDTH-1:0] == 0 ? {DATA_WIDTH-1{1'b1}} : 'd0) : 'd1;//指令地址未对齐
 assign exception_val = inst_addr;
 
@@ -39,7 +39,11 @@ end
 // inst_addr 寄存器：下一条要取的指令地址，给 BootROM/ITCM 的读地址端口
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)
-        inst_addr <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}}-4;
+    `ifdef CORE_TEST
+        inst_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}}-4;
+    `else
+        inst_addr <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}}-4;
+    `endif
     else
         inst_addr <= #1 pc;
 end

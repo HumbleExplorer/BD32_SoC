@@ -12,8 +12,8 @@ module mul_div #(
     input   logic [REG_ADDR_WIDTH-1:0]  rd_rs2_addr,
     input   logic [REG_ADDR_WIDTH-1:0]  wr_rd_addr,
     input   logic [2:0]                 func3_i,
-    input   logic [DATA_WIDTH-1:0]      a_i,    // 乘数A (来自ID_EX寄存器)
-    input   logic [DATA_WIDTH-1:0]      b_i,    // 乘数B (来自ID_EX寄存器)
+    input   logic [DATA_WIDTH-1:0]      a_i,    // 乘数A (来自forward)
+    input   logic [DATA_WIDTH-1:0]      b_i,    // 乘数B (来自forward)
     output  logic [DATA_WIDTH-1:0]      result_o,  // 乘积结果(组合输出，送EX_MEM寄存器锁存)
     output  logic                       data_valid,
     output  logic                       ready   // 就绪信号:高表示运算完成，下一周期可输入新数据
@@ -38,9 +38,8 @@ logic   [DATA_WIDTH*2-1:0]      full_result_sel;// 选择后的64位源结果（
 assign mul_en = (!func3_i[2] && enable) && ~fuse_hit;// 融合命中时关闭乘法使能
 assign div_en = (func3_i[2]  && enable) && ~fuse_hit;// 融合命中时关闭除法使能
 assign func3_mode_i = func3_i[1:0];
-assign ready        = mul_ready && div_ready;
 assign data_valid   = mul_valid || div_valid;
-
+assign ready        = data_valid || ~enable;
 //==========================================================================
 // 3. 融合运算核心：锁存寄存器 + 融合检测信号【少量寄存器，无额外运算开销】
 //==========================================================================

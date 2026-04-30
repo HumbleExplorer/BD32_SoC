@@ -30,13 +30,8 @@ module Data_Hazard_Forward #(
     input   logic   [DATA_WIDTH-1:0]        wr_reg_data_wb,
     input   logic                           bus_sel,
     input   logic                           bus_done,
+    input   logic                           mem_access_ready,
     input   logic   [`ADDR_WIDTH-1:0]       mem_addr_ex,
-    // ALU操作数1前递选择（EX阶段使用）
-    output  logic   [1:0]                   forward_A,
-    // ALU操作数2前递选择（EX阶段使用）
-    output  logic   [1:0]                   forward_B,
-    // Store指令rs2数据前递选择（EX阶段使用，解决Load->Store无停顿）
-    output  logic                           forward_C,
     // Load-Use冒险标志(停顿给pc_hold，if_id_hold，id_ex_clear)
     output  logic                           load_use_flag,
     output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
@@ -57,6 +52,15 @@ logic   wr_mem_en_ex;
 logic   rd_mem_en_mem;
 logic   bus_sel_ex;
 
+// ALU操作数1前递选择（EX阶段使用）
+logic   [1:0]                   forward_A;
+// ALU操作数2前递选择（EX阶段使用）
+logic   [1:0]                   forward_B;
+// Store指令rs2数据前递选择（EX阶段使用，解决Load->Store无停顿）
+`ifdef FORWARD_C_EN
+logic                           forward_C;
+`endif
+
 assign wr_mem_en_id = access_en_id & access_wr_id;
 assign rd_mem_en_ex = access_en_ex & ~access_wr_ex;
 assign wr_mem_en_ex = access_en_ex & access_wr_ex;
@@ -64,19 +68,23 @@ assign rd_mem_en_mem = access_en_mem & ~access_wr_mem;
 assign bus_sel_ex = (mem_addr_ex[`ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR);
 
 // ALU操作数1（rs1）的前递选择
-assign forward_A[0] = (wr_reg_en_wb && (wr_reg_addr_wb == rd_rs1_addr_ex) && (wr_reg_addr_wb != 'h0));
-assign forward_A[1] = (bus_done || ~bus_sel) && (wr_reg_en_mem && (wr_reg_addr_mem == rd_rs1_addr_ex) && (wr_reg_addr_mem != 'h0));
+assign forward_A[0] = wr_reg_en_wb && (wr_reg_addr_wb == rd_rs1_addr_ex) && (rd_rs1_addr_ex != 0);
+assign forward_A[1] = mem_access_ready && wr_reg_en_mem && (wr_reg_addr_mem == rd_rs1_addr_ex) && (rd_rs1_addr_ex != 0);
 
 // ALU操作数2（rs2）的前递选择
-assign forward_B[0] = (wr_reg_en_wb && (wr_reg_addr_wb == rd_rs2_addr_ex) && (wr_reg_addr_wb != 'h0));
-assign forward_B[1] = (bus_done || ~bus_sel) && (wr_reg_en_mem && (wr_reg_addr_mem == rd_rs2_addr_ex) && (wr_reg_addr_mem != 'h0));
+assign forward_B[0] = wr_reg_en_wb && (wr_reg_addr_wb == rd_rs2_addr_ex) && (rd_rs2_addr_ex != 0);
+assign forward_B[1] = mem_access_ready && wr_reg_en_mem && (wr_reg_addr_mem == rd_rs2_addr_ex) && (rd_rs2_addr_ex != 0);
+
 
 // ===================================== 第二步：Load-Use冒险逻辑（load_use_flag_o） =====================================
 //如果是load后跟着store指令，并且load指令的rd与store指令的rs2相同，rs1不同，则不需要停顿，只需要将MEM/WB寄存器的数据前递到MEM阶段。
 //rs2是数据，前递能补，rs1是地址，不能补。
-// load-store前递
+
+`ifdef FORWARD_C_EN
+// load-store前递（解决Load->Store无停顿）
 assign forward_C = (wr_reg_en_mem && (wr_reg_addr_mem == rd_rs2_addr_ex) && (wr_reg_addr_mem != rd_rs1_addr_ex)
-&& (wr_reg_addr_mem != 'h0) && rd_mem_en_mem && wr_mem_en_ex);
+&& (rd_rs2_addr_ex != 0) && rd_mem_en_mem && wr_mem_en_ex);
+`endif
 
 assign load_use_flag = (rd_mem_en_ex && (wr_reg_addr_ex != 'h0) &&//load
 ((wr_mem_en_id &&//store
@@ -115,6 +123,11 @@ always_comb begin
         default: wr_mem_data_from_rs2 = rd_rs2_data_ex;
     endcase
 end
+
+`ifdef FORWARD_C_EN
 assign  wr_mem_data_temp = forward_C ? wr_reg_data_mem : wr_mem_data_from_rs2;
+`else
+assign  wr_mem_data_temp = wr_mem_data_from_rs2;
+`endif
 
 endmodule

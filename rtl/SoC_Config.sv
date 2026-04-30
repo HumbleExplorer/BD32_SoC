@@ -43,11 +43,11 @@
 `define I2C_BASE_TAG    `DEVICE_TAG_WIDTH'hE004
 
 // CPU 启动地址
-`define BOOT_BASE_ADDR  `DEVICE_TAG_WIDTH'h0000
+`define BOOT_BASE_TAG  `DEVICE_TAG_WIDTH'h0000
 
 // ITCM / DTCM
-`define ITCM_BASE_ADDR  `DEVICE_TAG_WIDTH'h0001
-`define DTCM_BASE_ADDR  `DEVICE_TAG_WIDTH'h0002
+`define ITCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0001
+`define DTCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0002
 
 // Flash / DDR（AXI 地址空间，当前留空由 err_slave 返回 0）
 `define FLASH_LENGTH 128*1024*1024/8  // 128Mbit/8=16MB
@@ -58,7 +58,7 @@
 `define TIMER_CHANNEL_NUM 4
 `define TIMER_NUM 1
 
-`define APB_ACCESS_MIN_STAGES 2
+
 
 // ============================================================
 // 分支跳转延迟1拍（EX_MEM锁存）— 时序优化
@@ -69,6 +69,19 @@
 // 注释下行则以原始方式（EX 直通）运行：
 `define BRANCH_JUMP_DELAYED
 
+// Load→Store 前递转发（forward_C）
+// 启用后：Load 后紧跟 Store 时不需停顿（通过 forward_C 转发 wr_reg_data_mem）
+// 关闭后：Load→Store 会产生 load-use stall（转发回退到 forward_B）
+// 关闭可减少 wr_reg_data_mem 扇出，改善时序
+// 取消注释下行启用：
+// `define FORWARD_C_EN
+
+// `define APB_ACCESS_DELAYED_DONE
+
+// AXI-Lite 响应打拍：在 rsp_* 输出处插寄存器，切断 AXI Bus → CPU 长组合路径
+// 增加 1 拍响应延迟，但大幅改善时序。Vivado 综合时启用。
+`define AXI_LITE_RSP_PIPELINED
+
 // `define GPIO_SIM
 // `define TIMER_SIM
 `ifdef MODELSIM
@@ -78,6 +91,7 @@
     `define ITCM_FILE "test2_lite.dat"
     `define DTCM_FILE "welcome_text_lite.dat"
     `define TCM_Reg_or_BRAM "Reg"
+    // `define CORE_TEST
 `elsif XILINX
     `define PATH "../test_data/"//Vivado路径
     `define ITCM_DEPTH 16*1024//8K
@@ -85,6 +99,10 @@
     `define ITCM_FILE "test2_full.dat"
     `define DTCM_FILE "welcome_text_full.dat"
     `define TCM_Reg_or_BRAM "BRAM"
+    // Load→Store 前递转发（forward_C）：启用后减少 load-use stall
+    // 关闭可减少 wr_reg_data_mem 扇出，改善时序。取消注释下行启用：
+    // `define FORWARD_C_EN
+
 `else
     `define PATH "../../test_data/"
     `define ITCM_DEPTH 16*1024//8K
@@ -92,6 +110,7 @@
     `define ITCM_FILE "test2_lite.dat"
     `define DTCM_FILE "welcome_text_lite.dat"
     `define TCM_Reg_or_BRAM "Reg"
+    // `define CORE_TEST
 `endif
 
 `define MROM_DEPTH 1*1024//1K

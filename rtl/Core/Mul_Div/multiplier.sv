@@ -47,6 +47,10 @@ logic                   cout_comb;
 logic [DATA_WIDTH-1:0]  fix_temp_reg;
 logic [PROD_WIDTH-1:0]  prod_full;
 
+// CLA_CALC 态锁存：拆分长组合路径，零额外周期代价
+logic [PROD_WIDTH-1:0]  mul_o_comb_reg;   // CLA 结果锁存
+logic [DATA_WIDTH-1:0]  prod_high_reg;    // 高32位+fix修正锁存
+
 logic   a_sign_en;  // a_i的符号使能：1=有符号(补符号位)，0=无符号(补0)
 logic   b_sign_en;  // b_i的符号使能：1=有符号(补符号位)，0=无符号(补0)
 logic   [DATA_WIDTH-1:0] a_reg;
@@ -72,7 +76,7 @@ end
 //==========================================================================
 assign data_valid = (state == DONE);
 assign ready      = (state == IDLE && ~enable) || (state == DONE); // 核心要求：空闲高、运算中低、结果周期高
-assign start = (state == IDLE && enable);
+assign start      = (state == IDLE && enable);
 
 //==========================================================================
 // 周期1：组合逻辑 : Booth4编码 + 部分积生成 
@@ -177,7 +181,7 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 //==========================================================================
-// 周期3：组合逻辑 → CLA加法器 
+// 周期3：CLA超前进位加法器 + 结果锁存（拆分长组合路径）
 //==========================================================================
 cla #(
     .PRODUCT_WIDTH (PROD_WIDTH)
@@ -187,6 +191,19 @@ cla #(
     .sum    (mul_o_comb),
     .cout   (cout_comb)
 );
+
+// CLA_CALC 态锁存：将 64 位 CLA 加法 + 32 位 fix 修正从 DONE 态提前到 CLA_CALC 态完成
+// 原来：cpr_res_reg → CLA(15级) → fix(10级) → MUX(5级) → EX_MEM = 30+级，全挤在 DONE 一拍
+// 现在：CLA_CALC 态完成 CLA + fix → 锁存；DONE 态只做寄存器读 + MUX = ~5-8 级
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n) begin
+        mul_o_comb_reg <= #1 '0;
+        prod_high_reg  <= #1 '0;
+    end else if(state == CLA_CALC) begin
+        mul_o_comb_reg <= #1 mul_o_comb;
+        prod_high_reg  <= #1 fix_temp_reg + mul_o_comb[PROD_WIDTH-1:DATA_WIDTH];
+    end
+end
 //==========================================================================
 // 核心：状态机时序逻辑 
 //==========================================================================
@@ -218,9 +235,9 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 //==========================================================================
-// 运算完成(DONE态)输出结果，其余周期输出0；组合逻辑输出，送后级寄存器锁存
-//==========================================================================
-assign prod_full = {fix_temp_reg + mul_o_comb[PROD_WIDTH-1:DATA_WIDTH], mul_o_comb[DATA_WIDTH-1:0]};
+// 运算完成(DONE态)输出结果，其余周期输出0
+// 改用锁存寄存器输出，DONE 态只剩 MUX 级逻辑
+assign prod_full = {prod_high_reg, mul_o_comb_reg[DATA_WIDTH-1:0]};
 assign mul_o = (state == DONE) ? prod_full : {PROD_WIDTH{1'b0}};
 
 endmodule

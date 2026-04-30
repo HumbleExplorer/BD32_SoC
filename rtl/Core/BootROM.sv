@@ -20,7 +20,7 @@ module BootROM #(
     output  logic   [DATA_WIDTH-1:0]    inst_o      // 同步读输出
 );
 generate
-    if(`TCM_Reg_or_BRAM=="BRAM") begin : BRAM
+    `ifdef XILINX
         logic [DATA_WIDTH-1:0] inst;
             // 例化 Xilinx BRAM IP（单端口，字节写使能）
         mrom u_BootROM (
@@ -32,8 +32,7 @@ generate
         );
         assign inst_o = rst_n ? inst : `INST_NOP;
 
-    end else if(`TCM_Reg_or_BRAM=="Reg") begin : REG
-
+    `else
         logic [DATA_WIDTH-1:0] mrom_mem [0:MROM_DEPTH-1];
 
         initial begin
@@ -48,7 +47,7 @@ generate
                 inst_o <= mrom_mem[inst_addr[MROM_SIZE_WIDTH-1:ALIGN_WIDTH]];
         end
 
-    end
+    `endif
 endgenerate
 
 

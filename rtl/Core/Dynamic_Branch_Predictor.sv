@@ -137,9 +137,6 @@ logic [GHR_WIDTH-1:0]   spec_global_history_next;
 logic [RAS_ADDR_WIDTH:0] spec_ras_ptr;                 // 推测 RAS 指针
 logic [RAS_ADDR_WIDTH:0] real_ras_ptr;                 // 真实 RAS 指针
 logic [RAS_ADDR_WIDTH:0] spec_ras_ptr_next;
-logic [RAS_ADDR_WIDTH:0] real_ras_ptr_next;
-logic                    ras_full;                           // RAS满标志
-logic                    ras_empty;                          // RAS空标志
 
 // 预测阶段信号 Read
 logic [BTB_ADDR_WIDTH-1:0] predict_btb_idx;                  // 预测时的BTB索引
@@ -247,7 +244,7 @@ end
 //       变化会导致写入错误的 BTB 条目，造成预测永远失败。
 // ========================================================================
 
-logic btb_update_en_latched;
+logic                      btb_update_en_latched;
 logic [BTB_ADDR_WIDTH-1:0] btb_update_idx_latched;
 logic [BTB_TAG_WIDTH-1:0]  btb_update_tag_latched;
 logic [BTB_BTA_WIDTH-1:0]  btb_update_target_latched;
@@ -257,19 +254,25 @@ logic                      btb_update_push_ras_latched;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin
-        btb_update_en_latched <= 1'b0;
+        btb_update_en_latched       <= 1'b0;
+        btb_update_idx_latched      <= '0;
+        btb_update_tag_latched      <= '0;
+        btb_update_target_latched   <= '0;
+        btb_update_type_latched     <= '0;
+        btb_update_pop_ras_latched  <= 1'b0;
+        btb_update_push_ras_latched <= 1'b0;
     end else if (btb_update_en_latched) begin
         // 上一拍捕获的更新请求在本拍执行，执行后清零
         btb_update_en_latched <= 1'b0;
     end else if (!stall) begin
         // 无待处理请求且当前不 stall，捕获新的更新请求和数据
-        btb_update_en_latched <= branch_req && branch_taken;
-        btb_update_idx_latched     <= update_btb_idx;
-        btb_update_tag_latched     <= branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_update_target_latched  <= branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_update_type_latched    <= branch_inst_type;
-        btb_update_pop_ras_latched <= pop_ras;
-        btb_update_push_ras_latched<= push_ras;
+        btb_update_en_latched       <= branch_req && branch_taken;
+        btb_update_idx_latched      <= update_btb_idx;
+        btb_update_tag_latched      <= branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_update_target_latched   <= branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_update_type_latched     <= branch_inst_type;
+        btb_update_pop_ras_latched  <= pop_ras;
+        btb_update_push_ras_latched <= push_ras;
     end
 end
 
@@ -327,29 +330,99 @@ always_ff @(posedge clk or negedge rst_n) begin
     end
 end
 
-//========================================================================
-// REAL RAS 指针 next 计算 (EX 阶段)
-//========================================================================
-assign ras_full  = (real_ras_ptr == RAS_DEPTH);
-assign ras_empty = (real_ras_ptr == 0);
+// ========================================================================
+// RAS 更新请求与数据锁存
+// 目的：将 push_ras/pop_ras 的组合逻辑路径从 ras_stack 写端口移除，
+//       切断 EX → DTCM → forwarding → branch_predict_success → RAS CE 关键路径。
+// 机制：在 !stall 时捕获 push_ras/pop_ras 及全部更新数据，
+//       下一拍无条件执行更新。更新后使能自动清零。
+// 注意：必须同时锁存数据和使能，否则信号在下一拍变化会导致写入
+//       错误的 RAS 条目。
+// ========================================================================
+
+logic                      ras_update_en_latched;
+logic                      ras_push_latched;
+logic                      ras_pop_latched;
+logic [RAS_ADDR_WIDTH:0]   ras_update_ptr_latched;    // latch时刻的 real_ras_ptr
+logic [RAS_DATA_WIDTH-1:0] ras_update_data_latched;   // push数据 (branch_pc截断+1)
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n || is_fence_i) begin
+        ras_update_en_latched   <= 1'b0;
+        ras_push_latched        <= 1'b0;
+        ras_pop_latched         <= 1'b0;
+        ras_update_ptr_latched  <= '0;
+        ras_update_data_latched <= '0;
+    end else if (ras_update_en_latched) begin
+        // 上一拍捕获的更新请求在本拍执行，执行后清零
+        ras_update_en_latched <= 1'b0;
+    end else if (!stall && (push_ras || pop_ras)) begin
+        // 无待处理请求且当前不 stall，捕获新的 RAS 更新请求和数据
+        ras_update_en_latched   <= 1'b1;
+        ras_push_latched        <= push_ras;
+        ras_pop_latched         <= pop_ras;
+        ras_update_ptr_latched  <= real_ras_ptr;
+        ras_update_data_latched <= branch_pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
+    end
+end
+
+// 从锁存值计算下一拍 real_ras_ptr（纯寄存器输出组合，不在关键路径上）
+logic [RAS_ADDR_WIDTH:0] ras_latch_ptr_next;
 
 always_comb begin
-    real_ras_ptr_next = real_ras_ptr;
-    case ({push_ras, pop_ras})
-        2'b10: real_ras_ptr_next = ras_full ? 0 : real_ras_ptr + 1;
-        2'b01: real_ras_ptr_next = ras_empty ? RAS_DEPTH : real_ras_ptr - 1;
-        default: real_ras_ptr_next = real_ras_ptr;
+    case ({ras_push_latched, ras_pop_latched})
+        2'b10: ras_latch_ptr_next = (ras_update_ptr_latched == RAS_DEPTH) ? 0 : ras_update_ptr_latched + 1;
+        2'b01: ras_latch_ptr_next = (ras_update_ptr_latched == 0) ? RAS_DEPTH : ras_update_ptr_latched - 1;
+        default: ras_latch_ptr_next = ras_update_ptr_latched;
     endcase
 end
 
+// ========================================================================
+// SPEC 结构恢复/更新锁存
+// 目的：将 spec_ras_ptr_next 和 spec_global_history_next 对
+//       branch_predict_success / branch_req 的组合逻辑依赖彻底切断。
+//       之前的 BTB/GHR/RAS 锁存只切了写使能(CE端)，
+//       但 spec_ras_ptr 和 spec_global_history 的 D 端 MUX 选择
+//       仍然直接依赖 branch_predict_success，关键路径未完全切断。
+// 机制：在 !stall && branch_req 时捕获分支结果信息，
+//       下一拍根据 latched 结果更新 spec 指针和历史。
+//       执行后自动清零。
+// 代价：misprediction 恢复延迟 1 拍，correct prediction 更新延迟 1 拍。
+//       pipeline flush 后有至少 1 拍 bubble，此时 spec 值虽暂不正确，
+//       但不影响功能——被 flush 的指令不会使用预测结果，
+//       下一拍 spec 恢复正确后新 fetch 才真正需要预测。
+// ========================================================================
+
+logic spec_outcome_en_latched;       // 分支结果已锁存，下一拍更新 spec 结构
+logic spec_outcome_mispred_latched;  // 是否为预测错误
+logic spec_outcome_taken_latched;    // 预测方向 (correct prediction 时有效)
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n || is_fence_i) begin
+        spec_outcome_en_latched      <= 1'b0;
+        spec_outcome_mispred_latched <= 1'b0;
+        spec_outcome_taken_latched   <= 1'b0;
+    end else if (spec_outcome_en_latched) begin
+        // 上一拍捕获的结果在本拍执行，执行后清零
+        spec_outcome_en_latched <= 1'b0;
+    end else if (!stall && branch_req) begin
+        // 无待处理请求且当前不 stall，捕获分支结果
+        spec_outcome_en_latched      <= 1'b1;
+        spec_outcome_mispred_latched <= !branch_predict_success;
+        spec_outcome_taken_latched   <= predict_taken;
+    end
+end
+
 //========================================================================
-// SPEC RAS 指针 next 计算 (IF阶段，预测错误直接用 real 计算)
+// SPEC RAS 指针 next 计算 (IF阶段)
+// 注意：使用 spec_outcome_en_latched 替代直接依赖 branch_predict_success，
+//       彻底切断 EX → DTCM → forwarding → branch_predict_success → spec_ras_ptr D 的关键路径。
+//       预测错误恢复延迟 1 拍，pipeline flush bubble 吸收此延迟。
 //========================================================================
 always_comb begin
-    if (!branch_predict_success && branch_req) begin // 预测错误
-        spec_ras_ptr_next = real_ras_ptr_next;
-    end else if (predict_btb_hit) begin // 预测成功
-        // 正常预测更新
+    if (spec_outcome_en_latched && spec_outcome_mispred_latched) begin // 预测错误恢复（延迟1拍）
+        spec_ras_ptr_next = real_ras_ptr;
+    end else if (predict_btb_hit) begin // 正常预测更新
         case ({btb_push_ras_array[predict_btb_idx], btb_pop_ras_array[predict_btb_idx]})
             2'b10: spec_ras_ptr_next = (spec_ras_ptr == RAS_DEPTH) ? 0 : spec_ras_ptr + 1;
             2'b01: spec_ras_ptr_next = (spec_ras_ptr == 0) ? RAS_DEPTH : spec_ras_ptr - 1;
@@ -362,16 +435,15 @@ end
 
 //========================================================================
 // SPEC GHR next
-// 注意：预测错误时使用 real_global_history（寄存器输出）而非组合逻辑
-// 的 real_global_history_next，以切断关键时序路径。
-// 这意味着预测错误恢复后 spec GHR 少移入1位当前分支结果，
-// 下一拍 real_global_history 通过锁存更新后自然纠正。
+// 注意：使用 spec_outcome_en_latched 替代直接依赖 branch_predict_success，
+//       彻底切断 EX → DTCM → forwarding → branch_predict_success → spec_global_history D 的关键路径。
+//       预测正确更新延迟 1 拍，使用锁存的 spec_outcome_taken_latched。
 //========================================================================
 always_comb begin
-    if (!branch_predict_success && branch_req) begin// 预测错误
+    if (spec_outcome_en_latched && spec_outcome_mispred_latched) begin // 预测错误恢复（延迟1拍）
         spec_global_history_next = real_global_history;
-    end else if (branch_predict_success && branch_req) begin // 预测成功
-        spec_global_history_next = {spec_global_history[GHR_WIDTH-2:0], predict_taken};
+    end else if (spec_outcome_en_latched && !spec_outcome_mispred_latched) begin // 预测正确更新（延迟1拍）
+        spec_global_history_next = {spec_global_history[GHR_WIDTH-2:0], spec_outcome_taken_latched};
     end else begin
         spec_global_history_next = spec_global_history;
     end
@@ -402,25 +474,30 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 //========================================================================
-// 时序：更新 REAL RAS
+// 时序：更新 REAL RAS 指针（使用锁存的使能和数据，延迟1拍更新）
 //========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         real_ras_ptr <= #1 '0;
-    end else if (!stall) begin
-        real_ras_ptr <= #1 real_ras_ptr_next;
+    end else if (ras_update_en_latched) begin
+        real_ras_ptr <= #1 ras_latch_ptr_next;
     end
 end
 
+//========================================================================
+// 时序：更新 RAS 栈
+// Real push: 使用锁存数据，延迟1拍写入（切断关键时序路径）
+// Spec push: 保持不变（路径短，不在关键路径上）
+//========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         for (int i=0; i<RAS_DEPTH; i++) ras_stack[i] <= #1 '0;
-    end else if (!stall) begin
-        if (push_ras) begin
-            ras_stack[real_ras_ptr_next] <= #1 branch_pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
-        end else if (predict_btb_hit && btb_push_ras_array[predict_btb_idx]) begin// 推测压栈
-            ras_stack[spec_ras_ptr_next] <= #1 pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
-        end
+    end else if (ras_update_en_latched && ras_push_latched) begin
+        // Real push: 使用锁存数据
+        ras_stack[ras_latch_ptr_next] <= #1 ras_update_data_latched;
+    end else if (!stall && predict_btb_hit && btb_push_ras_array[predict_btb_idx]) begin
+        // Speculative push: 不变
+        ras_stack[spec_ras_ptr_next] <= #1 pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
     end
 end
 

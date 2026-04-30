@@ -1,6 +1,16 @@
 `include "./../SoC_Config.sv"
 `timescale 1ns / 1ps
 
+// =============================================================================
+// AXI_Lite_Master - AXI4-Lite 主设备
+// =============================================================================
+// 将 CPU 的 Request-Response 同步阻塞接口转换为 AXI4-Lite 总线事务
+//
+// 条件编译：
+//   `AXI_LITE_RSP_PIPELINED —— 使能响应打拍模式（在 rsp_* 输出处插寄存器）
+//   未定义时保持原始组合逻辑（兼容旧设计 / 功能仿真）
+// =============================================================================
+
 module AXI_Lite_Master #(
     parameter ADDR_WIDTH   = `ADDR_WIDTH,
     parameter DATA_WIDTH   = `DATA_WIDTH,
@@ -110,15 +120,27 @@ module AXI_Lite_Master #(
     // =========================================================================
     // 状态机
     // =========================================================================
-    typedef enum logic [4:0] {
-        IDLE      = 5'b00001,
-        WAIT_W_AW = 5'b00010,   // 等待 AW/W 都完成
-        WAIT_B    = 5'b00100,   // 等待写响应
-        WAIT_AR   = 5'b01000,   // 等待读地址完成
-        WAIT_R    = 5'b10000    // 等待读数据
+    typedef enum logic [5:0] {
+        IDLE      = 6'b000001,
+        WAIT_W_AW = 6'b000010,   // 等待 AW/W 都完成
+        WAIT_B    = 6'b000100,   // 等待写响应
+        WAIT_AR   = 6'b001000,   // 等待读地址完成
+        WAIT_R    = 6'b010000,   // 等待读数据
+        RSP_HOLD  = 6'b100000    // 响应保持（打拍模式）
     } state_t;
 
     state_t state, next_state;
+
+`ifdef AXI_LITE_RSP_PIPELINED
+    // =========================================================================
+    // 响应寄存器（打拍模式）
+    // b_hs/r_hs 当拍由 AXI 侧锁存到寄存器，下一拍在 RSP_HOLD 状态输出
+    // 切断 rsp_* 到后续模块的长组合路径
+    // =========================================================================
+    logic                      rsp_valid_d;
+    logic                      rsp_error_d;
+    logic [DATA_WIDTH-1:0]     rsp_rdata_d;
+`endif
 
     // =========================================================================
     // 当前事务锁存
@@ -135,11 +157,18 @@ module AXI_Lite_Master #(
     // 支持：
     //   1) IDLE 直接接请求
     //   2) B/R 完成当拍接下一笔请求（背靠背）
+    //   3) RSP_HOLD 态（打拍模式）接下一笔请求
     // =========================================================================
     assign req_ready =
         (state == IDLE) ||
+`ifdef AXI_LITE_RSP_PIPELINED
+        (state == RSP_HOLD) ||
+        ((state == WAIT_B) && m_bvalid) ||   // WAIT_B 的 b_hs 当拍接受新请求
+        ((state == WAIT_R) && m_rvalid);     // WAIT_R 的 r_hs 当拍接受新请求
+`else
         ((state == WAIT_B) && m_bvalid) ||
         ((state == WAIT_R) && m_rvalid);
+`endif
 
     logic take_req;
     assign take_req = req_valid && req_ready;
@@ -232,6 +261,11 @@ module AXI_Lite_Master #(
             state <= next_state;
     end
 
+    // =========================================================================
+    // 状态机（条件编译：打拍模式）
+    // 打拍模式下，b_hs/r_hs 后先跳转到 RSP_HOLD，
+    // 在 RSP_HOLD 态输出寄存器锁存的响应，同时接受新请求
+    // =========================================================================
     always_comb begin
         next_state = state;
 
@@ -261,8 +295,39 @@ module AXI_Lite_Master #(
                     next_state = WAIT_W_AW;
             end
 
+`ifdef AXI_LITE_RSP_PIPELINED
+            // =================================================================
+            // 响应保持态（打拍模式）
+            // 这拍输出锁存的响应，同时可接受新请求（req_ready 拉高）
+            // 新请求同拍进入后：
+            //   - aw_hs/w_hs 直通完成 → 去 WAIT_B 等写响应
+            //   - ar_hs 直通完成 → 去 WAIT_R 等读数据
+            //   - 否则 → 去对应的 WAIT_W_AW / WAIT_AR
+            // =================================================================
+            RSP_HOLD: begin
+                if (take_req) begin
+                    if (req_write) begin
+                        if (aw_hs && w_hs)
+                            next_state = WAIT_B;   // AW/W 直通，等 B
+                        else
+                            next_state = WAIT_W_AW;
+                    end else begin
+                        if (ar_hs)
+                            next_state = WAIT_R;   // AR 直通，等 R
+                        else
+                            next_state = WAIT_AR;
+                    end
+                end else begin
+                    next_state = IDLE;
+                end
+            end
+`endif
+
             WAIT_B: begin
                 if (b_hs) begin
+`ifdef AXI_LITE_RSP_PIPELINED
+                    next_state = RSP_HOLD;
+`else
                     if (take_req) begin
                         if (req_write) begin
                             if (aw_hs && w_hs)
@@ -278,6 +343,7 @@ module AXI_Lite_Master #(
                     end else begin
                         next_state = IDLE;
                     end
+`endif
                 end else begin
                     next_state = WAIT_B;
                 end
@@ -292,6 +358,9 @@ module AXI_Lite_Master #(
 
             WAIT_R: begin
                 if (r_hs) begin
+`ifdef AXI_LITE_RSP_PIPELINED
+                    next_state = RSP_HOLD;
+`else
                     if (take_req) begin
                         if (req_write) begin
                             if (aw_hs && w_hs)
@@ -307,6 +376,7 @@ module AXI_Lite_Master #(
                     end else begin
                         next_state = IDLE;
                     end
+`endif
                 end else begin
                     next_state = WAIT_R;
                 end
@@ -316,9 +386,42 @@ module AXI_Lite_Master #(
         endcase
     end
 
+`ifdef AXI_LITE_RSP_PIPELINED
     // =========================================================================
-    // CPU 侧响应
-    // 直接用 AXI 返回当拍旁路给 CPU，避免 rsp_valid 与数据错拍
+    // 响应寄存器锁存（打拍模式）
+    // b_hs 或 r_hs 当拍锁存响应数据，下拍在 RSP_HOLD 状态输出
+    // =========================================================================
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            rsp_valid_d <= 1'b0;
+            rsp_error_d <= 1'b0;
+            rsp_rdata_d <= '0;
+        end else begin
+            if (b_hs) begin
+                // 写响应：锁存 bresp 的 error bit
+                rsp_valid_d <= 1'b1;
+                rsp_error_d <= m_bresp[1];
+            end else if (r_hs) begin
+                // 读响应：锁存读数据和 bresp
+                rsp_valid_d <= 1'b1;
+                rsp_error_d <= m_rresp[1];
+                rsp_rdata_d <= m_rdata;
+            end else if (state != RSP_HOLD) begin
+                // 非 RSP_HOLD 状态时清除，避免遗留
+                rsp_valid_d <= 1'b0;
+            end
+            // RSP_HOLD 状态下保留锁存值不变（直到跳走）
+        end
+    end
+
+    assign rsp_valid = (state == RSP_HOLD) ? rsp_valid_d : 1'b0;
+    assign rsp_error = (state == RSP_HOLD) ? rsp_error_d : 1'b0;
+    assign rsp_rdata = (state == RSP_HOLD) ? rsp_rdata_d : '0;
+
+`else /* 原始组合逻辑 */
+    // =========================================================================
+    // CPU 侧响应（原始组合逻辑）
+    // AXI 返回当拍旁路给 CPU，零延迟
     // =========================================================================
     assign rsp_valid =
         ((state == WAIT_B) && m_bvalid) ||
@@ -331,5 +434,6 @@ module AXI_Lite_Master #(
 
     assign rsp_rdata =
         ((state == WAIT_R) && m_rvalid) ? m_rdata : '0;
+`endif
 
 endmodule

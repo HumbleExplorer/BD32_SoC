@@ -52,7 +52,7 @@ module EX_MEM #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= #1 `INST_NOP;
         mem_addr_o      <= #1 'h0;
         access_en_o     <= #1 1'b0;
@@ -66,7 +66,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         branch_jump_en_o  <= #1 1'b0;
         branch_jump_addr_o<= #1 'h0;
     end else if(flush) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_ADDR,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= #1 `INST_NOP;
         mem_addr_o      <= #1 'h0;
         access_en_o     <= #1 1'b0;

@@ -48,9 +48,11 @@ logic                       PWRITE     ;
 logic                       PSEL       ;
 logic                       PENABLE    ;
 logic   [ALIGN_BYTES-1:0]   PSTRB      ;
+
 //connect to User
-logic                       tran_done  ;
 logic   [DATA_WIDTH-1:0]    PRDATA     ;
+logic                       tran_done  ;
+
 
 
 always_ff @(posedge i_sys_clk or negedge i_rst_n) begin
@@ -62,12 +64,10 @@ always_ff @(posedge i_sys_clk or negedge i_rst_n) begin
     end
 end 
 
-// =============================================================================
-// 根据 APB_ACCESS_MIN_STAGES 宏值生成不同的状态转移逻辑
-// =============================================================================
-generate
-    if (`APB_ACCESS_MIN_STAGES == 1) begin : gen_fsm_min1
+
+`ifndef APB_ACCESS_DELAYED_DONE
         // 传统APB：ACCESS见PREADY即可离开（backward compatible）
+        
         always_comb begin
             next_state = IDLE;
             if(i_rst_n) begin
@@ -93,42 +93,7 @@ generate
                 endcase
             end
         end
-    end
-    else begin : gen_fsm_min2
-        // APB_ACCESS_MIN_STAGES >= 2：ACCESS至少停留2拍后进入DONE
-        always_comb begin
-            next_state = IDLE;
-            if(i_rst_n) begin
-                case(current_state)
-                    IDLE: begin
-                        if(i_transfer)
-                            next_state = SETUP;
-                        else
-                            next_state = IDLE;
-                    end
-                    SETUP: begin
-                        next_state = ACCESS;
-                    end
-                    ACCESS: begin
-                        if(i_PREADY)
-                            next_state = IDLE;
-                        else
-                            next_state = ACCESS;
-                    end
-                    default: begin
-                        next_state = IDLE;
-                    end
-                endcase
-            end
-        end
-    end
-endgenerate
 
-// =============================================================================
-// 根据 APB_ACCESS_MIN_STAGES 宏值生成不同的输出逻辑
-// =============================================================================
-generate
-    if (`APB_ACCESS_MIN_STAGES == 1) begin : gen_out_min1
         always_comb begin
             PADDR     = 'h0;
             PWDATA    = 'h0;
@@ -137,6 +102,7 @@ generate
             PENABLE   = 1'b0;
             PSTRB     = 'h0;
             PRDATA    = 'h0;
+            tran_done = 1'b0;
             if (i_rst_n) begin
                 case(current_state)
                     SETUP:
@@ -163,8 +129,32 @@ generate
                 endcase
             end
         end
-    end
-    else begin : gen_out_min2
+`else
+        always_comb begin
+            next_state = IDLE;
+            if(i_rst_n) begin
+                case(current_state)
+                    IDLE: begin
+                        if(i_transfer)
+                            next_state = SETUP;
+                        else
+                            next_state = IDLE;
+                    end
+                    SETUP: begin
+                        next_state = ACCESS;
+                    end
+                    ACCESS: begin
+                        if(i_PREADY)
+                            next_state = IDLE;
+                        else
+                            next_state = ACCESS;
+                    end
+                    default: begin
+                        next_state = IDLE;
+                    end
+                endcase
+            end
+        end
         always_comb begin
             PADDR     = 'h0;
             PWDATA    = 'h0;
@@ -218,7 +208,9 @@ generate
             endcase
         end
     end
-endgenerate
+`endif
+
+
 
 /********************comb*********************/
 //connect to APB Slave
