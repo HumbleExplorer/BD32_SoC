@@ -245,7 +245,7 @@ end
 // ========================================================================
 
 logic                      btb_update_en_latched;
-logic [BTB_ADDR_WIDTH-1:0] btb_update_idx_latched;
+(*MAX_FANOUT=32*)logic [BTB_ADDR_WIDTH-1:0] btb_update_idx_latched;
 logic [BTB_TAG_WIDTH-1:0]  btb_update_tag_latched;
 logic [BTB_BTA_WIDTH-1:0]  btb_update_target_latched;
 logic [1:0]                btb_update_type_latched;

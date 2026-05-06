@@ -169,13 +169,13 @@ always_ff @(posedge clk_sample or negedge rst_n) begin
                         if(stop_bit_cnt == 1'd1) begin
                             stop_bit_cnt <= #1 1'd0;
                             // 停止位结束后：若RX=0 → 直接启动下一帧，不回IDLE
-                            rx_state     <= #1 rx_in_sync_fall ? RX_START : RX_IDLE;
+                            rx_state     <= #1 ~rx_in_sync_reg[1] ? RX_START : RX_IDLE;
                         end else begin
                             stop_bit_cnt <= #1 stop_bit_cnt + 1'b1;
                         end
                     end else begin
                         // 1位停止位：结束直接判断是否为新起始位
-                        rx_state <= #1 rx_in_sync_fall ? RX_START : RX_IDLE;
+                        rx_state <= #1 ~rx_in_sync_reg[1] ? RX_START : RX_IDLE;
                     end
 
                     // 接收完成：输出数据和就绪信号

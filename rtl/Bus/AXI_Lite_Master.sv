@@ -7,7 +7,7 @@
 // 将 CPU 的 Request-Response 同步阻塞接口转换为 AXI4-Lite 总线事务
 //
 // 条件编译：
-//   `AXI_LITE_RSP_PIPELINED —— 使能响应打拍模式（在 rsp_* 输出处插寄存器）
+//   `AXI_LITE_DELAYED_DONE —— 使能响应打拍模式（在 rsp_* 输出处插寄存器）
 //   未定义时保持原始组合逻辑（兼容旧设计 / 功能仿真）
 // =============================================================================
 
@@ -131,7 +131,7 @@ module AXI_Lite_Master #(
 
     state_t state, next_state;
 
-`ifdef AXI_LITE_RSP_PIPELINED
+`ifdef AXI_LITE_DELAYED_DONE
     // =========================================================================
     // 响应寄存器（打拍模式）
     // b_hs/r_hs 当拍由 AXI 侧锁存到寄存器，下一拍在 RSP_HOLD 状态输出
@@ -161,7 +161,7 @@ module AXI_Lite_Master #(
     // =========================================================================
     assign req_ready =
         (state == IDLE) ||
-`ifdef AXI_LITE_RSP_PIPELINED
+`ifdef AXI_LITE_DELAYED_DONE
         (state == RSP_HOLD) ||
         ((state == WAIT_B) && m_bvalid) ||   // WAIT_B 的 b_hs 当拍接受新请求
         ((state == WAIT_R) && m_rvalid);     // WAIT_R 的 r_hs 当拍接受新请求
@@ -295,7 +295,7 @@ module AXI_Lite_Master #(
                     next_state = WAIT_W_AW;
             end
 
-`ifdef AXI_LITE_RSP_PIPELINED
+`ifdef AXI_LITE_DELAYED_DONE
             // =================================================================
             // 响应保持态（打拍模式）
             // 这拍输出锁存的响应，同时可接受新请求（req_ready 拉高）
@@ -325,7 +325,7 @@ module AXI_Lite_Master #(
 
             WAIT_B: begin
                 if (b_hs) begin
-`ifdef AXI_LITE_RSP_PIPELINED
+`ifdef AXI_LITE_DELAYED_DONE
                     next_state = RSP_HOLD;
 `else
                     if (take_req) begin
@@ -358,7 +358,7 @@ module AXI_Lite_Master #(
 
             WAIT_R: begin
                 if (r_hs) begin
-`ifdef AXI_LITE_RSP_PIPELINED
+`ifdef AXI_LITE_DELAYED_DONE
                     next_state = RSP_HOLD;
 `else
                     if (take_req) begin
@@ -386,7 +386,7 @@ module AXI_Lite_Master #(
         endcase
     end
 
-`ifdef AXI_LITE_RSP_PIPELINED
+`ifdef AXI_LITE_DELAYED_DONE
     // =========================================================================
     // 响应寄存器锁存（打拍模式）
     // b_hs 或 r_hs 当拍锁存响应数据，下拍在 RSP_HOLD 状态输出

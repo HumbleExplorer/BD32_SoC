@@ -45,7 +45,7 @@
 .eqv MTIMECMP_ADDR, 0xF2004000
 .eqv UART_BASE,     0xE0010000
 .eqv UART_THR,      0x00        # UART Transmit Holding Register
-# 10ms @ 50MHz = 500000 cycles
+# 10ms @ 100MHz = 500000 cycles
 .eqv DELAY_10MS,    500000
 
     .text
@@ -76,8 +76,8 @@ print_welcome:
     # ----------------------------------------------------------------
     li t0, TIMER_BASE
 
-    # Set PSC = 49 (prescaler divides by 50)
-    li t1, 49
+    # Set PSC = 99 (prescaler divides by 100)
+    li t1, 99
     sw t1, TIMx_PSC(t0)
 
     # Set ARR = 999 (up-counting: overflow at cnt==999, period=1000 ticks)

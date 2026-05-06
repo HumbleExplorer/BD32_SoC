@@ -15,7 +15,7 @@ module Mem_Access #(//模块内的mem指所有用到load、store的部分
     input   logic   [DATA_WIDTH-1:0]    rd_dtcm_data,
     input   logic   [DATA_WIDTH-1:0]    rd_bus_data,
     input   logic   [2:0]               rd_mem_func3,
-    input   logic   [DATA_WIDTH-1:0]    wr_reg_data_from_ex_mem,
+    input   logic   [DATA_WIDTH-1:0]    wr_reg_data_mem,
 
     //to dtcm/bus
     output  logic                       dtcm_sel,
@@ -85,10 +85,10 @@ always_comb begin
                     default:wr_reg_data = {16'h0,rd_mem_data[15:0]};
                 endcase
             end
-            default : wr_reg_data = wr_reg_data_from_ex_mem;
+            default : wr_reg_data = wr_reg_data_mem;
         endcase
     end else begin
-        wr_reg_data = wr_reg_data_from_ex_mem;
+        wr_reg_data = wr_reg_data_mem;
     end
 end
 
@@ -139,6 +139,7 @@ assign exception_val = access_addr;
 
 // 符号扩展：只有数据周期（dtcm_data_valid）时才做扩展，否则透传 EX_MEM 数据
 always_comb begin
+    wr_reg_data = {DATA_WIDTH{1'b0}};
     if (access_en) begin
         case (rd_mem_func3)
             `INST_LB : begin
@@ -176,10 +177,10 @@ always_comb begin
                     default:wr_reg_data = {16'h0,rd_mem_data[15:0]};
                 endcase
             end
-            default : wr_reg_data = wr_reg_data_from_ex_mem;
+            default : wr_reg_data = wr_reg_data_mem;
         endcase
     end else begin
-        wr_reg_data = wr_reg_data_from_ex_mem;
+        wr_reg_data = wr_reg_data_mem;
     end
 end
 

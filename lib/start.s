@@ -2,9 +2,11 @@
  * RISC-V 启动汇编代码
  * 完成功能：
  * 1. 设置栈指针
- * 2. 初始化 .data 段（从 Flash 复制到 DTCM）
- * 3. 清零 .bss 段
- * 4. 跳转到 main 函数
+ * 2. 清零 .bss 段
+ * 3. 跳转到 main 函数
+ *
+ * 注意：本SoC无外部Flash，用户程序应避免使用带初始值的全局变量
+ *     （.data段直接运行于DTCM，LMA=VMA，无需复制）
  */
 
 .section .init /* 声明此处段名为.init */
@@ -37,26 +39,6 @@ _start:
     ori  t0, t0, 0x8             # 置位MIE位
     csrw mstatus, t0
 
-    /* ===== 初始化 .data 段 ===== */
-    /* .data 段存储在 Flash 中，但运行在 DTCM */
-    /* 需要将数据从 Flash (LMA) 复制到 DTCM (VMA) */
-    
-    la   a0, _sdata       /* 目标起始地址 (DTCM) */
-    la   a1, _edata       /* 目标结束地址 */
-    la   a2, _sidata      /* 源起始地址 (Flash) */
-    
-    /* 如果 _sdata == _edata，说明没有 .data 段，跳过复制 */
-    beq  a0, a1, 2f
-    /* f (forward)：表示向前（往下） 查找最近的同名数字标签 */
-    
-    /* 复制循环 */
-1:  lw   t0, 0(a2)       /* 从 Flash 读取数据 */
-    sw   t0, 0(a0)        /* 写入 DTCM */
-    addi a0, a0, 4         /* 目标地址 +4 */
-    addi a2, a2, 4         /* 源地址 +4 */
-    bltu a0, a1, 1b        /* 若a0<a1，未复制完，继续 */
-    /* b (backward)：表示向后（往上） 查找最近的同名数字标签 */
-2:
     /* ===== 清零 .bss 段 ===== */
     /* .bss 段存放未初始化的全局/静态变量，需要清零 */
     
@@ -308,7 +290,6 @@ _init:
  * 链接器会使用的符号声明
  * 这些符号在链接脚本中定义，这里声明为外部引用
  */
-.global _sidata
 .global _sdata
 .global _edata
 .global _sbss

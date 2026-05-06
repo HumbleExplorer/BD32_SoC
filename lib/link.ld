@@ -1,94 +1,64 @@
-/* RISC-V Linker Script for Embedded System */
-/* 基于 SoC_Config.sv 的内存布局 */
+/* RISC-V Linker Script for BD32_SoC
+ * 硬件布局：
+ *   BootROM: 0x0000_0000 ~ 0x0000_0FFF（CPU上电入口，由mrom.s管理）
+ *   ITCM:    0x0001_0000 ~ 0x0001_FFFF（用户程序代码+只读数据）
+ *   DTCM:    0x0002_0000 ~ 0x0002_FFFF（用户数据段+堆栈）
+ * 用户程序由BootROM跳转到ITCM首地址(0x00010000)执行
+ */
 
 OUTPUT_ARCH("riscv")
-/*定义程序入口，_start来自启动文件*/
 ENTRY(_start)
 
-/* 内存区域定义 - 基于 SoC_Config.sv */
 MEMORY
 {
-    /* ITCM: Instruction Tightly Coupled Memory - 64KB @ 0x00000000 */
-    itcm (rwx) : ORIGIN = 0x00000000, LENGTH = 64K
-    
-    /* DTCM: Data Tightly Coupled Memory - 64KB @ 0x00010000 (物理分离) */
-    dtcm (rwx) : ORIGIN = 0x00010000, LENGTH = 64K
-    
-    /* FLASH: 外部Flash - 16MB @ 0x82000000 */
-    flash (rx) : ORIGIN = 0x82000000, LENGTH = 16M
-    
-    /* DDR: 外部DDR内存 - 512MB @ 0x84000000 */
-    ddr (rwx) : ORIGIN = 0x84000000, LENGTH = 512M
+    itcm (rwx) : ORIGIN = 0x00010000, LENGTH = 60K
+    dtcm (rwx) : ORIGIN = 0x00020000, LENGTH = 64K
 }
 
-/* 堆栈大小定义 */
 __stack_size = DEFINED(__stack_size) ? __stack_size : 4K;
-__heap_size = DEFINED(__heap_size) ? __heap_size : 4K;
 
-/* SECTIONS 定义 */
 SECTIONS
 {
-    /* KEEP防止被编译器优化，SORT_NONE禁用段排序，防止编译器打乱符号顺序 */
-    /* >itcm 即段的运行地址VMA在 ITCM，AT>flash即段的加载地址LMA在 Flash
-    /* ===== 代码段 - 放在 ITCM ===== */
-    .init 0x00000000 : {
-        KEEP(*(.init))
-    } >itcm AT>flash
-    
     .text : {
         . = ALIGN(4);
         _stext = .;
+        *(.init)
         *(.text)
         *(.text.*)
-        *(.gnu.linkonce.t.*)
         _etext = .;
-    } >itcm AT>flash
-    
-    /* 只读数据段 */
+    } >itcm
+
     .rodata : {
         . = ALIGN(4);
         *(.rodata)
         *(.rodata.*)
-        *(.gnu.linkonce.r.*)
-    } >itcm AT>flash
-    
-    /* ===== 数据段 - 放在 DTCM ===== */
-    /* .data 的加载地址在 flash，运行地址在 dtcm */
+    } >itcm
+
     .data : {
         . = ALIGN(4);
         _sdata = .;
         *(.data)
         *(.data.*)
-        *(.gnu.linkonce.d.*)
         _edata = .;
-    } >dtcm AT>flash
-    /* Flash中加载地址起始 */
-    _sidata = LOADADDR(.data);
-    
-    /* .sdata - 小数据段（用于小变量快速访问） */
+    } >dtcm
+
     .sdata : {
         __global_pointer$ = . + 0x800;
         *(.sdata)
         *(.sdata.*)
         *(.gnu.linkonce.s.*)
-    } >dtcm AT>flash
-    
-    /* ===== BSS 段 - 放在 DTCM ===== */
+    } >dtcm
+
     .bss : {
         . = ALIGN(4);
         _sbss = .;
         *(.bss)
         *(.bss.*)
-        *(.gnu.linkonce.b.*)
-        *(.sbss)
-        *(.sbss.*)
-        *(.gnu.linkonce.sb.*)
         *(COMMON)
         . = ALIGN(4);
         _ebss = .;
     } >dtcm
-    
-    /* ===== 堆和栈 - 放在 DTCM 末尾 ===== */
+
     .stack : {
         . = ALIGN(16);
         _sstack = .;
@@ -96,16 +66,7 @@ SECTIONS
         . = ALIGN(16);
         _estack = .;
     } >dtcm
-    
-    /* ===== 堆 - 放在 DDR ===== */
-    .heap : {
-        . = ALIGN(8);
-        _heap_start = .;
-        . = . + __heap_size;
-        _heap_end = .;
-    } >ddr
-    
-    /* ===== 调试信息（如果需要） ===== */
+
     /DISCARD/ : {
         *(.debug*)
         *(.comment)

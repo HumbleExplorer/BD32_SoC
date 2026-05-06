@@ -1,6 +1,5 @@
 `timescale 1ns / 1ps
 
-`timescale 1ns / 1ps
 module tb_core_top;
 `include "./../rtl/SoC_Config.sv"
 
@@ -12,8 +11,8 @@ parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH;
 parameter ALIGN_BYTES = `ALIGN_BYTES;
 parameter ALIGN_WIDTH = `ALIGN_WIDTH;
 localparam  CLK_PERIOD = 10;
-localparam  DTCM_FILE  =  "empty.dat";
-// localparam  ITCM_FILE  =  "instr_data3.dat";
+parameter  DTCM_FILE  =  "empty.dat";
+// parameter  ITCM_FILE  =  "instr_data3.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-beq.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-bge.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-bgeu.dat";
@@ -52,16 +51,16 @@ localparam  DTCM_FILE  =  "empty.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-mulhu.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-div.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-divu.dat";
-localparam    ITCM_FILE    =  "rv32um-p-rem.dat";
+// localparam    ITCM_FILE    =  "rv32um-p-rem.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-remu.dat";
 
 // localparam    ITCM_FILE    =  "rv32ui-p-sb.dat";
-// localparam    ITCM_FILE    =  "rv32ui-p-sh.dat";
+// parameter    ITCM_FILE    =  "rv32ui-p-sh.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-sw.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lb.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lbu.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lh.dat";
-// localparam    ITCM_FILE    =  "rv32ui-p-lhu.dat";
+localparam    ITCM_FILE    =  "rv32ui-p-lhu.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lw.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-fence_i.dat";
 
@@ -148,7 +147,7 @@ end
 
 RISC_V_Core #(
     .ITCM_FILE      (ITCM_FILE      ),
-    .DTCM_FILE      (DTCM_FILE      ),
+    .DTCM_FILE      (ITCM_FILE      ),
     .ADDR_WIDTH     (ADDR_WIDTH     ),
     .DATA_WIDTH     (DATA_WIDTH     ),
     .REGFILE_NUM    (REGFILE_NUM    ),

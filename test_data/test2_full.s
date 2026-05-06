@@ -62,7 +62,7 @@ _start:
     # ----------------------------------------------------------------
     li  t0, UART_BASE               # UART base address
     li  t1, 0x00020000              # DTCM start address (welcome text)
-    li  t2, 0x00026000              # DTCM end address
+    li  t2, 0x0002593C              # DTCM end address (5711 Words)
 
 print_welcome:
     lb  t3, 0(t1)                   # Load byte from DTCM

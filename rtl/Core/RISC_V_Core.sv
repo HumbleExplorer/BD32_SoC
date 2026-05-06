@@ -39,9 +39,18 @@ module RISC_V_Core #(
 // Pipeline Ctrl
 logic                       branch_jump_en;
 logic   [ADDR_WIDTH-1:0]    branch_jump_addr;
-// EX_MEM delayed branch signals (always declared; used by Pipeline_Ctrl when BRANCH_JUMP_DELAYED)
+// EX_MEM delayed branch signals (always declared; used by Pipeline_Ctrl / Dynamic_Branch_Predictor when BRANCH_JUMP_DELAYED)
+`ifdef BRANCH_JUMP_DELAYED
 logic                       ex_mem_branch_jump_en;
 logic   [ADDR_WIDTH-1:0]    ex_mem_branch_jump_addr;
+logic                       ex_mem_branch_taken;
+logic   [ADDR_WIDTH-1:0]    ex_mem_branch_target;
+logic                       ex_mem_branch_req;
+logic   [1:0]               ex_mem_branch_inst_type;
+logic                       ex_mem_branch_predict_success;
+logic                       ex_mem_push_ras;
+logic                       ex_mem_pop_ras;
+`endif
 logic                       trap_jump;
 logic   [ADDR_WIDTH-1:0]    trap_jump_addr;
 logic   [1:0]               priv_mode;
@@ -162,8 +171,8 @@ logic   [ADDR_WIDTH-1:0]    inst_addr_mem;
 logic   [DATA_WIDTH-1:0]    inst_mem;
 logic                       wr_reg_en_mem;
 logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_mem;
-logic   [DATA_WIDTH-1:0]    wr_reg_data_from_ex_mem;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_mem;
+logic   [DATA_WIDTH-1:0]    wr_reg_selected_data_mem;
 logic                       access_en;
 logic   [ADDR_WIDTH-1:0]    access_addr;
 logic                       access_wr;
@@ -182,15 +191,20 @@ logic                       bus_sel;
 // WB
 logic   [ADDR_WIDTH-1:0]    inst_addr_wb;
 logic   [DATA_WIDTH-1:0]    inst_wb;
+logic   [DATA_WIDTH-1:0]    wr_reg_data_wb;
+logic   [DATA_WIDTH-1:0]    wr_reg_arb_data;    // WB_Arbiter 仲裁输出
 
 Pipeline_Ctrl #(
     .ADDR_WIDTH(ADDR_WIDTH),
     .DATA_WIDTH(DATA_WIDTH)
 )u_Pipeline_Ctrl(
+`ifdef BRANCH_JUMP_DELAYED
+    .branch_jump_en      	(ex_mem_branch_jump_en),
+    .branch_jump_addr    	(ex_mem_branch_jump_addr),
+`else
     .branch_jump_en      	(branch_jump_en       ),
     .branch_jump_addr    	(branch_jump_addr     ),
-    .ex_mem_branch_jump_en (ex_mem_branch_jump_en),
-    .ex_mem_branch_jump_addr(ex_mem_branch_jump_addr),
+`endif
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
     .priv_mode           	(priv_mode            ),
@@ -232,6 +246,7 @@ Data_Hazard_Forward #(
     .DATA_WIDTH     	(DATA_WIDTH),
     .REG_ADDR_WIDTH 	(REG_ADDR_WIDTH)
 )u_Data_Hazard_Forward(
+    .clk                    (clk),
     .access_en_id       	(access_en_id       ),
     .access_wr_id       	(access_wr_id       ),
     .rd_rs1_addr_id     	(rd_rs1_addr        ),
@@ -256,7 +271,6 @@ Data_Hazard_Forward #(
     .bus_sel                (bus_sel            ),
     .bus_done               (bus_tran_done      ),
     .mem_access_ready       (mem_access_ready   ),
-    .mem_addr_ex            (mem_addr_ex        ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
     .alu_op2_o          	(alu_op2_forward    ),
@@ -276,7 +290,18 @@ Dynamic_Branch_Predictor #(
     .is_fence_i      (is_fence_i     ),
     .stall           (pc_stall       ),
     .pc              (inst_addr_if   ),
-    .branch_pc       (inst_addr_ex   ),
+`ifdef BRANCH_JUMP_DELAYED
+    .branch_pc       (inst_addr_mem  ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
+    // 其他更新信号从 EX_MEM 寄存器输出取
+    .branch_taken    (ex_mem_branch_taken    ),
+    .branch_target   (ex_mem_branch_target   ),  
+    .branch_req      (ex_mem_branch_req      ),
+    .branch_predict_success(ex_mem_branch_predict_success),
+    .branch_inst_type(ex_mem_branch_inst_type),
+    .push_ras        (ex_mem_push_ras        ),
+    .pop_ras         (ex_mem_pop_ras         ),
+`else
+    .branch_pc       (inst_addr_ex  ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
     .branch_taken    (branch_taken   ),
     .branch_target   (branch_target  ),  
     .branch_req      (branch_req     ),
@@ -284,6 +309,7 @@ Dynamic_Branch_Predictor #(
     .branch_inst_type(branch_inst_type),
     .push_ras        (push_ras       ),
     .pop_ras         (pop_ras        ),
+`endif
     .predict_taken   (predict_taken_if),
     .predict_target  (predict_target_if)
 );
@@ -467,8 +493,6 @@ Executer #(
     .wr_mem_data_temp 	(wr_mem_data_temp   ),
     .mul_div_valid    	(mul_div_valid      ),
     .result_mul_div   	(result_mul_div     ),
-    .wr_reg_data_mem  	(wr_reg_data_mem    ),
-    .wr_reg_data_wb   	(wr_reg_data        ),
     .branch_jump_en     (branch_jump_en     ),
     .branch_jump_addr   (branch_jump_addr   ),
     .exception_code  	(exception_code_ex  ),
@@ -561,8 +585,32 @@ EX_MEM #(
     .rd_mem_func3_i (rd_mem_func3_ex),
     .wr_mem_data_i  (wr_mem_data_ex),
     .wr_mem_mask_i  (wr_mem_mask_ex),
-    .branch_jump_en_i  (branch_jump_en),
-    .branch_jump_addr_i(branch_jump_addr),
+`ifdef BRANCH_JUMP_DELAYED
+    .predict_taken_i      (predict_taken_ex),
+    .predict_target_i     (predict_target_ex),
+    .branch_taken_i       (branch_taken),
+    .branch_target_i      (branch_target),
+    .branch_req_i         (branch_req),
+    .branch_inst_type_i   (branch_inst_type),
+    .branch_predict_success_i(branch_predict_success),
+    .push_ras_i           (push_ras),
+    .pop_ras_i            (pop_ras),
+    .is_fence_i           (is_fence_i),
+    .branch_taken_o       (ex_mem_branch_taken),
+    .branch_target_o      (ex_mem_branch_target),
+    .branch_req_o         (ex_mem_branch_req),
+    .branch_inst_type_o   (ex_mem_branch_inst_type),
+    .branch_predict_success_o(ex_mem_branch_predict_success),
+    .push_ras_o           (ex_mem_push_ras),
+    .pop_ras_o            (ex_mem_pop_ras),
+    .branch_jump_en_o     (ex_mem_branch_jump_en),
+    .branch_jump_addr_o   (ex_mem_branch_jump_addr),
+`else
+    .branch_jump_en_i     (branch_jump_en),
+    .branch_jump_addr_i   (branch_jump_addr),
+    .branch_jump_en_o     (ex_mem_branch_jump_en),
+    .branch_jump_addr_o   (ex_mem_branch_jump_addr),
+`endif
     .inst_addr_o    (inst_addr_mem),
     .inst_o         (inst_mem),
     .access_en_o    (access_en),
@@ -571,11 +619,9 @@ EX_MEM #(
     .rd_mem_func3_o (rd_mem_func3),
     .wr_mem_data_o  (wr_mem_data),
     .wr_mem_mask_o  (wr_mem_mask),
-    .branch_jump_en_o  (ex_mem_branch_jump_en),
-    .branch_jump_addr_o(ex_mem_branch_jump_addr),
     .wr_reg_en_o    (wr_reg_en_mem),
     .wr_reg_addr_o  (wr_reg_addr_mem),
-    .wr_reg_data_o  (wr_reg_data_from_ex_mem)
+    .wr_reg_data_o  (wr_reg_data_mem)
 );
 
 Mem_Access #(
@@ -591,15 +637,14 @@ Mem_Access #(
     .rd_dtcm_data               (rd_dtcm_data),
     .rd_bus_data                (bus_rdata),
     .rd_mem_func3               (rd_mem_func3),
-    .wr_reg_data_from_ex_mem    (wr_reg_data_from_ex_mem),
+    .wr_reg_data_mem            (wr_reg_data_mem),
     .dtcm_sel                   (dtcm_sel),
     .bus_sel                    (bus_sel),
     .mem_access_ready           (mem_access_ready),
     .exception_code             (exception_code_mem),
     .exception_val              (exception_val_mem),
-    .wr_reg_data                (wr_reg_data_mem)
+    .wr_reg_data                (wr_reg_selected_data_mem)
 );
-
 
 DTCM #(
     .DTCM_FILE   (DTCM_FILE),
@@ -631,13 +676,25 @@ MEM_WB #(
     .inst_i         (inst_mem),
     .wr_reg_en_i    (wr_reg_en_mem),
     .wr_reg_addr_i  (wr_reg_addr_mem),
-    .wr_reg_data_i  (wr_reg_data_mem),
+    .wr_reg_data_i  (wr_reg_selected_data_mem),
     .inst_o         (inst_wb),
     .inst_addr_o    (inst_addr_wb),
     .wr_reg_en_o    (wr_reg_en),
     .wr_reg_addr_o  (wr_reg_addr),
+    .wr_reg_data_o  (wr_reg_data_wb)
+);
+
+// WB_Arbiter: 仲裁总线 DTCM ALU 三路写回数据
+// 输出给 MEM_WB 寄存器 + 经 MEM_WB 给 Forward 模块
+WB_Arbiter #(
+    .DATA_WIDTH (DATA_WIDTH)
+)u_WriteBack_Arbiter(
+    .mem_data_i     (wr_reg_data_wb),
+    .bus_rdata_i    (bus_rdata),
+    .bus_done_i     (bus_tran_done),
     .wr_reg_data_o  (wr_reg_data)
 );
+
 
 assign bus_transfer   = access_en_ex && 
                         mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR

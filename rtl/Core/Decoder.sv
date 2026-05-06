@@ -218,7 +218,7 @@ always_comb    begin
             access_csr_en   = 1'b0;
             rd_rs1_addr     = 5'h0;
             rd_rs2_addr     = 5'h0;
-            alu_op1         = 32'h0;
+            alu_op1         = inst_addr;
             alu_op2         = imm;
         end
         `INST_JALR:begin

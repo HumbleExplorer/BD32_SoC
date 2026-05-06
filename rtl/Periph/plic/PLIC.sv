@@ -106,8 +106,11 @@ module PLIC #(
     // 内部信号 - 每目标独立仲裁
     // ========================================================================
     logic   [NUM_TARGETS-1:0][PRIO_WIDTH*CT_NUM-1:0] ct_input_data;
-    logic   [NUM_TARGETS-1:0][PRIO_WIDTH-1:0]        ct_max_prio;
-    logic   [NUM_TARGETS-1:0][CT_IDX_W-1:0]         ct_max_idx;
+    // CompareTree 输出打一拍（切断 16 级组合逻辑到 PRDATA 的长路径）
+    logic [PRIO_WIDTH-1:0] ct_max_prio_comb [NUM_TARGETS];
+    logic [CT_IDX_W-1:0]   ct_max_idx_comb  [NUM_TARGETS];
+    logic [PRIO_WIDTH-1:0] ct_max_prio_r [NUM_TARGETS];
+    logic [CT_IDX_W-1:0]   ct_max_idx_r  [NUM_TARGETS];
     logic   [NUM_TARGETS-1:0][SRC_ID_WIDTH-1:0]      winner_idx;
     logic   [NUM_TARGETS-1:0][PRIO_WIDTH-1:0]        winner_prio;
     logic   [NUM_TARGETS-1:0]                         irq_valid;
@@ -312,22 +315,27 @@ module PLIC #(
                 .SIGNED     (0)             // 无符号比较
             ) u_compare_tree (
                 .input_data (ct_input_data[g_arb]),
-                .out_max    (ct_max_prio[g_arb]),
-                .max_index  (ct_max_idx[g_arb])
+                .out_max    (ct_max_prio_comb[g_arb]),
+                .max_index  (ct_max_idx_comb[g_arb])
             );
+
+            always_ff @(posedge PCLK) begin
+                ct_max_prio_r[g_arb] <= ct_max_prio_comb[g_arb];
+                ct_max_idx_r[g_arb]  <= ct_max_idx_comb[g_arb];
+            end
 
             // 提取胜出源 ID 和优先级, 判断有效性
             always_comb begin
                 irq_valid[g_arb]   = 1'b0;
                 winner_idx[g_arb]  = '0;
                 winner_prio[g_arb] = '0;
-                if (ct_max_prio[g_arb] != '0 && ct_max_idx[g_arb] < NUM_SOURCES) begin
-                    if (pending_bits[ct_max_idx[g_arb]]
-                        && enable_bits[g_arb][ct_max_idx[g_arb]]
-                        && (prio_regs[ct_max_idx[g_arb]] > threshold_q[g_arb])) begin
+                if (ct_max_prio_r[g_arb] != '0 && ct_max_idx_r[g_arb] < NUM_SOURCES) begin
+                    if (pending_bits[ct_max_idx_r[g_arb]]
+                        && enable_bits[g_arb][ct_max_idx_r[g_arb]]
+                        && (prio_regs[ct_max_idx_r[g_arb]] > threshold_q[g_arb])) begin
                         irq_valid[g_arb]   = 1'b1;
-                        winner_idx[g_arb]  = SRC_ID_WIDTH'(ct_max_idx[g_arb]);
-                        winner_prio[g_arb] = ct_max_prio[g_arb];
+                        winner_idx[g_arb]  = SRC_ID_WIDTH'(ct_max_idx_r[g_arb]);
+                        winner_prio[g_arb] = ct_max_prio_r[g_arb];
                     end
                 end
             end

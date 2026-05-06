@@ -10,7 +10,7 @@ parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH;
 parameter ALIGN_BYTES = `ALIGN_BYTES;
 parameter ALIGN_WIDTH = `ALIGN_WIDTH;
 parameter GPIO_NUM = `GPIO_NUM;
-localparam  CLK_PERIOD = 20;
+localparam  CLK_PERIOD = 10;
 localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
 localparam  PATH  = `PATH;//vsim路径
@@ -21,6 +21,8 @@ logic   clk;
 logic   rst_n;
 logic   download_en;
 wire    [GPIO_NUM-1:0]  gpio_io;
+// GPIO[0] (MODE_SEL) 浮空，BootROM 读到 0 → 进入 UART 下载模式
+// 注：GPIO_SIM 模式下 gpio_io 不连到 apb_gpio（用 gpio_i/gpio_o/gpio_oe 替代）
 // logic   clk_timer;
 logic   uart_rx;
 logic   uart_tx;
@@ -31,6 +33,7 @@ wire    [`TIMER_CHANNEL_NUM-1:0] timer_channel_io;
 // 存储指令的内存数组（32位宽，足够大的深度）
 logic   [DATA_WIDTH-1:0] itcm_mem [0:`ITCM_DEPTH-1];
 integer inst_cnt; // 实际读取的指令条数
+// GPIO[0] (MODE_SEL): download_en=1 模拟跳线帽接3.3V → UART下载模式
 assign  gpio_io[0] = download_en;
 assign download_done = tb_soc_top.u_SoC_top.u_apb_uart.download_done;
 
@@ -153,11 +156,20 @@ logic tx_data_valid;
 assign tx_data_valid = u_SoC_top.u_apb_uart.tx_start && ~u_SoC_top.u_apb_uart.tx_busy;
 logic tx_data_valid_d;
 
+// 监测 UART 发送数据，并打印到 console
+logic uart_tx_complete;  // UART 发送完成标志（TEMT=1 时置位）
+logic lsr6_d;
+
 always_ff @(posedge clk) begin
     tx_data_valid_d <= #1 tx_data_valid;
     if (tx_data_valid && ~tx_data_valid_d) begin
         $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
     end
+    // 检测 UART TX 完全完成：TEMT (LSR[6]) 上升沿
+    // TEMT=1 表示发送 FIFO 空 && 移位寄存器空闲，所有字符已发完
+    lsr6_d <= #1 u_SoC_top.u_apb_uart.lsr[6];
+    if (u_SoC_top.u_apb_uart.lsr[6] && ~lsr6_d)
+        uart_tx_complete <= #1 1'b1;
 end
 
 // ------------------------ PWM Output Monitoring ------------------------
@@ -183,9 +195,10 @@ always @(posedge clk) begin
     end else begin
         for (pwm_ch = 0; pwm_ch < `TIMER_CHANNEL_NUM; pwm_ch++) begin
             // 上升沿检测：上一拍低、当前拍高 → 本周期结束，输出统计
+            // 仅在 UART 发送完成后才打印 PWM 信息，避免输出交替
             if (timer_channel_io[pwm_ch] && ~prev_pwm[pwm_ch]) begin
                 // 跳过第一个周期（period_cnt 为 0 表示尚未开始计数）
-                if (period_cnt[pwm_ch] > 0) begin
+                if (period_cnt[pwm_ch] > 0 && uart_tx_complete) begin
                     $display("[%t] PWM Ch%0d: Period=%0d clocks, Duty=%0d%%",
                              $time, pwm_ch, period_cnt[pwm_ch] + 1,
                              ((high_cnt[pwm_ch]+1) * 100) / (period_cnt[pwm_ch]+1));
@@ -215,6 +228,12 @@ initial begin
     uart_rx = 1'b1;// UART空闲电平为高
     #35;
     rst_n   = 1'b1;
+    `ifdef XILINX
+    $display("Xilinx FPGA");
+    `ifdef SIMULATION
+    $display("Simulation Mode");
+    `endif
+    `endif
     $display("\n============================================================");
     $display("              RISC-V SoC Simulation Started                  ");
     $display("============================================================");

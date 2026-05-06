@@ -7,6 +7,69 @@
 `define ALIGN_WIDTH 2
 `define DEVICE_TAG_WIDTH 16
 
+
+// ============================================================
+// 分支跳转延迟1拍（EX_MEM锁存）— 时序优化
+// ============================================================
+// 启用后，EX阶段的 branch_jump_en/addr 先经 EX_MEM 寄存器，
+// 下一拍再由 Pipeline_Ctrl 响应，切断 EX→PC 的长组合路径。
+// 代价：预测失败多浪费1拍（3拍 vs 2拍），正确预测零开销。
+// 注释下行则以原始方式（EX 直通）运行：
+`define BRANCH_JUMP_DELAYED
+
+// 访存地址快速加法：用 12 位加法+高位条件调整代替 32 位 CARRY4×8 链，
+// 减少 mem_addr 关键路径的时序压力。启用后可改善 EX 阶段时序。
+// 取消注释下行以启用：
+// `define ADDR_GEN_FAST
+
+// Load→Store 前递转发（forward_C）
+// 启用后：Load 后紧跟 Store 时不需停顿（通过 forward_C 转发 wr_reg_data_mem）
+// 关闭后：Load→Store 会产生 load-use stall（转发回退到 forward_B）
+// 关闭可减少 wr_reg_data_mem 扇出，改善时序
+// 取消注释下行启用：
+// `define FORWARD_C_EN
+
+// `define APB_ACCESS_DELAYED_DONE
+
+// AXI-Lite 响应打拍：在 rsp_* 输出处插寄存器，切断 AXI Bus → CPU 长组合路径
+// 增加 1 拍响应延迟，但大幅改善时序。Vivado 综合时启用。
+`define AXI_LITE_DELAYED_DONE
+
+// `define GPIO_SIM
+// `define TIMER_SIM
+
+// `define XILINX
+// `define SIMULATION
+`ifdef XILINX
+    `ifdef SIMULATION
+        `define PATH "../../../../../test_data/"
+        `define ITCM_DEPTH 16*1024//8K
+        `define DTCM_DEPTH 16*1024//8K
+        `define ITCM_FILE "test2_lite.dat"
+        `define DTCM_FILE "welcome_text_lite.dat"
+        `define TCM_Reg_or_BRAM "BRAM"
+    `else
+        `define PATH "../test_data/"//Vivado路径
+        `define ITCM_DEPTH 16*1024//8K
+        `define DTCM_DEPTH 16*1024//8K
+        `define ITCM_FILE "test2_full.dat"
+        `define DTCM_FILE "welcome_text_full.dat"
+        `define TCM_Reg_or_BRAM "BRAM"
+    `endif
+`else
+    `define PATH "../../test_data/"
+    `define ITCM_DEPTH 16*1024//8K
+    `define DTCM_DEPTH 16*1024//8K
+    `define ITCM_FILE "test2_lite.dat"
+    `define DTCM_FILE "welcome_text_lite.dat"
+    `define TCM_Reg_or_BRAM "Reg"
+    `define CORE_TEST
+`endif
+
+`define MROM_DEPTH 1*1024//1K
+
+`define ITCM_LENGTH (`ITCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
+`define DTCM_LENGTH (`DTCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 // ============================================================
 // AXI 地址映射（2026-04-24 修订）
 // ============================================================
@@ -46,77 +109,22 @@
 `define BOOT_BASE_TAG  `DEVICE_TAG_WIDTH'h0000
 
 // ITCM / DTCM
-`define ITCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0001
-`define DTCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0002
+`ifdef CORE_TEST
+    `define ITCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
+    `define DTCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
+`else
+    `define ITCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0001
+    `define DTCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0002
+`endif
 
 // Flash / DDR（AXI 地址空间，当前留空由 err_slave 返回 0）
 `define FLASH_LENGTH 128*1024*1024/8  // 128Mbit/8=16MB
 `define DDR_LENGTH   256*1024*1024*16/8  // 256M*16bit=512MB
 
 `define MAX_SIZE ((`DDR_LENGTH > `FLASH_LENGTH)? `DDR_LENGTH : `FLASH_LENGTH)
-`define GPIO_NUM 2
+`define GPIO_NUM 5
 `define TIMER_CHANNEL_NUM 4
 `define TIMER_NUM 1
-
-
-
-// ============================================================
-// 分支跳转延迟1拍（EX_MEM锁存）— 时序优化
-// ============================================================
-// 启用后，EX阶段的 branch_jump_en/addr 先经 EX_MEM 寄存器，
-// 下一拍再由 Pipeline_Ctrl 响应，切断 EX→PC 的长组合路径。
-// 代价：预测失败多浪费1拍（3拍 vs 2拍），正确预测零开销。
-// 注释下行则以原始方式（EX 直通）运行：
-`define BRANCH_JUMP_DELAYED
-
-// Load→Store 前递转发（forward_C）
-// 启用后：Load 后紧跟 Store 时不需停顿（通过 forward_C 转发 wr_reg_data_mem）
-// 关闭后：Load→Store 会产生 load-use stall（转发回退到 forward_B）
-// 关闭可减少 wr_reg_data_mem 扇出，改善时序
-// 取消注释下行启用：
-// `define FORWARD_C_EN
-
-// `define APB_ACCESS_DELAYED_DONE
-
-// AXI-Lite 响应打拍：在 rsp_* 输出处插寄存器，切断 AXI Bus → CPU 长组合路径
-// 增加 1 拍响应延迟，但大幅改善时序。Vivado 综合时启用。
-`define AXI_LITE_RSP_PIPELINED
-
-// `define GPIO_SIM
-// `define TIMER_SIM
-`ifdef MODELSIM
-    `define PATH "../../test_data/"//vsim路径
-    `define ITCM_DEPTH 16*1024//16K
-    `define DTCM_DEPTH 16*1024//16K
-    `define ITCM_FILE "test2_lite.dat"
-    `define DTCM_FILE "welcome_text_lite.dat"
-    `define TCM_Reg_or_BRAM "Reg"
-    // `define CORE_TEST
-`elsif XILINX
-    `define PATH "../test_data/"//Vivado路径
-    `define ITCM_DEPTH 16*1024//8K
-    `define DTCM_DEPTH 16*1024//8K
-    `define ITCM_FILE "test2_full.dat"
-    `define DTCM_FILE "welcome_text_full.dat"
-    `define TCM_Reg_or_BRAM "BRAM"
-    // Load→Store 前递转发（forward_C）：启用后减少 load-use stall
-    // 关闭可减少 wr_reg_data_mem 扇出，改善时序。取消注释下行启用：
-    // `define FORWARD_C_EN
-
-`else
-    `define PATH "../../test_data/"
-    `define ITCM_DEPTH 16*1024//8K
-    `define DTCM_DEPTH 16*1024//8K
-    `define ITCM_FILE "test2_lite.dat"
-    `define DTCM_FILE "welcome_text_lite.dat"
-    `define TCM_Reg_or_BRAM "Reg"
-    // `define CORE_TEST
-`endif
-
-`define MROM_DEPTH 1*1024//1K
-
-`define ITCM_LENGTH (`ITCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
-`define DTCM_LENGTH (`DTCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 
 `define MROM_FILE "mrom.dat"
 

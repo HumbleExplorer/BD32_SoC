@@ -44,6 +44,9 @@ logic                     detect_end_frame;
 logic                     word_ready;
 logic                     uart_rx_valid_d;
 logic                     uart_rx_valid_pos;
+// 组合输出信号（再打一拍寄存器输出，切断 APB→ITCM 长组合路径）
+logic                     itcm_wr_en_comb;
+logic [DATA_WIDTH-1:0]    itcm_wr_data_comb;
 // 传输程序：小端传输，低字节先传
 
 always_ff @(posedge clk) begin
@@ -91,8 +94,8 @@ end
 
 always_comb begin
     next_state = current_state;
-    itcm_wr_data = 'h0;
-    itcm_wr_en = 1'b0;
+    itcm_wr_data_comb = 'h0;
+    itcm_wr_en_comb = 1'b0;
     case(current_state)
         IDLE: begin
             // 检测到启动帧，进入数据接收状态
@@ -103,19 +106,30 @@ always_comb begin
         RECV_DATA: begin
             if (itcm_addr_access_valid) begin
                 if(detect_start_frame) begin 
-                    itcm_wr_en = 1'b0;
+                    itcm_wr_en_comb = 1'b0;
                 end else if (detect_end_frame) begin// 检测结束帧，退出数据接收
                     next_state = NORMAL_MODE;
-                    itcm_wr_en = 1'b0; // 停止写ITCM
+                    itcm_wr_en_comb = 1'b0; // 停止写ITCM
                 end else if (word_ready) begin
-                    itcm_wr_data = recv_data_n;
-                    itcm_wr_en = 1'b1;
+                    itcm_wr_data_comb = recv_data_n;
+                    itcm_wr_en_comb = 1'b1;
                 end
             end
         end
         NORMAL_MODE:;
         default: next_state = IDLE;
     endcase
+end
+
+// 寄存器输出（切断 APB→ITCM 长组合路径，串口下载速度慢，1 拍延迟无影响）
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n) begin
+        itcm_wr_en   <= #1 1'b0;
+        itcm_wr_data <= #1 'h0;
+    end else begin
+        itcm_wr_en   <= #1 itcm_wr_en_comb;
+        itcm_wr_data <= #1 itcm_wr_data_comb;
+    end
 end
 
 // 核心状态机
@@ -125,7 +139,7 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else begin
         case(current_state)
             RECV_DATA: begin
-                if(itcm_addr_access_valid && word_ready) begin
+                if(itcm_addr_access_valid && itcm_wr_en) begin
                     itcm_wr_addr[DATA_WIDTH-1:ALIGN_WIDTH] <= #1 itcm_wr_addr[DATA_WIDTH-1:ALIGN_WIDTH] + 1;
                 end
             end

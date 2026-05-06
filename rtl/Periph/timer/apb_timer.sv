@@ -56,7 +56,7 @@ module apb_timer #(
     output  logic   [CHANNEL_NUM-1:0]    channel_o,   // 通道输出
     output  logic   [CHANNEL_NUM-1:0]    channel_oe   // 通道输出使能
 `else
-    inout   logic   [CHANNEL_NUM-1:0]    channel_io   // 通道双向信号
+    inout   wire    [CHANNEL_NUM-1:0]    channel_io   // 通道双向信号
 `endif
 );
 
@@ -90,8 +90,6 @@ module apb_timer #(
     logic   [CHANNEL_NUM-1:0]    channel_i;   // 通道输入
     logic   [CHANNEL_NUM-1:0]    channel_o;   // 通道输出
     logic   [CHANNEL_NUM-1:0]    channel_oe;   // 通道输出使能
-`endif
-    logic   [CHANNEL_NUM-1:0]    channel_oe_n; // channel_oe取反
     genvar g;
     generate
         for(g=0; g<CHANNEL_NUM; g++) begin : channel_tristate
@@ -99,6 +97,8 @@ module apb_timer #(
             assign channel_i[g] = channel_io[g];
         end
     endgenerate
+`endif
+    logic   [CHANNEL_NUM-1:0]    channel_oe_n; // channel_oe取反
 
     assign  channel_oe = ~channel_oe_n;
 

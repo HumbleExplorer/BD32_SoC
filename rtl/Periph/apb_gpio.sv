@@ -236,9 +236,11 @@ always_ff @(posedge PCLK or negedge PRESETn) begin
         for (int n=0; n<INPUT_STAGES; n++) input_regs[n] <= #1 {DATA_WIDTH{1'b0}};
         in_reg <= #1 {DATA_WIDTH{1'b0}};
     end else begin
-        for (int n=0; n<INPUT_STAGES; n++) begin
-            if (n==0) input_regs[n] <= #1 (gpio_i[n] === 1'bz) ? 1'b0 : gpio_i[n];
-            else      input_regs[n] <= #1 input_regs[n-1];
+        for (int b=0; b<DATA_WIDTH; b++) begin
+            input_regs[0][b] <= #1 (gpio_i[b] === 1'bz) ? 1'b0 : gpio_i[b];
+        end
+        for (int n=1; n<INPUT_STAGES; n++) begin
+            input_regs[n] <= #1 input_regs[n-1];
         end
         in_reg <= #1 input_regs[INPUT_STAGES-1];
     end

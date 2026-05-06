@@ -19,17 +19,13 @@ module Executer #(
     input   logic   [DATA_WIDTH-1:0]        rd_csr_data,
     input   logic                           illegal_inst_csr,
     // from data_hazard
-    input   logic   [DATA_WIDTH-1:0]        alu_op1,
-    input   logic   [DATA_WIDTH-1:0]        alu_op2,
+    (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op1,
+    (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op2,
     input   logic   [DATA_WIDTH-1:0]        wr_mem_data_temp,
 
     // from mul_div
     input   logic                           mul_div_valid,
     input   logic   [DATA_WIDTH-1:0]        result_mul_div,
-    // from mem
-    input   logic   [DATA_WIDTH-1:0]        wr_reg_data_mem,//forward_A_B_C
-    // from wb
-    input   logic   [DATA_WIDTH-1:0]        wr_reg_data_wb,//forward_A_B
     // to ctrl
     output  logic                           branch_jump_en,//实际上是否跳转
     output  logic   [ADDR_WIDTH-1:0]        branch_jump_addr,//实际跳转地址
@@ -51,7 +47,7 @@ module Executer #(
     output  logic                           wfi_req,
     output  logic                           mret_req,
     // to IF
-    output  logic                           is_fence_i,
+    (*MAX_FANOUT=32*)output  logic          is_fence_i,
     output  logic                           branch_taken,    // 分支跳转方向
     output  logic   [ADDR_WIDTH-1:0]        branch_target,   // 分支目标跳转地址
     output  logic   [1:0]                   branch_inst_type,// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
@@ -226,6 +222,7 @@ always_comb begin
                 `INST_BGE: branch_taken     = ~less_signed;
                 `INST_BLTU:branch_taken     = less_unsigned;
                 `INST_BGEU:branch_taken     = ~less_unsigned;
+                default: branch_taken     = 1'b0;
             endcase
             branch_target   = branch_taken ? jump_imm : 0;
         end
@@ -314,7 +311,7 @@ always_comb begin
             wr_reg_addr     = rd;
             wr_reg_data     = inst_addr_plus_4;
             branch_taken    = 1'b1;
-            branch_target   = inst_addr + alu_op2;
+            branch_target   = alu_op1 + alu_op2;
             branch_inst_type= 2'b10;
             branch_req      = 1'b1;
             push_ras        = rd_link;//push or none
@@ -323,7 +320,7 @@ always_comb begin
             wr_reg_addr     = rd;
             wr_reg_data     = inst_addr_plus_4;
             branch_taken    = 1'b1;
-            branch_target   = (alu_op1 + alu_op2) & ~32'h1;
+            branch_target   = alu_op1 + alu_op2;
             branch_inst_type= 2'b11;
             branch_req      = 1'b1;
             push_ras        = rd_link;

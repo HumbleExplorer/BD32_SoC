@@ -8,9 +8,6 @@ module Pipeline_Ctrl #(
     // from EX
     input   logic                       branch_jump_en,
     input   logic   [ADDR_WIDTH-1:0]    branch_jump_addr,
-    // from MEM (via EX_MEM, delayed branch signals; used when BRANCH_JUMP_DELAYED)
-    input   logic                       ex_mem_branch_jump_en,
-    input   logic   [ADDR_WIDTH-1:0]    ex_mem_branch_jump_addr,
     // from CSR
     input   logic                       trap_jump,
     input   logic   [ADDR_WIDTH-1:0]    trap_jump_addr,
@@ -153,15 +150,9 @@ always_comb begin
     endcase
 end
 
-logic stall;//只涉及PC、IF-ID、ID-EX寄存器，不涉及EX-MEM寄存器
-assign stall = load_use_flag | ~mul_div_ready;
 
 assign next_inst_addr = trap_jump ? trap_jump_addr :
-`ifdef BRANCH_JUMP_DELAYED
-                        ex_mem_branch_jump_en ? ex_mem_branch_jump_addr :
-`else
                         branch_jump_en ? branch_jump_addr :
-`endif
                         inst_addr_id;
 assign exception_trap = ~exception_code[DATA_WIDTH-2];//简化逻辑
 
@@ -188,24 +179,19 @@ always_comb begin
         if_id_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
         id_ex_stall     = 1'b1;
-    end else if (
+    end else if (branch_jump_en) begin
+        if_id_flush  = 1'b1;
+        id_ex_flush  = 1'b1;
 `ifdef BRANCH_JUMP_DELAYED
-        ex_mem_branch_jump_en
-    ) begin
-        if_id_flush  = 1'b1;
-        id_ex_flush  = 1'b1;
         ex_mem_flush = 1'b1;   // 多冲1级：杀掉错误路径的 EX 结果
-        ctrl_jump_en = 1'b1;
-        ctrl_jump_addr = ex_mem_branch_jump_addr;
-`else
-        branch_jump_en
-    ) begin
-        if_id_flush  = 1'b1;
-        id_ex_flush  = 1'b1;
+`endif
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = branch_jump_addr;
-`endif
-    end else if (stall) begin
+    end else if (load_use_flag) begin
+        pc_stall        = 1'b1;
+        if_id_stall     = 1'b1;
+        id_ex_flush     = 1'b1;
+    end else if (~mul_div_ready) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
