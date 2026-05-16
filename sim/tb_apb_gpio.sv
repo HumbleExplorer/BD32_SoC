@@ -34,7 +34,9 @@ localparam  MODE_REG      = 0*4,
             TR_LVL0_REG   = 5*4,
             TR_LVL1_REG   = 6*4,
             TR_STATUS_REG = 7*4,
-            IRQ_ENA_REG   = 8*4;
+            IRQ_ENA_REG   = 8*4,
+            BOP_SET_REG   = 9*4,
+            BOP_CLR_REG   = 10*4;
 
 localparam VERBOSE=0;//调试日志等级控制变量，控制打印日志精细程度
 
@@ -106,6 +108,9 @@ always @(negedge PRESETn) begin
 
     //basic IO test
     test_io_basic();
+
+    //BOP_SET/BOP_CLR test
+    test_bop();
 
     //random IO test
     test_io_random();
@@ -314,6 +319,48 @@ task test_io_random(input int runs=10000);
         check($sformatf("GPIO_OE (%0d %0d %0d %0d)", run, mode, dir, d), gpio_oe, expected);
     end //next run
 endtask : test_io_random
+
+
+/*
+* BOP_SET/BOP_CLR test
+*/
+task test_bop;
+    logic [PDATA_WIDTH-1:0] readdata;
+    logic [PDATA_WIDTH-1:0] expected;
+
+    $display ("BOP_SET/BOP_CLR test ...");
+
+    // Configure: push-pull mode, all output
+    apb_mst_bfm.write(MODE_REG,      {PSTRB_SIZE{1'b1}}, {PDATA_WIDTH{1'b0}});
+    apb_mst_bfm.write(DIRECTION_REG, {PSTRB_SIZE{1'b1}}, {PDATA_WIDTH{1'b1}});
+    apb_mst_bfm.write(OUTPUT_REG,    {PSTRB_SIZE{1'b1}}, {PDATA_WIDTH{1'b0}});
+
+    // Verify output starts at 0
+    apb_mst_bfm.read(OUTPUT_REG, readdata);
+    check("OUTPUT after reset", readdata, {PDATA_WIDTH{1'b0}});
+
+    // BOP_SET: set bits 0, 2, 4 = 5'b10101
+    apb_mst_bfm.write(BOP_SET_REG, {PSTRB_SIZE{1'b1}}, 32'h00000015);
+    apb_mst_bfm.read(OUTPUT_REG, readdata);
+    expected = 32'h00000015;
+    check("BOP_SET bits 0,2,4", readdata, expected);
+
+    // BOP_CLR: clear bit 2, set bits 1,3
+    apb_mst_bfm.write(BOP_CLR_REG, {PSTRB_SIZE{1'b1}}, 32'h00000004);
+    apb_mst_bfm.read(OUTPUT_REG, readdata);
+    expected = 32'h00000011;
+    check("BOP_CLR bit 2", readdata, expected);
+
+    // BOP_SET is write-only, reads back as 0
+    apb_mst_bfm.read(BOP_SET_REG, readdata);
+    check("BOP_SET readback", readdata, {PDATA_WIDTH{1'b0}});
+
+    // BOP_CLR is write-only, reads back as 0
+    apb_mst_bfm.read(BOP_CLR_REG, readdata);
+    check("BOP_CLR readback", readdata, {PDATA_WIDTH{1'b0}});
+
+    $display ("BOP_SET/BOP_CLR test PASS");
+endtask : test_bop
 
 
 /*

@@ -18,38 +18,22 @@ module DTCM #(
     input   logic                       wr_en,
     input   logic   [DATA_WIDTH-1:0]    wr_data,
     input   logic   [ALIGN_BYTES-1:0]   wr_mask,
+    // UART 下载写端口
+    input   logic                       dtcm_wr_en,
+    input   logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr,
+    input   logic   [DATA_WIDTH-1:0]    dtcm_wr_data,
     output  logic   [DATA_WIDTH-1:0]    rd_data
 );
 
-wire [DTCM_SIZE_WIDTH-1:0] dtcm_addr = access_addr[DTCM_SIZE_WIDTH-1:0];
+wire [DTCM_SIZE_WIDTH-1:0] dtcm_addr;
+wire [ALIGN_BYTES-1:0]     dtcm_we;
+wire [DATA_WIDTH-1:0]      dtcm_wdata;
 
-`ifdef DTCM_ASYNC_READ
-// ============================================
-// 以下为原始异步读实现（已弃用，仅供参考）
-// 同步读模式下 DTCM 读延迟 1 拍，
-// 需要配合 Mem_Access / Forward / Pipeline_Ctrl 调整
-// 如需恢复异步读，取消 DTCM_ASYNC_READ 定义并替换上方逻辑
-// ============================================
-//
-    (* RAM_STYLE="distributed"*) logic [DATA_WIDTH-1:0] ram_mem [0:DTCM_DEPTH-1];
+// 下载写优先：下载使能时使用下载地址/数据，否则使用处理器访问
+assign dtcm_addr  = dtcm_wr_en ? dtcm_wr_addr[DTCM_SIZE_WIDTH-1:0] : access_addr[DTCM_SIZE_WIDTH-1:0];
+assign dtcm_we    = dtcm_wr_en ? {ALIGN_BYTES{1'b1}} : (wr_en ? wr_mask : 4'b0000);
+assign dtcm_wdata = dtcm_wr_en ? dtcm_wr_data : wr_data;
 
-    initial begin
-        $readmemh(FULL_PATH,ram_mem);
-    end
-
-    integer i;
-    always_ff @(posedge clk) begin
-        if(wr_en) begin
-            for (i=0;i<ALIGN_BYTES;i=i+1) begin
-                if (wr_mask[i]) begin
-                    ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]][i*8+:8] <= #1 wr_data[i*8+:8];
-                end
-            end
-        end
-    end
-
-    assign rd_data = (!rst_n)? 'h0 :ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]];
-`else
 generate 
     if(`TCM_Reg_or_BRAM=="BRAM") begin : gen_bram
         //--------------------------------------------
@@ -57,9 +41,9 @@ generate
         //--------------------------------------------
         dmem u_dmem (
             .clka(clk),    // input wire clka
-            .wea(wr_en ? wr_mask : 4'b0000),      // input wire [3 : 0] wea
+            .wea(dtcm_we),      // input wire [3 : 0] wea
             .addra(dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]),  // input wire [13 : 0] addra
-            .dina(wr_data),    // input wire [31 : 0] dina
+            .dina(dtcm_wdata),    // input wire [31 : 0] dina
             .douta(rd_data)  // output wire [31 : 0] douta
         );
 
@@ -69,17 +53,18 @@ generate
         // 写：同周期写入；读：下一拍输出
         //--------------------------------------------
         logic [DATA_WIDTH-1:0] ram_mem [0:DTCM_DEPTH-1];
-
+        `ifdef DIRECT_LOAD
         initial begin
             $readmemh(FULL_PATH,ram_mem);
         end
+        `endif
 
         integer i;
         always_ff @(posedge clk) begin
-            if(wr_en) begin
+            if(|dtcm_we) begin
                 for (i=0;i<ALIGN_BYTES;i=i+1) begin
-                    if (wr_mask[i]) begin
-                        ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]][i*8+:8] <= #1 wr_data[i*8+:8];
+                    if (dtcm_we[i]) begin
+                        ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]][i*8+:8] <= #1 dtcm_wdata[i*8+:8];
                     end
                 end
             end
@@ -95,6 +80,5 @@ generate
 
     end
 endgenerate
-`endif // DTCM_ASYNC_READ
 
 endmodule

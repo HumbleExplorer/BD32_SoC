@@ -21,6 +21,8 @@ module Executer #(
     // from data_hazard
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op1,
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op2,
+    input   logic   [ADDR_WIDTH-1:0]        jump_imm,       // 预计算分支目标
+    input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4,// 预计算 PC+4
     input   logic   [DATA_WIDTH-1:0]        wr_mem_data_temp,
 
     // from mul_div
@@ -66,7 +68,6 @@ logic   [6:0]               func7;
 logic                       equal;
 logic                       less_signed;
 logic                       less_unsigned;
-logic   [ADDR_WIDTH-1:0]    jump_imm;
 
 logic   [DATA_WIDTH-1:0]    sr_shift;
 logic   [DATA_WIDTH-1:0]    sr_shift_mask;
@@ -90,7 +91,6 @@ link为x1或x5
 logic rd_link;
 logic rs1_link;
 logic rs1_eq_rd;
-logic [ADDR_WIDTH-1:0] inst_addr_plus_4;
 
 
 
@@ -102,7 +102,6 @@ assign  func7           =   inst[31:25];
 assign  equal           =   (alu_op1 == alu_op2);
 assign  less_signed     =   ($signed(alu_op1) < $signed(alu_op2));
 assign  less_unsigned   =   (alu_op1 < alu_op2);
-assign  jump_imm        =   inst_addr + imm;
 
 assign  sr_shift        =   alu_op1 >> alu_op2[4:0];
 assign  sr_shift_mask   =   {DATA_WIDTH{1'b1}} >> alu_op2[4:0];
@@ -122,7 +121,6 @@ assign  rd_link = (rd == 'd1 || rd == 'd5);
 assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
 assign  rs1_eq_rd = (inst[19:15] == rd);
 assign  is_fence_i = (opcode == `INST_FENCE) && (func3[0]);
-assign  inst_addr_plus_4 = inst_addr + 4;
 
 assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);
 assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
@@ -311,7 +309,7 @@ always_comb begin
             wr_reg_addr     = rd;
             wr_reg_data     = inst_addr_plus_4;
             branch_taken    = 1'b1;
-            branch_target   = alu_op1 + alu_op2;
+            branch_target   = jump_imm;
             branch_inst_type= 2'b10;
             branch_req      = 1'b1;
             push_ras        = rd_link;//push or none

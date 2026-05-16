@@ -46,6 +46,11 @@ generate
                 $readmemh(ITCM_FULL_PATH, itcm_mem);
             end
         `endif
+        `ifdef DIRECT_LOAD
+            initial begin
+                $readmemh(ITCM_FULL_PATH, itcm_mem);
+            end
+        `endif
         // 同步读：地址在上升沿采样，下一拍输出数据
         always_ff @(posedge clk or negedge rst_n) begin
             if (!rst_n)

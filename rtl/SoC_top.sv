@@ -42,6 +42,26 @@ module SoC_top #(
     (* mark_debug = "true" *)inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0] timer_channel_io
 );
 
+logic clk_soc;
+logic rst_async_n;
+`ifdef XILINX
+// clk_wiz_0：MMCM 时钟生成（50MHz → 100MHz）
+logic clk_wiz_locked;
+logic clk_100mhz;
+
+clk_wiz_0 u_clk_wiz_0 (
+    .clk_in    (sys_clk),
+    .clk_100mhz(clk_100mhz),
+    .reset     (~sys_rst_n),
+    .locked    (clk_wiz_locked)
+);
+assign rst_async_n = sys_rst_n && clk_wiz_locked;
+assign clk_soc = clk_100mhz;
+`else
+assign rst_async_n = sys_rst_n;
+assign clk_soc = sys_clk;
+`endif
+
 // =========================================================================
 // 异步复位同步释放
 // =========================================================================
@@ -51,8 +71,8 @@ Cdc_Sync #(
     .RESET_VAL  (0),
     .DELAY_STAGES(3)
 ) u_cdc_rst_sync (
-    .dst_clk    (sys_clk),
-    .dst_rst_n  (sys_rst_n),
+    .dst_clk    (clk_soc),
+    .dst_rst_n  (rst_async_n),
     .async_sig  (1'b1),
     .sync_sig   (rst_n_sync)
 );
@@ -63,6 +83,9 @@ Cdc_Sync #(
 logic                       itcm_wr_en;
 logic   [ADDR_WIDTH-1:0]    itcm_wr_addr;
 logic   [DATA_WIDTH-1:0]    itcm_wr_data;
+logic                       dtcm_wr_en;
+logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr;
+logic   [DATA_WIDTH-1:0]    dtcm_wr_data;
 
 logic                       bus_transfer;
 logic   [ADDR_WIDTH-1:0]    bus_access_addr;
@@ -227,11 +250,14 @@ RISC_V_Core #(
     .ALIGN_BYTES    (ALIGN_BYTES    ),
     .ALIGN_WIDTH    (ALIGN_WIDTH    )
 ) u_RISC_V_Core (
-    .clk                (sys_clk         ),
-    .rst_n              (rst_n_sync       ),
+    .clk                (clk_soc  ),
+    .rst_n              (rst_n_sync      ),
     .itcm_wr_en         (itcm_wr_en      ),
     .itcm_wr_addr       (itcm_wr_addr    ),
     .itcm_wr_data       (itcm_wr_data    ),
+    .dtcm_wr_en         (dtcm_wr_en      ),
+    .dtcm_wr_addr       (dtcm_wr_addr    ),
+    .dtcm_wr_data       (dtcm_wr_data    ),
     .mtime_shadow       (mtime_shadow    ),
     .software_int       (software_int    ),
     .timer_int          (timer_int       ),
@@ -256,7 +282,7 @@ Bus_Access #(
     .ID_WIDTH    (ID_WIDTH    ),
     .LEN_WIDTH   (LEN_WIDTH   )
 ) u_Bus_Access (
-    .clk          (sys_clk      ),
+    .clk          (clk_soc      ),
     .rst_n        (rst_n_sync    ),
     // CPU 侧
     .i_transfer   (bus_transfer  ),
@@ -317,7 +343,7 @@ AXI_Interconnect #(
     .STRB_WIDTH  (ALIGN_BYTES ),
     .ID_WIDTH    (ID_WIDTH    )
 ) u_AXI_Interconnect (
-    .clk          (sys_clk      ),
+    .clk          (clk_soc      ),
     .rst_n        (rst_n_sync    ),
     // Master 侧
     .s_awid       (axi_awid      ), .s_awaddr    (axi_awaddr   ),
@@ -417,7 +443,7 @@ AXI_APB_Bridge #(
     .STRB_WIDTH      (ALIGN_BYTES     ),
     .ID_WIDTH        (ID_WIDTH        )
 ) u_AXI_APB_Bridge (
-    .clk          (sys_clk       ),
+    .clk          (clk_soc       ),
     .rst_n        (rst_n_sync     ),
     // AW
     .s_awid       (apb_awid      ), .s_awaddr   (apb_awaddr   ),
@@ -484,7 +510,7 @@ axi_err_slave #(
     .STRB_WIDTH  (ALIGN_BYTES ),
     .ID_WIDTH    (ID_WIDTH    )
 ) u_mrom_flash_err (
-    .clk          (sys_clk       ),
+    .clk          (clk_soc       ),
     .rst_n        (rst_n_sync     ),
     .s_awid       (mrom_flash_awid      ), .s_awaddr   (mrom_flash_awaddr  ),
     .s_awlen      (mrom_flash_awlen     ), .s_awsize   (mrom_flash_awsize  ),
@@ -517,7 +543,7 @@ axi_err_slave #(
     .STRB_WIDTH  (ALIGN_BYTES ),
     .ID_WIDTH    (ID_WIDTH    )
 ) u_ddr_err (
-    .clk          (sys_clk       ),
+    .clk          (clk_soc       ),
     .rst_n        (rst_n_sync     ),
     .s_awid       (ddr_awid      ), .s_awaddr   (ddr_awaddr   ),
     .s_awlen      (ddr_awlen     ), .s_awsize   (ddr_awsize   ),
@@ -551,7 +577,7 @@ CLINT #(
     .DATA_WIDTH  (DATA_WIDTH  ),
     .ALIGN_BYTES (ALIGN_BYTES )
 ) u_CLINT (
-    .PCLK         (sys_clk       ),
+    .PCLK         (clk_soc       ),
     .PRESETn      (rst_n_sync     ),
     .PADDR        (apb_paddr     ),
     .PSEL         (apb_psel[0]   ),
@@ -573,7 +599,7 @@ PLIC #(
     .MAX_PRIORITY   (7            ),
     .NUM_TARGETS    (1            )
 ) u_PLIC (
-    .PCLK         (sys_clk       ),
+    .PCLK         (clk_soc       ),
     .PRESETn      (rst_n_sync     ),
     .PADDR        (apb_paddr     ),
     .PSEL         (apb_psel[1]   ),
@@ -596,7 +622,7 @@ apb_gpio #(
     .DATA_WIDTH  (DATA_WIDTH  ),
     .ALIGN_BYTES (ALIGN_BYTES )
 ) u_apb_gpio (
-    .PCLK         (sys_clk       ),
+    .PCLK         (clk_soc       ),
     .PRESETn      (rst_n_sync     ),
     .PADDR        (apb_paddr     ),
     .PSEL         (apb_psel[2]   ),
@@ -616,7 +642,7 @@ apb_uart #(
     .ADDR_WIDTH (ADDR_WIDTH),
     .DATA_WIDTH (DATA_WIDTH)
 ) u_apb_uart (
-    .PCLK         (sys_clk        ),
+    .PCLK         (clk_soc        ),
     .PRESETn      (rst_n_sync      ),
     .PADDR        (apb_paddr      ),
     .PSEL         (apb_psel[3]    ),
@@ -631,7 +657,10 @@ apb_uart #(
     .uart_tx_o    (uart_tx        ),
     .itcm_wr_en_o (itcm_wr_en     ),
     .itcm_wr_addr_o(itcm_wr_addr  ),
-    .itcm_wr_data_o(itcm_wr_data  )
+    .itcm_wr_data_o(itcm_wr_data  ),
+    .dtcm_wr_en_o (dtcm_wr_en     ),
+    .dtcm_wr_addr_o(dtcm_wr_addr  ),
+    .dtcm_wr_data_o(dtcm_wr_data  )
 );
 
 // --- PSEL[4]: Timer ---
@@ -642,7 +671,7 @@ apb_timer #(
     .TIMER_WIDTH    (16                ),
     .CHANNEL_NUM    (TIMER_CHANNEL_NUM )
 ) u_apb_timer (
-    .PCLK         (sys_clk            ),
+    .PCLK         (clk_soc            ),
     .PRESETn      (rst_n_sync          ),
     .PADDR        (apb_paddr          ),
     .PSEL         (apb_psel[4]        ),

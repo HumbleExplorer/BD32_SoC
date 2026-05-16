@@ -6,3 +6,6 @@ ip_repo/
 **/*.vstf
 **/*.wlf
 **/wlft*
+.history/
+archive/
+**/~$*

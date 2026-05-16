@@ -54,6 +54,7 @@ always_comb begin
         2'b01: s_target_data_bits = 3'd5; // 6位数据
         2'b10: s_target_data_bits = 3'd6; // 7位数据
         2'b11: s_target_data_bits = 3'd7; // 8位数据
+        default: s_target_data_bits = 3'd0; // 未知配置
     endcase
 end
 

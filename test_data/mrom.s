@@ -22,7 +22,7 @@ sw t1, 0x08(ra)
 # === Step 2: Read MODE_SEL (GPIO[0]) to choose boot mode ===
 lw t1, 0x0C(ra)         # Read GPIO input value
 andi t1, t1, 0x01       # MODE_SEL = bit[0]
-bnez t1, normal_mode    # 1 = jump to ITCM; 0 = UART download
+beqz t1, normal_mode      # 0 = jump to ITCM; 1 = UART download
 
 # === UART Download Mode ===
 # Light LED0+LED2 (bits 3+5 = 0x28)

@@ -196,13 +196,22 @@ assign predict_taken =  predict_btb_hit &&
 // 预测目标地址
 // 对于RET指令: 从RAS获取返回地址
 // 对于其他指令: 从BTB获取目标地址
-assign predict_target = predict_btb_hit ? // 命中BTB?
-                        (btb_pop_ras_array[predict_btb_idx] ? // RET指令？
-                        {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_TAG_WIDTH],ras_stack[spec_ras_ptr-1],{ALIGN_WIDTH{1'b0}}} :  // RET: 从RAS取
-                        ((predict_pht_taken && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) || 
-                        btb_inst_type_array[predict_btb_idx][1]) ? // 非RET指令，且跳转
-                        {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_BTA_WIDTH],btb_target_array[predict_btb_idx],{ALIGN_WIDTH{1'b0}}} : 0): // 从BTB取(预测为不跳时直接取0，因为EX阶段不跳时也取0，原因是暂停时或者刚开始时EX阶段的PC为0)
-                        0;// 其他
+wire [ADDR_WIDTH-1:0] predict_ras_target;
+wire [ADDR_WIDTH-1:0] predict_btb_target;
+
+// RAS 返回地址（带 spec_ras_ptr==0 边界保护）
+assign predict_ras_target = (predict_btb_hit && btb_pop_ras_array[predict_btb_idx] && spec_ras_ptr != 0) ?
+    {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_TAG_WIDTH],ras_stack[spec_ras_ptr-1],{ALIGN_WIDTH{1'b0}}} : '0;
+
+// BTB 目标地址（条件跳转且预测跳）
+assign predict_btb_target = (predict_btb_hit &&
+    ((predict_pht_taken && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) || 
+    btb_inst_type_array[predict_btb_idx][1])) ?
+    {pc[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_BTA_WIDTH],btb_target_array[predict_btb_idx],{ALIGN_WIDTH{1'b0}}} : '0;
+
+// 最终预测目标：RET → RAS，条件跳 → BTB，其他 → 0
+assign predict_target = (predict_btb_hit && btb_pop_ras_array[predict_btb_idx]) ? predict_ras_target :
+                        predict_btb_target;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin

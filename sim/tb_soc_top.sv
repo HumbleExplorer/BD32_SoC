@@ -38,74 +38,39 @@ assign  gpio_io[0] = download_en;
 assign download_done = tb_soc_top.u_SoC_top.u_apb_uart.download_done;
 
 // ------------------------ UART下载ITCM程序的核心Task ------------------------
-// 功能：通过UART发送帧头+程序数据+帧尾，完成ITCM下载
-// 参数说明：
-//   - file_path: 程序文件路径（.dat/.bin，每行16进制数或二进制）
-//   - baud_rate: UART波特率（默认115200）
-//   - clk_period: 系统时钟周期（ns，默认10ns=100MHz）
-//   - start_frame: 下载启动帧（32位，默认0xAABBAABB）
-//   - end_frame: 下载结束帧（32位，默认0xCCDDCCDD）
-task uart_download_itcm(
-    input string  file_path,
-    input logic [31:0] start_frame = 32'hBBAABBAA,//传0xAA 0xBB 0xAA 0xBB
-    input logic [31:0] end_frame = 32'hFFEEFFEE//传0xEE 0xFF 0xEE 0xFF
+// 功能：通过UART发送完整的.uartbin文件（计数协议版）
+// .uartbin 格式： [START_FRAME(4B)][ITCM_COUNT(4B)][ITCM数据(N×4B)][DTCM_COUNT(4B)][DTCM数据(M×4B)]
+// 直接发送全部字节，无需额外处理帧头帧尾
+task uart_download_program(
+    input string  file_path
 );
-    integer       i; // 循环变量
+    integer       fd, byte_val, bytes_sent;
 
     $display("\n==================== UART Download Start ====================");
     $display("File Path: %s", file_path);
-    $display("Start Frame: 0x%08h, End Frame: 0x%08h", start_frame, end_frame);
     $display("==============================================================\n");
 
-    // 1. 核心：用$readmemh加载十六进制文件到内存数组
-    // $readmemh格式说明：$readmemh("文件路径", 数组名); 自动按行读取32位十六进制数
-    inst_cnt = 0; // 初始化指令计数
-    $readmemh(file_path, itcm_mem);
-
-    // 检查是否读取到指令（验证文件是否存在/格式是否正确）
-    if(itcm_mem[0] === 32'hx) begin // 数组初始值为x，读取失败则仍为x
-        $error("UART Download Error: $readmemh read file failed!");
-        $error("Check: 1. File path: %s  2. File format (hex per line)", file_path);
+    fd = $fopen(file_path, "r");
+    if (fd == 0) begin
+        $error("UART Download Error: Cannot open file %s", file_path);
         return;
     end
 
-    // 统计实际读取的指令条数（遍历数组直到遇到x）
-    for(i = 0; i < `ITCM_DEPTH; i++) begin
-        if(itcm_mem[i] === 32'hx) begin
-            inst_cnt = i;
-            break;
-        end
-    end
-    if(inst_cnt == 0) begin
-        $error("UART Download Error: No valid instructions read!");
-        return;
-    end
-    $display("Success read %0d instructions from file", inst_cnt);
-
-    @(posedge u_SoC_top.u_apb_uart.clk_sample);
-    #1;
-    // 2. 发送启动帧（32位，小端传输）
-    $display("Sending Start Frame...");
-    send_uart_word(start_frame);
-
-    // 3. 从内存数组逐字发送指令
-    $display("Sending Program Data...");
-    for(i = 0; i < inst_cnt; i++) begin
-        send_uart_word(itcm_mem[i]); // 发送当前指令
-
-        // 每10条打印进度
-        if((i+1) % 100 == 0) begin
-            $display("Sent %0d instructions (0x%08h)", i+1, itcm_mem[i]);
-        end
+    // 逐字节发送（$fgetc 每次读 1 字节）
+    bytes_sent = 0;
+    while (!$feof(fd)) begin
+        byte_val = $fgetc(fd);
+        if ($feof(fd)) break;
+        send_uart_byte(byte_val[7:0]);
+        bytes_sent++;
+        if (bytes_sent % 20 == 0)
+            $display("  Sent %0d bytes", bytes_sent);
     end
 
-    // 4. 发送结束帧
-    $display("Sending End Frame...");
-    send_uart_word(end_frame);
+    $fclose(fd);
 
-    // 5. 下载完成
     $display("\n==================== UART Download Finish ====================");
-    $display("Total Sent: %0d instructions + 2 frames (start/end)", inst_cnt);
+    $display("Sent: %0d bytes", bytes_sent);
     $display("==============================================================\n");
 endtask
 
@@ -248,11 +213,14 @@ initial  begin
     @(posedge rst_n);
     #50;// 增加稳定时间，避免复位中操作
     wait(tb_soc_top.u_SoC_top.u_apb_uart.download_en);
-    #50; 
-    uart_download_itcm(ITCM_FULL_PATH);
-    if(u_SoC_top.u_RISC_V_Core.inst[0] == 32'hx) begin // 数组初始值为x，读取失败则仍为x
-        $finish;
-    end
+    #50;
+`ifdef DIRECT_LOAD
+    $display("DIRECT_LOAD mode: ITCM pre-initialized, skip UART download");
+    #100;
+`else
+    uart_download_program(ITCM_FULL_PATH);
+`endif
+    #200;
 end
 
 SoC_top #(

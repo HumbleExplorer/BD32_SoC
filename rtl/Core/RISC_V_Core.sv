@@ -15,10 +15,14 @@ module RISC_V_Core #(
 )(
     input   logic                       clk,
     input   logic                       rst_n,
-    // from update
+    // ITCM download
     input   logic                       itcm_wr_en,
     input   logic   [ADDR_WIDTH-1:0]    itcm_wr_addr,
     input   logic   [DATA_WIDTH-1:0]    itcm_wr_data,
+    // DTCM download
+    input   logic                       dtcm_wr_en,
+    input   logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr,
+    input   logic   [DATA_WIDTH-1:0]    dtcm_wr_data,
     // from clint
     input   logic   [2*DATA_WIDTH-1:0]  mtime_shadow,
     input   logic                       software_int,
@@ -90,6 +94,8 @@ logic   [DATA_WIDTH-1:0]    alu_op1_forward;
 logic   [DATA_WIDTH-1:0]    alu_op2_forward;
 logic   [DATA_WIDTH-1:0]    wr_mem_data_temp;
 logic   [DATA_WIDTH-1:0]    rs2_data_ex;
+logic   [ADDR_WIDTH-1:0]    jump_imm_ex;
+logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_ex;
 
 //RegFile
 logic                       wr_reg_en;
@@ -121,6 +127,10 @@ logic                       access_wr_id;
 logic                       wr_reg_en_id;
 logic                       access_csr_en_id;
 logic   [CSR_ADDR_WIDTH-1:0]csr_addr_id;
+logic   [ADDR_WIDTH-1:0]    jump_imm_id;
+logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_id;
+assign jump_imm_id          = inst_addr_id + imm_id;
+assign inst_addr_plus_4_id  = inst_addr_id + 32'd4;
 
 // EX
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_ex;
@@ -448,6 +458,8 @@ ID_EX #(
     .alu_op1_i      (alu_op1_id),
     .alu_op2_i      (alu_op2_id),
     .imm_i          (imm_id),
+    .jump_imm_i     (jump_imm_id),
+    .inst_addr_plus_4_i(inst_addr_plus_4_id),
     .rs2_data_i     (rd_rs2_data),
     .wr_reg_en_i    (wr_reg_en_id),
     .access_wr_i    (access_wr_id),
@@ -463,6 +475,8 @@ ID_EX #(
     .alu_op1_o      (alu_op1_from_id_ex),
     .alu_op2_o      (alu_op2_from_id_ex),
     .imm_o          (imm_ex),
+    .jump_imm_o     (jump_imm_ex),
+    .inst_addr_plus_4_o(inst_addr_plus_4_ex),
     .rs2_data_o     (rs2_data_ex),
     .wr_reg_en_o    (wr_reg_en_ex),
     .access_wr_o    (access_wr_ex),
@@ -490,6 +504,8 @@ Executer #(
     .illegal_inst_csr   (illegal_inst_csr   ),
     .alu_op1          	(alu_op1_forward    ),
     .alu_op2          	(alu_op2_forward    ),
+    .inst_addr_plus_4   (inst_addr_plus_4_ex),
+    .jump_imm         	(jump_imm_ex        ),
     .wr_mem_data_temp 	(wr_mem_data_temp   ),
     .mul_div_valid    	(mul_div_valid      ),
     .result_mul_div   	(result_mul_div     ),
@@ -523,7 +539,7 @@ mul_div #(
     .REG_ADDR_WIDTH 	(REG_ADDR_WIDTH)
 )u_mul_div(
     .clk         	(clk            ),
-    .rst_n       	(rst_n     ),
+    .rst_n       	(rst_n          ),
     .enable      	(mul_div_en     ),
     .rd_rs1_addr 	(rd_rs1_addr_ex ),
     .rd_rs2_addr 	(rd_rs2_addr_ex ),
@@ -605,11 +621,6 @@ EX_MEM #(
     .pop_ras_o            (ex_mem_pop_ras),
     .branch_jump_en_o     (ex_mem_branch_jump_en),
     .branch_jump_addr_o   (ex_mem_branch_jump_addr),
-`else
-    .branch_jump_en_i     (branch_jump_en),
-    .branch_jump_addr_i   (branch_jump_addr),
-    .branch_jump_en_o     (ex_mem_branch_jump_en),
-    .branch_jump_addr_o   (ex_mem_branch_jump_addr),
 `endif
     .inst_addr_o    (inst_addr_mem),
     .inst_o         (inst_mem),
@@ -660,6 +671,9 @@ DTCM #(
     .wr_en      (access_wr && dtcm_sel),
     .wr_data    (wr_mem_data),
     .wr_mask    (wr_mem_mask),
+    .dtcm_wr_en (dtcm_wr_en   ),
+    .dtcm_wr_addr(dtcm_wr_addr),
+    .dtcm_wr_data(dtcm_wr_data),
     .rd_data    (rd_dtcm_data)
 );
 
@@ -694,7 +708,6 @@ WB_Arbiter #(
     .bus_done_i     (bus_tran_done),
     .wr_reg_data_o  (wr_reg_data)
 );
-
 
 assign bus_transfer   = access_en_ex && 
                         mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR

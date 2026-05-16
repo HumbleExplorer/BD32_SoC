@@ -63,7 +63,9 @@ genvar i;
 generate
     for(i=0; i<GPIO_NUM; i++) begin : gpio_tristate
         assign gpio_io[i] = gpio_oe[i] ? gpio_o[i] : 1'bz;
-        assign gpio_i[i] = gpio_io[i];
+    end
+    for(i=0; i<DATA_WIDTH; i++) begin : gpio_input
+        assign gpio_i[i] = (i<GPIO_NUM) ? gpio_io[i] : 1'bz;
     end
 endgenerate
 
@@ -82,7 +84,9 @@ typedef enum logic[3:0] {
     TR_LVL0   = 4'b0101,
     TR_LVL1   = 4'b0110,
     TR_STAT   = 4'b0111,
-    IRQ_ENA   = 4'b1000
+    IRQ_ENA   = 4'b1000,
+    BOP_SET   = 4'b1001,  // bit[i]=1 → SET GPIO[i] (32-bit, write-only)
+    BOP_CLR   = 4'b1010   // bit[i]=1 → CLEAR GPIO[i] (32-bit, write-only)
 } gpio_reg_sel_e;
 
 logic [3:0] reg_sel;
@@ -170,13 +174,6 @@ always_ff @(posedge PCLK,negedge PRESETn)
     else if ( is_write_to_addr(DIRECTION)) dir_reg <= #1 get_write_value(dir_reg);
 
 
-//APB write to Output register
-//treat writes to Input register same
-always_ff @(posedge PCLK,negedge PRESETn)
-    if      (!PRESETn                   ) out_reg <= #1 {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(OUTPUT) ||
-              is_write_to_addr(INPUT )  ) out_reg <= #1 get_write_value(out_reg);
-
 
 //APB write to Trigger Type register
 always_ff @(posedge PCLK,negedge PRESETn)
@@ -209,6 +206,18 @@ always_ff @(posedge PCLK,negedge PRESETn)
     if      (!PRESETn                  ) irq_ena_reg <= #1 {DATA_WIDTH{1'b0}};
     else if ( is_write_to_addr(IRQ_ENA)) irq_ena_reg <= #1 get_write_value(irq_ena_reg);
 
+// BOP_SET: 写 1 置位对应 GPIO 位（写 0 不影响）
+always_ff @(posedge PCLK,negedge PRESETn)
+    if      (!PRESETn                     ) out_reg <= #1 {DATA_WIDTH{1'b0}};
+    else if ( is_write_to_addr(BOP_SET   )) out_reg <= #1 out_reg | PWDATA;
+    else if ( is_write_to_addr(BOP_CLR   )) out_reg <= #1 out_reg & ~PWDATA;
+    else if ( is_write_to_addr(OUTPUT) ||
+              is_write_to_addr(INPUT )    ) out_reg <= #1 get_write_value(out_reg);
+
+// 注意：BOP_SET/BOP_CLR 改动了 out_reg 的赋值逻辑，
+// 上面原有的 out_reg 写逻辑被合并到这里了。
+// 删除原有的 OUTPUT/INPUT 写 always_ff 块。
+
 
 /*
 * APB Reads
@@ -224,6 +233,8 @@ always_comb begin
         TR_LVL1  : PRDATA = tr_lvl1_reg;
         TR_STAT  : PRDATA = tr_status_reg;
         IRQ_ENA  : PRDATA = irq_ena_reg;
+        BOP_SET,
+        BOP_CLR  : PRDATA = {DATA_WIDTH{1'b0}};  // write-only, reads 0
         default  : PRDATA = {DATA_WIDTH{1'b0}};
     endcase
 end

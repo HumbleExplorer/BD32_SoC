@@ -25,7 +25,11 @@ module apb_uart #(
     // 
     output  logic                       itcm_wr_en_o,
     output  logic   [ADDR_WIDTH-1:0]    itcm_wr_addr_o,
-    output  logic   [DATA_WIDTH-1:0]    itcm_wr_data_o
+    output  logic   [DATA_WIDTH-1:0]    itcm_wr_data_o,
+    // DTCM下载写接口
+    output  logic                       dtcm_wr_en_o,
+    output  logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr_o,
+    output  logic   [DATA_WIDTH-1:0]    dtcm_wr_data_o
 );
 
 
@@ -342,6 +346,9 @@ uart_download #(
     .itcm_wr_en     (itcm_wr_en_o   ),
     .itcm_wr_addr   (itcm_wr_addr_o ),
     .itcm_wr_data   (itcm_wr_data_o ),
+    .dtcm_wr_en     (dtcm_wr_en_o   ),
+    .dtcm_wr_addr   (dtcm_wr_addr_o ),
+    .dtcm_wr_data   (dtcm_wr_data_o ),
     .download_done  (download_done  )
 );
 

@@ -1,7 +1,7 @@
 if [file exists "work"] {vdel -all}
 vlib work
 vmap work work
-vlog -f filelist.f
+vlog +define+CORE_TEST -f filelist.f
 vsim -voptargs=+acc tb_core_top
 set NoQuitOnFinish 1
 onbreak {resume}
