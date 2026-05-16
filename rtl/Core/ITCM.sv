@@ -41,12 +41,8 @@ generate
         assign inst_o = rst_n ? inst : `INST_NOP;
     `else
         logic [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1];
-        `ifdef CORE_TEST
-            initial begin
-                $readmemh(ITCM_FULL_PATH, itcm_mem);
-            end
-        `endif
-        `ifdef DIRECT_LOAD
+
+        `ifdef ITCM_DIRECT_LOAD
             initial begin
                 $readmemh(ITCM_FULL_PATH, itcm_mem);
             end

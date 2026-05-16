@@ -57,16 +57,17 @@
         `define TCM_Reg_or_BRAM "BRAM"
     `endif
 `else
-// `define DIRECT_LOAD  // 注释掉则走 UART 下载
+`define DIRECT_LOAD  // 注释掉则走 UART 下载
     `define PATH "../../test_data/"
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
 `ifdef DIRECT_LOAD
-    `define ITCM_FILE "test2_lite.dat"
-    `define DTCM_FILE "welcome_text_lite.dat"
+    `define ITCM_FILE "custom/step2_irq_pwm.uartbin"
+    `define DTCM_FILE "custom/step2_irq_pwm.uartbin"
+    `define ITCM_DIRECT_LOAD
 `else
     `define ITCM_FILE "custom/all_asm.uartbin"
-    `define DTCM_FILE "custom/dtcm_test.uartbin"
+    `define DTCM_FILE "custom/all_asm.uartbin"
 `endif
     `define TCM_Reg_or_BRAM "Reg"
     
@@ -118,6 +119,7 @@
 `ifdef CORE_TEST
     `define ITCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
     `define DTCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
+    `define ITCM_DIRECT_LOAD
 `else
     `define ITCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0001
     `define DTCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0002
