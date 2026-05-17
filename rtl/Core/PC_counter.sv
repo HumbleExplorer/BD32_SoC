@@ -39,7 +39,7 @@ end
 // inst_addr 寄存器：下一条要取的指令地址，给 BootROM/ITCM 的读地址端口
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)
-    `ifdef CORE_TEST
+    `ifdef ITCM_DIRECT_LOAD
         inst_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}}-4;
     `else
         inst_addr <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}}-4;

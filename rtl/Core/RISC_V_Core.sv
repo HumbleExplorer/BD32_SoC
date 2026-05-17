@@ -379,8 +379,9 @@ ITCM #(
 );
 
 // 指令选择：BootROM → ITCM → NOP（非本地地址，未来走总线取指时扩展）
-assign inst = bootrom_sel ? bootrom_inst :
-              itcm_sel    ? itcm_inst    :
+// 若取出的指令含不定态 X，替换为 NOP 防止 X 传播
+assign inst = bootrom_sel ? ($isunknown(bootrom_inst) ? `INST_NOP : bootrom_inst) :
+              itcm_sel    ? ($isunknown(itcm_inst)    ? `INST_NOP : itcm_inst)    :
               `INST_NOP;
 
 IF_ID #(

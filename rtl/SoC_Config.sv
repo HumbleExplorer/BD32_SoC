@@ -15,7 +15,7 @@
 // 下一拍再由 Pipeline_Ctrl 响应，切断 EX→PC 的长组合路径。
 // 代价：预测失败多浪费1拍（3拍 vs 2拍），正确预测零开销。
 // 注释下行则以原始方式（EX 直通）运行：
-// `define BRANCH_JUMP_DELAYED
+`define BRANCH_JUMP_DELAYED
 
 // 访存地址快速加法：用 12 位加法+高位条件调整代替 32 位 CARRY4×8 链，
 // 减少 mem_addr 关键路径的时序压力。启用后可改善 EX 阶段时序。
@@ -57,20 +57,19 @@
         `define TCM_Reg_or_BRAM "BRAM"
     `endif
 `else
-`define DIRECT_LOAD  // 注释掉则走 UART 下载
+    `define DIRECT_LOAD  // 注释掉则走 UART 下载
     `define PATH "../../test_data/"
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
-`ifdef DIRECT_LOAD
-    `define ITCM_FILE "custom/step2_irq_pwm.uartbin"
-    `define DTCM_FILE "custom/step2_irq_pwm.uartbin"
-    `define ITCM_DIRECT_LOAD
-`else
-    `define ITCM_FILE "custom/all_asm.uartbin"
-    `define DTCM_FILE "custom/all_asm.uartbin"
-`endif
+    `ifdef DIRECT_LOAD
+        `define ITCM_FILE "custom/step2_irq_pwm_itcm.mem"
+        `define DTCM_FILE "custom/step2_irq_pwm_dtcm.mem"
+        `define ITCM_DIRECT_LOAD
+    `else
+        `define ITCM_FILE "custom/all_asm.uartbin"
+        `define DTCM_FILE "custom/all_asm.uartbin"
+    `endif
     `define TCM_Reg_or_BRAM "Reg"
-    
 `endif
 
 `define MROM_DEPTH 1*1024//1K

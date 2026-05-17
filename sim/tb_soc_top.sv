@@ -209,15 +209,18 @@ initial begin
 
 end
 initial  begin
-    // 等待复位稳定后启动下载
     @(posedge rst_n);
-    #50;// 增加稳定时间，避免复位中操作
-    wait(tb_soc_top.u_SoC_top.u_apb_uart.download_en);
     #50;
 `ifdef DIRECT_LOAD
+    // DIRECT_LOAD: PC_counter 直接跳转到 ITCM 启动，BootROM 被跳过
+    // 所以 download_en 永远不会被置位，跳过它的 wait
     $display("DIRECT_LOAD mode: ITCM pre-initialized, skip UART download");
+    $display("File Path: %s", ITCM_FULL_PATH);
     #100;
 `else
+    // 正常 UART 下载模式：等待 BootROM 启动后置位 download_en
+    wait(tb_soc_top.u_SoC_top.u_apb_uart.download_en);
+    #50;
     uart_download_program(ITCM_FULL_PATH);
 `endif
     #200;

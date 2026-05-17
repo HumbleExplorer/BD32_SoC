@@ -1,0 +1,54 @@
+
+D:\Desktop\OpenClaw_Workspace\Working\test_data\custom\min.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00010000 <_start>:
+   10000:	00011117          	auipc	sp,0x11
+   10004:	00010113          	mv	sp,sp
+   10008:	e00102b7          	lui	t0,0xe0010
+   1000c:	08000313          	li	t1,128
+   10010:	0062a623          	sw	t1,12(t0) # e001000c <UART_THR+0xc>
+   10014:	03600313          	li	t1,54
+   10018:	0062a023          	sw	t1,0(t0)
+   1001c:	0002a223          	sw	zero,4(t0)
+   10020:	00300313          	li	t1,3
+   10024:	0062a623          	sw	t1,12(t0)
+   10028:	04100513          	li	a0,65
+   1002c:	060000ef          	jal	1008c <uart_putc>
+   10030:	04200513          	li	a0,66
+   10034:	058000ef          	jal	1008c <uart_putc>
+   10038:	04300513          	li	a0,67
+   1003c:	050000ef          	jal	1008c <uart_putc>
+   10040:	00a00513          	li	a0,10
+   10044:	048000ef          	jal	1008c <uart_putc>
+   10048:	e00002b7          	lui	t0,0xe0000
+   1004c:	00428293          	addi	t0,t0,4 # e0000004 <GPIO_DIR>
+   10050:	01800313          	li	t1,24
+   10054:	0062a023          	sw	t1,0(t0)
+   10058:	0002a223          	sw	zero,4(t0)
+   1005c:	e00002b7          	lui	t0,0xe0000
+   10060:	00828293          	addi	t0,t0,8 # e0000008 <GPIO_OUT>
+   10064:	0002a023          	sw	zero,0(t0)
+   10068:	05800513          	li	a0,88
+   1006c:	020000ef          	jal	1008c <uart_putc>
+   10070:	05900513          	li	a0,89
+   10074:	018000ef          	jal	1008c <uart_putc>
+   10078:	05a00513          	li	a0,90
+   1007c:	010000ef          	jal	1008c <uart_putc>
+   10080:	00a00513          	li	a0,10
+   10084:	008000ef          	jal	1008c <uart_putc>
+
+00010088 <loop>:
+   10088:	0000006f          	j	10088 <loop>
+
+0001008c <uart_putc>:
+   1008c:	e00103b7          	lui	t2,0xe0010
+   10090:	01438393          	addi	t2,t2,20 # e0010014 <UART_LSR>
+   10094:	0003ae03          	lw	t3,0(t2)
+   10098:	020e7e13          	andi	t3,t3,32
+   1009c:	fe0e0ce3          	beqz	t3,10094 <uart_putc+0x8>
+   100a0:	e00103b7          	lui	t2,0xe0010
+   100a4:	00a3a023          	sw	a0,0(t2) # e0010000 <UART_THR>
+   100a8:	00008067          	ret
