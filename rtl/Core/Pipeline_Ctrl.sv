@@ -8,6 +8,7 @@ module Pipeline_Ctrl #(
     // from EX
     input   logic                       branch_jump_en,
     input   logic   [ADDR_WIDTH-1:0]    branch_jump_addr,
+    input   logic                       access_wr_ex,
     // from CSR
     input   logic                       trap_jump,
     input   logic   [ADDR_WIDTH-1:0]    trap_jump_addr,
@@ -179,7 +180,7 @@ always_comb begin
         if_id_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
         id_ex_stall     = 1'b1;
-        mem_wb_stall    = 1'b1;
+        mem_wb_stall    = access_wr_ex;
     end else if (branch_jump_en) begin
         if_id_flush  = 1'b1;
         id_ex_flush  = 1'b1;

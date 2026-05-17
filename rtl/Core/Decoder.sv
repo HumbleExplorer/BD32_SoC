@@ -26,6 +26,11 @@ module Decoder #(
     output  logic                           access_wr,
     output  logic                           access_csr_en,
     output  logic   [CSR_ADDR_WIDTH-1:0]    csr_addr,
+    output  logic                           is_fence_i,
+    output  logic   [1:0]                   branch_inst_type,// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
+    output  logic                           branch_req,
+    output  logic                           push_ras,        // call
+    output  logic                           pop_ras,          // ret
 
     //to Ctrl
     output  logic   [DATA_WIDTH-2:0]        exception_code,
@@ -37,6 +42,7 @@ logic [6:0] opcode;
 logic [2:0] func3;
 logic [4:0] rs1;
 logic [4:0] rs2;
+logic [4:0] rd;
 logic [6:0] func7;
 logic [11:0]zimm;
 
@@ -44,14 +50,35 @@ logic       invalid_inst;
 logic       ecall_req;
 logic       ebreak_req;
 
+/*
+link为x1或x5
+
+对于JAL指令, rd = link时push
+对于JALR指令:
+        rd  |  rs1  | rs1 = rd |   RAS操作
+    -------------------------------------------
+    !link | !link |    ---   |    none
+    !link | link  |    ---   |    pop
+    link  | !link |    ---   |    push
+    link  | link  |     0    |    pop, then push
+    link  | link  |     1    |    push
+*/
+logic rd_link;
+logic rs1_link;
+logic rs1_eq_rd;
+
 
 assign  opcode  = inst[6:0];
-// assign  rd      = inst[11:7];
+assign  rd      = inst[11:7];
 assign  func3   = inst[14:12];
 assign  rs1     = inst[19:15];
 assign  rs2     = inst[24:20];
 assign  func7   = inst[31:25];
 assign  zimm    = inst[31:20];
+
+assign  rd_link = (rd == 'd1 || rd == 'd5);
+assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
+assign  rs1_eq_rd = (inst[19:15] == rd);
 
 assign  exception_code = invalid_inst ? 'h2 : ecall_req ? ((priv_mode == 2'b00) ? 'h8 : 'h11): ebreak_req ? 'h3 : {(DATA_WIDTH-1){1'b1}};
 assign  exception_val  = 'h0;
@@ -71,7 +98,6 @@ always_comb begin
             imm = 32'h0;
     endcase
 end
-
 always_comb    begin
     rd_rs1_addr = 0;
     rd_rs2_addr = 0;
@@ -85,7 +111,11 @@ always_comb    begin
     invalid_inst = 1'b0;
     ecall_req       = 1'b0;
     ebreak_req      = 1'b0;
-
+    is_fence_i      = 1'b0;
+    branch_inst_type= 2'b00;
+    branch_req      = 1'b0;
+    push_ras        = 1'b0;
+    pop_ras         = 1'b0;
     case(opcode)
         `INST_TYPE_I:begin
             case(func3)
@@ -133,6 +163,8 @@ always_comb    begin
                     rd_rs2_addr     = rs2;
                     alu_op1         = rd_rs1_data;
                     alu_op2         = rd_rs2_data;
+                    branch_inst_type= 2'b01;
+                    branch_req      = 1'b1;
                 end
                 default: begin
                     invalid_inst = 1'b1;
@@ -220,6 +252,9 @@ always_comb    begin
             rd_rs2_addr     = 5'h0;
             alu_op1         = inst_addr;
             alu_op2         = imm;
+            branch_inst_type= 2'b10;
+            branch_req      = 1'b1;
+            push_ras        = rd_link;//push or none
         end
         `INST_JALR:begin
             wr_reg_en       = 1'b1;
@@ -230,6 +265,10 @@ always_comb    begin
             rd_rs2_addr     = 5'h0;
             alu_op1         = rd_rs1_data;
             alu_op2         = imm;
+            branch_inst_type= 2'b11;
+            branch_req      = 1'b1;
+            push_ras        = rd_link;
+            pop_ras         = rs1_link && ((rd_link && ~rs1_eq_rd) || ~rd_link);
         end
         `INST_LUI:begin
             wr_reg_en       = 1'b1;
@@ -260,6 +299,7 @@ always_comb    begin
             rd_rs2_addr     = 5'h0;
             alu_op1         = inst_addr;
             alu_op2         = 32'h4;
+            is_fence_i      = func3[0];
         end
         `INST_NOP_OP: begin
             wr_reg_en       = 1'b0;

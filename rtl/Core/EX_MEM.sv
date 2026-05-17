@@ -34,18 +34,19 @@ module EX_MEM #(
     //         给到 Dynamic_Branch_Predictor（已寄存，切断组合路径）
     // ====================================================================
     // 分支预测所需输入（来自 ID_EX / Executer）
+    input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4_i,
+    input   logic                           is_fence_i_i,
     input   logic                           predict_taken_i,
     input   logic   [ADDR_WIDTH-1:0]        predict_target_i,
     input   logic                           branch_taken_i,
     input   logic   [ADDR_WIDTH-1:0]        branch_target_i,
     input   logic                           branch_req_i,
     input   logic   [1:0]                   branch_inst_type_i,
-    input   logic                           branch_predict_success_i,
     input   logic                           push_ras_i,
     input   logic                           pop_ras_i,
-    input   logic                           is_fence_i,
 
     // 寄存器输出（给 Dynamic_Branch_Predictor）
+    output  logic                           is_fence_i_o,
     output  logic                           branch_taken_o,
     output  logic   [ADDR_WIDTH-1:0]        branch_target_o,
     output  logic                           branch_req_o,
@@ -74,42 +75,27 @@ module EX_MEM #(
 );
 
 `ifdef BRANCH_JUMP_DELAYED
-    // =========================================================================
-    // 寄存器声明
-    // =========================================================================
-    logic                      predict_taken_r;
-    logic [ADDR_WIDTH-1:0]     predict_target_r;
-    logic                      branch_taken_r;
-    logic [ADDR_WIDTH-1:0]     branch_target_r;
-    logic                      branch_req_r;
-    logic [1:0]                branch_inst_type_r;
-    logic                      branch_predict_success_r;
-    logic                      push_ras_r;
-    logic                      pop_ras_r;
-    logic                      is_fence_r;
 
     // MEM 阶段组合逻辑
-    logic                      branch_jump_en_comb;
-    logic [ADDR_WIDTH-1:0]     branch_jump_addr_comb;
-    logic [ADDR_WIDTH-1:0]     inst_addr_plus_4_comb;
-
-    assign inst_addr_plus_4_comb = inst_addr_o + 4;
-
-    assign branch_jump_en_comb = ~branch_predict_success_r || is_fence_r;
+    logic predict_taken_r;
+    logic [ADDR_WIDTH-1:0] predict_target_r;
+    logic [ADDR_WIDTH-1:0] inst_addr_plus_4_r;
+    assign branch_jump_en_o = ~branch_predict_success_o || is_fence_i_o;
+    assign  branch_predict_success_o = (predict_taken_r == branch_taken_o) && (predict_target_r == branch_target_o);
 
     always_comb begin
-        if (is_fence_r) begin
-            branch_jump_addr_comb = inst_addr_plus_4_comb;
-        end else if (branch_predict_success_r) begin
-            branch_jump_addr_comb = predict_target_r;
-        end else if (branch_taken_r && ~predict_taken_r) begin
-            branch_jump_addr_comb = branch_target_r;
-        end else if (~branch_taken_r && predict_taken_r) begin
-            branch_jump_addr_comb = inst_addr_plus_4_comb;
-        end else if (predict_target_r != branch_target_r) begin
-            branch_jump_addr_comb = branch_target_r;
+        if (is_fence_i_o) begin
+            branch_jump_addr_o = inst_addr_plus_4_r;
+        end else if (branch_predict_success_o) begin
+            branch_jump_addr_o = predict_target_r;
+        end else if (branch_taken_o && ~predict_taken_r) begin
+            branch_jump_addr_o = branch_target_o;
+        end else if (~branch_taken_o && predict_taken_r) begin
+            branch_jump_addr_o = inst_addr_plus_4_r;
+        end else if (predict_target_r != branch_target_o) begin
+            branch_jump_addr_o = branch_target_o;
         end else begin
-            branch_jump_addr_comb = inst_addr_plus_4_comb;
+            branch_jump_addr_o = inst_addr_plus_4_r;
         end
     end
 `endif
@@ -128,16 +114,16 @@ always_ff @(posedge clk or negedge rst_n) begin
         wr_reg_addr_o   <= #1 'h0;
         wr_reg_data_o   <= #1 'h0;
 `ifdef BRANCH_JUMP_DELAYED
+        is_fence_i_o           <= #1 1'b0;
         predict_taken_r        <= #1 1'b0;
         predict_target_r       <= #1 '0;
-        branch_taken_r         <= #1 1'b0;
-        branch_target_r        <= #1 '0;
-        branch_req_r           <= #1 1'b0;
-        branch_inst_type_r     <= #1 2'b00;
-        branch_predict_success_r <= #1 1'b1;
-        push_ras_r             <= #1 1'b0;
-        pop_ras_r              <= #1 1'b0;
-        is_fence_r             <= #1 1'b0;
+        inst_addr_plus_4_r     <= #1 '0;
+        branch_taken_o         <= #1 1'b0;
+        branch_target_o        <= #1 '0;
+        branch_req_o           <= #1 1'b0;
+        branch_inst_type_o     <= #1 2'b00;
+        push_ras_o             <= #1 1'b0;
+        pop_ras_o              <= #1 1'b0;
 `endif
     end else if(flush) begin
         inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
@@ -152,16 +138,16 @@ always_ff @(posedge clk or negedge rst_n) begin
         wr_reg_addr_o   <= #1 'h0;
         wr_reg_data_o   <= #1 'h0;
 `ifdef BRANCH_JUMP_DELAYED
+        is_fence_i_o           <= #1 1'b0;
         predict_taken_r        <= #1 1'b0;
         predict_target_r       <= #1 '0;
-        branch_taken_r         <= #1 1'b0;
-        branch_target_r        <= #1 '0;
-        branch_req_r           <= #1 1'b0;
-        branch_inst_type_r     <= #1 2'b00;
-        branch_predict_success_r <= #1 1'b1;
-        push_ras_r             <= #1 1'b0;
-        pop_ras_r              <= #1 1'b0;
-        is_fence_r             <= #1 1'b0;
+        inst_addr_plus_4_r     <= #1 '0;
+        branch_taken_o         <= #1 1'b0;
+        branch_target_o        <= #1 '0;
+        branch_req_o           <= #1 1'b0;
+        branch_inst_type_o     <= #1 2'b00;
+        push_ras_o             <= #1 1'b0;
+        pop_ras_o              <= #1 1'b0;
 `endif
     end else if(!stall) begin
         inst_addr_o     <= #1 inst_addr_i;
@@ -178,30 +164,16 @@ always_ff @(posedge clk or negedge rst_n) begin
 `ifdef BRANCH_JUMP_DELAYED
         predict_taken_r        <= #1 predict_taken_i;
         predict_target_r       <= #1 predict_target_i;
-        branch_taken_r         <= #1 branch_taken_i;
-        branch_target_r        <= #1 branch_target_i;
-        branch_req_r           <= #1 branch_req_i;
-        branch_inst_type_r     <= #1 branch_inst_type_i;
-        branch_predict_success_r <= #1 branch_predict_success_i;
-        push_ras_r             <= #1 push_ras_i;
-        pop_ras_r              <= #1 pop_ras_i;
-        is_fence_r             <= #1 is_fence_i;
+        inst_addr_plus_4_r     <= #1 inst_addr_plus_4_i;
+        branch_taken_o         <= #1 branch_taken_i;
+        branch_target_o        <= #1 branch_target_i;
+        branch_req_o           <= #1 branch_req_i;
+        branch_inst_type_o     <= #1 branch_inst_type_i;
+        push_ras_o             <= #1 push_ras_i;
+        pop_ras_o              <= #1 pop_ras_i;
+        is_fence_i_o           <= #1 is_fence_i_i;
 `endif
     end
 end
-
-`ifdef BRANCH_JUMP_DELAYED
-// MEM 阶段组合输出
-assign branch_jump_en_o  = branch_jump_en_comb;
-assign branch_jump_addr_o = branch_jump_addr_comb;
-// 寄存器输出给 Dynamic_Branch_Predictor
-assign branch_taken_o         = branch_taken_r;
-assign branch_target_o        = branch_target_r;
-assign branch_req_o           = branch_req_r;
-assign branch_inst_type_o     = branch_inst_type_r;
-assign branch_predict_success_o = branch_predict_success_r;
-assign push_ras_o             = push_ras_r;
-assign pop_ras_o              = pop_ras_r;
-`endif
 
 endmodule

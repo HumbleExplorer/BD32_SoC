@@ -41,19 +41,12 @@ module RISC_V_Core #(
 );
 
 // Pipeline Ctrl
-logic                       branch_jump_en;
-logic   [ADDR_WIDTH-1:0]    branch_jump_addr;
+logic                       branch_jump_en_ex;
+logic   [ADDR_WIDTH-1:0]    branch_jump_addr_ex;
 // EX_MEM delayed branch signals (always declared; used by Pipeline_Ctrl / Dynamic_Branch_Predictor when BRANCH_JUMP_DELAYED)
 `ifdef BRANCH_JUMP_DELAYED
-logic                       ex_mem_branch_jump_en;
-logic   [ADDR_WIDTH-1:0]    ex_mem_branch_jump_addr;
-logic                       ex_mem_branch_taken;
-logic   [ADDR_WIDTH-1:0]    ex_mem_branch_target;
-logic                       ex_mem_branch_req;
-logic   [1:0]               ex_mem_branch_inst_type;
-logic                       ex_mem_branch_predict_success;
-logic                       ex_mem_push_ras;
-logic                       ex_mem_pop_ras;
+logic                       branch_jump_en_mem;
+logic   [ADDR_WIDTH-1:0]    branch_jump_addr_mem;
 `endif
 logic                       trap_jump;
 logic   [ADDR_WIDTH-1:0]    trap_jump_addr;
@@ -94,8 +87,7 @@ logic   [DATA_WIDTH-1:0]    alu_op1_forward;
 logic   [DATA_WIDTH-1:0]    alu_op2_forward;
 logic   [DATA_WIDTH-1:0]    wr_mem_data_temp;
 logic   [DATA_WIDTH-1:0]    rs2_data_ex;
-logic   [ADDR_WIDTH-1:0]    jump_imm_ex;
-logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_ex;
+
 
 //RegFile
 logic                       wr_reg_en;
@@ -122,11 +114,17 @@ logic   [ADDR_WIDTH-1:0]    predict_target_id;
 logic   [DATA_WIDTH-1:0]    alu_op1_id;
 logic   [DATA_WIDTH-1:0]    alu_op2_id;
 logic   [DATA_WIDTH-1:0]    imm_id;
+logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_id;
 logic                       access_en_id;
 logic                       access_wr_id;
 logic                       wr_reg_en_id;
 logic                       access_csr_en_id;
 logic   [CSR_ADDR_WIDTH-1:0]csr_addr_id;
+logic                       is_fence_i_id;
+logic   [1:0]               branch_inst_type_id;// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
+logic                       branch_req_id;
+logic                       push_ras_id;        // call
+logic                       pop_ras_id;          // ret
 logic   [ADDR_WIDTH-1:0]    jump_imm_id;
 logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_id;
 assign jump_imm_id          = inst_addr_id + imm_id;
@@ -138,6 +136,8 @@ logic   [DATA_WIDTH-1:0]    inst_ex;
 logic                       predict_taken_ex;
 logic   [ADDR_WIDTH-1:0]    predict_target_ex;
 logic   [DATA_WIDTH-1:0]    imm_ex;
+logic   [ADDR_WIDTH-1:0]    jump_imm_ex;
+logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_ex;
 logic                       access_en_ex;
 logic                       access_wr_ex;
 logic   [ADDR_WIDTH-1:0]    mem_addr_ex;
@@ -153,14 +153,15 @@ logic   [REG_ADDR_WIDTH-1:0]rd_rs2_addr_ex;
 logic                       wfi_req;
 logic                       mret_req;
 
-logic                       is_fence_i;
-logic                       branch_taken;
-logic   [ADDR_WIDTH-1:0]    branch_target;
-logic   [1:0]               branch_inst_type;
-logic                       branch_req;
-logic                       branch_predict_success;
-logic                       push_ras;
-logic                       pop_ras;
+logic                       is_fence_i_ex;
+logic                       branch_taken_ex;
+logic   [ADDR_WIDTH-1:0]    branch_target_ex;
+logic   [1:0]               branch_inst_type_ex;
+logic                       branch_req_ex;
+logic                       branch_predict_success_ex;
+logic                       push_ras_ex;
+logic                       pop_ras_ex;
+
 
 
 // Mul_Div
@@ -188,8 +189,16 @@ logic   [ADDR_WIDTH-1:0]    access_addr;
 logic                       access_wr;
 // logic   [DATA_WIDTH-1:0]    access_wr_data;
 // logic   [ALIGN_BYTES-1:0]   access_wr_mask;
-
-
+`ifdef BRANCH_JUMP_DELAYED
+logic                       is_fence_i_mem;
+logic                       branch_taken_mem;
+logic   [ADDR_WIDTH-1:0]    branch_target_mem;
+logic                       branch_req_mem;
+logic   [1:0]               branch_inst_type_mem;
+logic                       branch_predict_success_mem;
+logic                       push_ras_mem;
+logic                       pop_ras_mem;
+`endif
 logic   [DATA_WIDTH-1:0]    rd_dtcm_data;
 logic   [2:0]               rd_mem_func3;
 logic   [DATA_WIDTH-1:0]    wr_mem_data;
@@ -202,19 +211,19 @@ logic                       bus_sel;
 logic   [ADDR_WIDTH-1:0]    inst_addr_wb;
 logic   [DATA_WIDTH-1:0]    inst_wb;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_wb;
-logic   [DATA_WIDTH-1:0]    wr_reg_arb_data;    // WB_Arbiter 仲裁输出
 
 Pipeline_Ctrl #(
     .ADDR_WIDTH(ADDR_WIDTH),
     .DATA_WIDTH(DATA_WIDTH)
 )u_Pipeline_Ctrl(
 `ifdef BRANCH_JUMP_DELAYED
-    .branch_jump_en      	(ex_mem_branch_jump_en),
-    .branch_jump_addr    	(ex_mem_branch_jump_addr),
+    .branch_jump_en      	(branch_jump_en_mem),
+    .branch_jump_addr    	(branch_jump_addr_mem),
 `else
-    .branch_jump_en      	(branch_jump_en       ),
-    .branch_jump_addr    	(branch_jump_addr     ),
+    .branch_jump_en      	(branch_jump_en_ex    ),
+    .branch_jump_addr    	(branch_jump_addr_ex  ),
 `endif
+    .access_wr_ex           (access_wr_ex         ),
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
     .priv_mode           	(priv_mode            ),
@@ -297,28 +306,29 @@ Dynamic_Branch_Predictor #(
 )u_Dynamic_Branch_Predictor(
     .clk             (clk            ),
     .rst_n           (rst_n          ),
-    .is_fence_i      (is_fence_i     ),
     .stall           (pc_stall       ),
     .pc              (inst_addr_if   ),
 `ifdef BRANCH_JUMP_DELAYED
+    .is_fence_i      (is_fence_i_mem ),
     .branch_pc       (inst_addr_mem  ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
     // 其他更新信号从 EX_MEM 寄存器输出取
-    .branch_taken    (ex_mem_branch_taken    ),
-    .branch_target   (ex_mem_branch_target   ),  
-    .branch_req      (ex_mem_branch_req      ),
-    .branch_predict_success(ex_mem_branch_predict_success),
-    .branch_inst_type(ex_mem_branch_inst_type),
-    .push_ras        (ex_mem_push_ras        ),
-    .pop_ras         (ex_mem_pop_ras         ),
+    .branch_taken    (branch_taken_mem    ),
+    .branch_target   (branch_target_mem   ),  
+    .branch_req      (branch_req_mem      ),
+    .branch_predict_success(branch_predict_success_mem),
+    .branch_inst_type(branch_inst_type_mem),
+    .push_ras        (push_ras_mem        ),
+    .pop_ras         (pop_ras_mem         ),
 `else
+    .is_fence_i      (is_fence_i_ex  ),
     .branch_pc       (inst_addr_ex  ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
-    .branch_taken    (branch_taken   ),
-    .branch_target   (branch_target  ),  
-    .branch_req      (branch_req     ),
-    .branch_predict_success(branch_predict_success),
-    .branch_inst_type(branch_inst_type),
-    .push_ras        (push_ras       ),
-    .pop_ras         (pop_ras        ),
+    .branch_taken    (branch_taken_ex   ),
+    .branch_target   (branch_target_ex  ),  
+    .branch_req      (branch_req_ex     ),
+    .branch_predict_success(branch_predict_success_ex),
+    .branch_inst_type(branch_inst_type_ex),
+    .push_ras        (push_ras_ex       ),
+    .pop_ras         (pop_ras_ex        ),
 `endif
     .predict_taken   (predict_taken_if),
     .predict_target  (predict_target_if)
@@ -379,11 +389,16 @@ ITCM #(
 );
 
 // 指令选择：BootROM → ITCM → NOP（非本地地址，未来走总线取指时扩展）
+`ifdef XILINX
+assign inst = bootrom_sel ? bootrom_inst :
+              itcm_sel    ? itcm_inst    :
+              `INST_NOP;
+`else
 // 若取出的指令含不定态 X，替换为 NOP 防止 X 传播
 assign inst = bootrom_sel ? ($isunknown(bootrom_inst) ? `INST_NOP : bootrom_inst) :
               itcm_sel    ? ($isunknown(itcm_inst)    ? `INST_NOP : itcm_inst)    :
               `INST_NOP;
-
+`endif
 IF_ID #(
     .ADDR_WIDTH         (ADDR_WIDTH),
     .DATA_WIDTH         (DATA_WIDTH)
@@ -423,6 +438,11 @@ Decoder #(
     .access_en      (access_en_id),
     .access_csr_en  (access_csr_en_id),
     .csr_addr       (csr_addr_id),
+    .is_fence_i     (is_fence_i_id),
+    .branch_inst_type(branch_inst_type_id),
+    .branch_req     (branch_req_id),
+    .push_ras       (push_ras_id),
+    .pop_ras        (pop_ras_id),
     .exception_code (exception_code_id),
     .exception_val  (exception_val_id)
 );
@@ -459,16 +479,21 @@ ID_EX #(
     .alu_op1_i      (alu_op1_id),
     .alu_op2_i      (alu_op2_id),
     .imm_i          (imm_id),
+    .rs2_data_i     (rd_rs2_data),
     .jump_imm_i     (jump_imm_id),
     .inst_addr_plus_4_i(inst_addr_plus_4_id),
-    .rs2_data_i     (rd_rs2_data),
+    .rd_rs1_addr_i  (rd_rs1_addr),
+    .rd_rs2_addr_i  (rd_rs2_addr),
     .wr_reg_en_i    (wr_reg_en_id),
     .access_wr_i    (access_wr_id),
     .access_en_i    (access_en_id),
     .access_csr_en_i(access_csr_en_id),
     .csr_addr_i     (csr_addr_id),
-    .rd_rs1_addr_i  (rd_rs1_addr),
-    .rd_rs2_addr_i  (rd_rs2_addr),
+    .is_fence_i_i     (is_fence_i_id),
+    .branch_inst_type_i(branch_inst_type_id),
+    .branch_req_i   (branch_req_id),
+    .push_ras_i     (push_ras_id),
+    .pop_ras_i      (pop_ras_id),
     .inst_addr_o    (inst_addr_ex),
     .inst_o         (inst_ex),
     .predict_taken_o(predict_taken_ex),
@@ -484,6 +509,11 @@ ID_EX #(
     .access_en_o    (access_en_ex),
     .access_csr_en_o(access_csr_en),
     .csr_addr_o     (csr_addr),
+    .is_fence_i_o   (is_fence_i_ex),
+    .branch_inst_type_o(branch_inst_type_ex),
+    .branch_req_o   (branch_req_ex),
+    .push_ras_o     (push_ras_ex),
+    .pop_ras_o      (pop_ras_ex),
     .rd_rs1_addr_o  (rd_rs1_addr_ex),
     .rd_rs2_addr_o  (rd_rs2_addr_ex)
 );
@@ -501,17 +531,18 @@ Executer #(
     .imm              	(imm_ex             ),
     .predict_taken    	(predict_taken_ex   ),
     .predict_target	    (predict_target_ex  ),
+    .is_fence_i         (is_fence_i_ex      ),
     .rd_csr_data      	(rd_csr_data        ),
     .illegal_inst_csr   (illegal_inst_csr   ),
     .alu_op1          	(alu_op1_forward    ),
     .alu_op2          	(alu_op2_forward    ),
-    .inst_addr_plus_4   (inst_addr_plus_4_ex),
     .jump_imm         	(jump_imm_ex        ),
+    .inst_addr_plus_4   (inst_addr_plus_4_ex),
     .wr_mem_data_temp 	(wr_mem_data_temp   ),
     .mul_div_valid    	(mul_div_valid      ),
     .result_mul_div   	(result_mul_div     ),
-    .branch_jump_en     (branch_jump_en     ),
-    .branch_jump_addr   (branch_jump_addr   ),
+    .branch_jump_en     (branch_jump_en_ex  ),
+    .branch_jump_addr   (branch_jump_addr_ex),
     .exception_code  	(exception_code_ex  ),
     .exception_val   	(exception_val_ex   ),
     .mul_div_en       	(mul_div_en         ),
@@ -525,14 +556,9 @@ Executer #(
     .wr_csr_data      	(wr_csr_data        ),
     .wfi_req            (wfi_req            ),
     .mret_req           (mret_req           ),
-    .is_fence_i         (is_fence_i         ),
-    .branch_taken       (branch_taken       ),
-    .branch_target      (branch_target      ),
-    .branch_inst_type   (branch_inst_type   ),
-    .branch_req         (branch_req         ),
-    .branch_predict_success(branch_predict_success),
-    .push_ras           (push_ras           ),
-    .pop_ras            (pop_ras            )
+    .branch_taken       (branch_taken_ex    ),
+    .branch_target      (branch_target_ex   ),
+    .branch_predict_success(branch_predict_success_ex)
 );
 
 mul_div #(
@@ -603,25 +629,26 @@ EX_MEM #(
     .wr_mem_data_i  (wr_mem_data_ex),
     .wr_mem_mask_i  (wr_mem_mask_ex),
 `ifdef BRANCH_JUMP_DELAYED
+    .inst_addr_plus_4_i   (inst_addr_plus_4_ex),
+    .is_fence_i_i         (is_fence_i_ex),
     .predict_taken_i      (predict_taken_ex),
     .predict_target_i     (predict_target_ex),
-    .branch_taken_i       (branch_taken),
-    .branch_target_i      (branch_target),
-    .branch_req_i         (branch_req),
-    .branch_inst_type_i   (branch_inst_type),
-    .branch_predict_success_i(branch_predict_success),
-    .push_ras_i           (push_ras),
-    .pop_ras_i            (pop_ras),
-    .is_fence_i           (is_fence_i),
-    .branch_taken_o       (ex_mem_branch_taken),
-    .branch_target_o      (ex_mem_branch_target),
-    .branch_req_o         (ex_mem_branch_req),
-    .branch_inst_type_o   (ex_mem_branch_inst_type),
-    .branch_predict_success_o(ex_mem_branch_predict_success),
-    .push_ras_o           (ex_mem_push_ras),
-    .pop_ras_o            (ex_mem_pop_ras),
-    .branch_jump_en_o     (ex_mem_branch_jump_en),
-    .branch_jump_addr_o   (ex_mem_branch_jump_addr),
+    .branch_taken_i       (branch_taken_ex),
+    .branch_target_i      (branch_target_ex),
+    .branch_req_i         (branch_req_ex),
+    .branch_inst_type_i   (branch_inst_type_ex),
+    .push_ras_i           (push_ras_ex),
+    .pop_ras_i            (pop_ras_ex),
+    .is_fence_i_o         (is_fence_i_mem),
+    .branch_taken_o       (branch_taken_mem),
+    .branch_target_o      (branch_target_mem),
+    .branch_req_o         (branch_req_mem),
+    .branch_inst_type_o   (branch_inst_type_mem),
+    .branch_predict_success_o(branch_predict_success_mem),
+    .push_ras_o           (push_ras_mem),
+    .pop_ras_o            (pop_ras_mem),
+    .branch_jump_en_o     (branch_jump_en_mem),
+    .branch_jump_addr_o   (branch_jump_addr_mem),
 `endif
     .inst_addr_o    (inst_addr_mem),
     .inst_o         (inst_mem),

@@ -10,7 +10,7 @@ parameter REGFILE_NUM = `REGFILE_NUM;
 parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH;
 parameter ALIGN_BYTES = `ALIGN_BYTES;
 parameter ALIGN_WIDTH = `ALIGN_WIDTH;
-localparam  CLK_PERIOD = 10;
+localparam CLK_PERIOD = 10;
 parameter  DTCM_FILE  =  "empty.dat";
 // parameter  ITCM_FILE  =  "instr_data3.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-beq.dat";
@@ -24,7 +24,7 @@ parameter  DTCM_FILE  =  "empty.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lui.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-auipc.dat";
 
-// localparam    ITCM_FILE    =  "rv32ui-p-addi.dat";
+localparam    ITCM_FILE    =  "rv32ui-p-addi.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-andi.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-ori.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-xori.dat";
@@ -60,7 +60,7 @@ parameter  DTCM_FILE  =  "empty.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lb.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lbu.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lh.dat";
-localparam    ITCM_FILE    =  "rv32ui-p-lhu.dat";
+// localparam    ITCM_FILE    =  "rv32ui-p-lhu.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lw.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-fence_i.dat";
 

@@ -124,7 +124,7 @@ logic                   btb_push_ras_array [BTB_ENTRIES-1:0];      // BTB中存�
 logic                   btb_pop_ras_array [BTB_ENTRIES-1:0];       // BTB中存储的pop_ras
 
 // PHT相关信号
-logic [1:0]             pht_array [PHT_ENTRIES-1:0];         // PHT中的2bit饱和计数器
+(* RAM_STYLE="distributed"*) logic [1:0]             pht_array [PHT_ENTRIES-1:0];         // PHT中的2bit饱和计数器
 logic [PC_HASH_WIDTH-1:0] pc_hash;    // PC哈希值
 
 // 全局历史寄存器 (GHR)：推测 GHR + 真实 GHR
