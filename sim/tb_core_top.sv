@@ -24,7 +24,7 @@ parameter  DTCM_FILE  =  "empty.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lui.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-auipc.dat";
 
-localparam    ITCM_FILE    =  "rv32ui-p-addi.dat";
+// localparam    ITCM_FILE    =  "rv32ui-p-addi.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-andi.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-ori.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-xori.dat";
@@ -59,7 +59,7 @@ localparam    ITCM_FILE    =  "rv32ui-p-addi.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-sw.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lb.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lbu.dat";
-// localparam    ITCM_FILE    =  "rv32ui-p-lh.dat";
+localparam    ITCM_FILE    =  "rv32ui-p-lh.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lhu.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-lw.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-fence_i.dat";
@@ -68,9 +68,12 @@ localparam    ITCM_FILE    =  "rv32ui-p-addi.dat";
  
 logic   clk;
 logic   rst_n;
-logic   itcm_wr_en;
-logic   [31:0]  itcm_wr_addr;
-logic   [31:0]  itcm_wr_data;
+logic   itcm_download_en;
+logic   [31:0]  itcm_download_addr;
+logic   [31:0]  itcm_download_data;
+logic   dtcm_download_en;
+logic   [31:0]  dtcm_download_addr;
+logic   [31:0]  dtcm_download_data;
 logic   external_int;
 logic   software_int;
 logic   timer_int;
@@ -95,9 +98,12 @@ always #(CLK_PERIOD/2)   clk = ~clk;
 initial begin
     clk     = 1'b0;
     rst_n   = 1'b0;
-    itcm_wr_en   = 1'b0;
-    itcm_wr_addr = 'h0;
-    itcm_wr_data = 'h0;
+    itcm_download_en   = 1'b0;
+    itcm_download_addr = 'h0;
+    itcm_download_data = 'h0;
+    dtcm_download_en   = 1'b0;
+    dtcm_download_addr = 'h0;
+    dtcm_download_data = 'h0;
     external_int = 1'b0;
     software_int = 1'b0;
     timer_int = 1'b0;
@@ -158,9 +164,12 @@ RISC_V_Core #(
 ) u_RISC_V_Core (
     .clk                (clk         ),
     .rst_n              (rst_n       ),
-    .itcm_wr_en         (itcm_wr_en      ),
-    .itcm_wr_addr       (itcm_wr_addr    ),
-    .itcm_wr_data       (itcm_wr_data    ),
+    .itcm_download_en   (itcm_download_en      ),
+    .itcm_download_addr (itcm_download_addr    ),
+    .itcm_download_data (itcm_download_data    ),
+    .dtcm_download_en   (dtcm_download_en      ),
+    .dtcm_download_addr (dtcm_download_addr    ),
+    .dtcm_download_data (dtcm_download_data    ),
     .mtime_shadow       (mtime_shadow    ),
     .software_int       (software_int    ),
     .timer_int          (timer_int       ),

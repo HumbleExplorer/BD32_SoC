@@ -16,13 +16,13 @@ module RISC_V_Core #(
     input   logic                       clk,
     input   logic                       rst_n,
     // ITCM download
-    input   logic                       itcm_wr_en,
-    input   logic   [ADDR_WIDTH-1:0]    itcm_wr_addr,
-    input   logic   [DATA_WIDTH-1:0]    itcm_wr_data,
+    input   logic                       itcm_download_en,
+    input   logic   [ADDR_WIDTH-1:0]    itcm_download_addr,
+    input   logic   [DATA_WIDTH-1:0]    itcm_download_data,
     // DTCM download
-    input   logic                       dtcm_wr_en,
-    input   logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr,
-    input   logic   [DATA_WIDTH-1:0]    dtcm_wr_data,
+    input   logic                       dtcm_download_en,
+    input   logic   [ADDR_WIDTH-1:0]    dtcm_download_addr,
+    input   logic   [DATA_WIDTH-1:0]    dtcm_download_data,
     // from clint
     input   logic   [2*DATA_WIDTH-1:0]  mtime_shadow,
     input   logic                       software_int,
@@ -183,12 +183,10 @@ logic   [DATA_WIDTH-1:0]    inst_mem;
 logic                       wr_reg_en_mem;
 logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_mem;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_mem;
-logic   [DATA_WIDTH-1:0]    wr_reg_selected_data_mem;
-logic                       access_en;
-logic   [ADDR_WIDTH-1:0]    access_addr;
-logic                       access_wr;
-// logic   [DATA_WIDTH-1:0]    access_wr_data;
-// logic   [ALIGN_BYTES-1:0]   access_wr_mask;
+logic   [DATA_WIDTH-1:0]    func3_expanded_data;
+logic   [DATA_WIDTH-1:0]    wr_reg_selected_data_mem;   // MUX2 output: load data or ALU result
+logic                       access_en;                  // EX/MEM delayed, used by Data_Hazard_Forward
+logic                       access_wr;                  // EX/MEM delayed, used by Data_Hazard_Forward
 `ifdef BRANCH_JUMP_DELAYED
 logic                       is_fence_i_mem;
 logic                       branch_taken_mem;
@@ -200,17 +198,20 @@ logic                       push_ras_mem;
 logic                       pop_ras_mem;
 `endif
 logic   [DATA_WIDTH-1:0]    rd_dtcm_data;
-logic   [2:0]               rd_mem_func3;
-logic   [DATA_WIDTH-1:0]    wr_mem_data;
-logic   [ALIGN_BYTES-1:0]   wr_mem_mask;
 logic                       dtcm_sel;
 logic                       bus_sel;
+logic                       dtcm_rvalid;
+logic                       bus_rvalid;
+// MEM/WB bypass for bus loads (wr_reg_en/addr from EX stage, bypassing EX/MEM)
+logic                       mem_wb_wr_reg_en;
+logic   [REG_ADDR_WIDTH-1:0]mem_wb_wr_reg_addr;
 
 
 // WB
 logic   [ADDR_WIDTH-1:0]    inst_addr_wb;
 logic   [DATA_WIDTH-1:0]    inst_wb;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_wb;
+logic                       bus_rvalid_wb;
 
 Pipeline_Ctrl #(
     .ADDR_WIDTH(ADDR_WIDTH),
@@ -288,7 +289,7 @@ Data_Hazard_Forward #(
     .wr_reg_data_mem    	(wr_reg_data_mem    ),
     .wr_reg_data_wb     	(wr_reg_data        ),
     .bus_sel                (bus_sel            ),
-    .bus_done               (bus_tran_done      ),
+    .bus_rvalid             (bus_rvalid_wb        ),
     .mem_access_ready       (mem_access_ready   ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
@@ -381,9 +382,9 @@ ITCM #(
 )u_ITCM(
     .clk            (clk),
     .rst_n          (rst_n),
-    .itcm_wr_en     (itcm_wr_en),
-    .itcm_wr_addr   (itcm_wr_addr),
-    .itcm_wr_data   (itcm_wr_data),
+    .itcm_download_en     (itcm_download_en),
+    .itcm_download_addr   (itcm_download_addr),
+    .itcm_download_data   (itcm_download_data),
     .inst_addr      (pc),               // 提前一拍送地址
     .inst_o         (itcm_inst)         // 同步读，下一拍输出
 );
@@ -624,10 +625,6 @@ EX_MEM #(
     .wr_reg_data_i  (wr_reg_data_ex),
     .access_en_i    (access_en_ex),
     .access_wr_i    (access_wr_ex),
-    .mem_addr_i     (mem_addr_ex),
-    .rd_mem_func3_i (rd_mem_func3_ex),
-    .wr_mem_data_i  (wr_mem_data_ex),
-    .wr_mem_mask_i  (wr_mem_mask_ex),
 `ifdef BRANCH_JUMP_DELAYED
     .inst_addr_plus_4_i   (inst_addr_plus_4_ex),
     .is_fence_i_i         (is_fence_i_ex),
@@ -654,10 +651,6 @@ EX_MEM #(
     .inst_o         (inst_mem),
     .access_en_o    (access_en),
     .access_wr_o    (access_wr),
-    .mem_addr_o     (access_addr),
-    .rd_mem_func3_o (rd_mem_func3),
-    .wr_mem_data_o  (wr_mem_data),
-    .wr_mem_mask_o  (wr_mem_mask),
     .wr_reg_en_o    (wr_reg_en_mem),
     .wr_reg_addr_o  (wr_reg_addr_mem),
     .wr_reg_data_o  (wr_reg_data_mem)
@@ -669,20 +662,21 @@ Mem_Access #(
 )u_Mem_Access(
     .clk                        (clk),
     .rst_n                      (rst_n),
-    .access_addr                (access_addr),
-    .access_en                  (access_en),
-    .access_wr                  (access_wr),
+    .access_addr                (mem_addr_ex),
+    .access_en                  (access_en_ex),
+    .access_wr                  (access_wr_ex),
     .bus_tran_done              (bus_tran_done),
     .rd_dtcm_data               (rd_dtcm_data),
     .rd_bus_data                (bus_rdata),
-    .rd_mem_func3               (rd_mem_func3),
-    .wr_reg_data_mem            (wr_reg_data_mem),
+    .rd_mem_func3               (rd_mem_func3_ex),
     .dtcm_sel                   (dtcm_sel),
     .bus_sel                    (bus_sel),
     .mem_access_ready           (mem_access_ready),
     .exception_code             (exception_code_mem),
     .exception_val              (exception_val_mem),
-    .wr_reg_data                (wr_reg_selected_data_mem)
+    .func3_expanded_data        (func3_expanded_data),
+    .dtcm_rvalid                (dtcm_rvalid),
+    .bus_rvalid                 (bus_rvalid)
 );
 
 DTCM #(
@@ -695,15 +689,27 @@ DTCM #(
 )u_DTCM(
     .clk        (clk),
     .rst_n      (rst_n),
-    .access_addr(access_addr),
-    .wr_en      (access_wr && dtcm_sel),
-    .wr_data    (wr_mem_data),
-    .wr_mask    (wr_mem_mask),
-    .dtcm_wr_en (dtcm_wr_en   ),
-    .dtcm_wr_addr(dtcm_wr_addr),
-    .dtcm_wr_data(dtcm_wr_data),
+    .access_addr(mem_addr_ex),
+    `ifdef BRANCH_JUMP_DELAYED
+    .wr_en      (access_wr_ex && dtcm_sel && ~ex_mem_flush && ~ex_mem_stall),
+    `else
+    .wr_en      (access_wr_ex && dtcm_sel && ~ex_mem_stall),
+    `endif
+    .wr_data    (wr_mem_data_ex),
+    .wr_mask    (wr_mem_mask_ex),
+    .dtcm_download_en (dtcm_download_en   ),
+    .dtcm_download_addr(dtcm_download_addr),
+    .dtcm_download_data(dtcm_download_data),
     .rd_data    (rd_dtcm_data)
 );
+
+// MUX2: load data only for LOAD instructions, ALU result for everything else
+// bus_rvalid 只对 load 指令选择 func3_expanded_data，非 load 指令（如 lui）固定传 ALU 结果
+assign wr_reg_selected_data_mem = (dtcm_rvalid || bus_rvalid) ? func3_expanded_data : wr_reg_data_mem;
+
+// MEM/WB wr_reg_en/wr_reg_addr bypass: bus loads skip EX/MEM, DTCM/ALU go through EX/MEM
+assign mem_wb_wr_reg_en   = bus_rvalid ? wr_reg_en_ex   : wr_reg_en_mem;
+assign mem_wb_wr_reg_addr = bus_rvalid ? wr_reg_addr_ex : wr_reg_addr_mem;
 
 MEM_WB #(
     .ADDR_WIDTH     (ADDR_WIDTH),
@@ -716,9 +722,11 @@ MEM_WB #(
     .flush          (mem_wb_flush),
     .inst_addr_i    (inst_addr_mem),
     .inst_i         (inst_mem),
-    .wr_reg_en_i    (wr_reg_en_mem),
-    .wr_reg_addr_i  (wr_reg_addr_mem),
+    .wr_reg_en_i    (mem_wb_wr_reg_en),
+    .wr_reg_addr_i  (mem_wb_wr_reg_addr),
     .wr_reg_data_i  (wr_reg_selected_data_mem),
+    .bus_rvalid_i   (bus_rvalid),
+    .bus_rvalid_o   (bus_rvalid_wb),
     .inst_o         (inst_wb),
     .inst_addr_o    (inst_addr_wb),
     .wr_reg_en_o    (wr_reg_en),
@@ -726,23 +734,21 @@ MEM_WB #(
     .wr_reg_data_o  (wr_reg_data_wb)
 );
 
-// WB_Arbiter: 仲裁总线 DTCM ALU 三路写回数据
-// 输出给 MEM_WB 寄存器 + 经 MEM_WB 给 Forward 模块
-WB_Arbiter #(
-    .DATA_WIDTH (DATA_WIDTH)
-)u_WriteBack_Arbiter(
-    .mem_data_i     (wr_reg_data_wb),
-    .bus_rdata_i    (bus_rdata),
-    .bus_done_i     (bus_tran_done),
-    .wr_reg_data_o  (wr_reg_data)
-);
+// 写回数据直接从 MEM/WB 寄存器输出，不再通过 WB_Arbiter
+assign wr_reg_data = wr_reg_data_wb;
 
-assign bus_transfer   = access_en_ex && 
-                        mem_addr_ex[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR
-                        && ~(ex_mem_flush || ex_mem_stall);
+// bus_rvalid 经 MEM_WB 延迟一拍后给 Data_Hazard_Forward 做 bus_done
+logic bus_ready_r;
+always_ff @(posedge clk) begin
+    bus_ready_r <= mem_access_ready;
+end
+
+assign bus_transfer   = bus_sel && (bus_ready_r && ~mem_access_ready);
 assign bus_access_write  = access_wr_ex;
 assign bus_access_wdata  = wr_mem_data_ex;
 assign bus_access_addr  = mem_addr_ex;
 assign bus_access_wstrb  = wr_mem_mask_ex;
+
+
 
 endmodule

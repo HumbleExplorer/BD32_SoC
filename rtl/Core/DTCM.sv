@@ -19,9 +19,9 @@ module DTCM #(
     input   logic   [DATA_WIDTH-1:0]    wr_data,
     input   logic   [ALIGN_BYTES-1:0]   wr_mask,
     // UART 下载写端口
-    input   logic                       dtcm_wr_en,
-    input   logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr,
-    input   logic   [DATA_WIDTH-1:0]    dtcm_wr_data,
+    input   logic                       dtcm_download_en,
+    input   logic   [ADDR_WIDTH-1:0]    dtcm_download_addr,
+    input   logic   [DATA_WIDTH-1:0]    dtcm_download_data,
     output  logic   [DATA_WIDTH-1:0]    rd_data
 );
 
@@ -30,9 +30,9 @@ wire [ALIGN_BYTES-1:0]     dtcm_we;
 wire [DATA_WIDTH-1:0]      dtcm_wdata;
 
 // 下载写优先：下载使能时使用下载地址/数据，否则使用处理器访问
-assign dtcm_addr  = dtcm_wr_en ? dtcm_wr_addr[DTCM_SIZE_WIDTH-1:0] : access_addr[DTCM_SIZE_WIDTH-1:0];
-assign dtcm_we    = dtcm_wr_en ? {ALIGN_BYTES{1'b1}} : (wr_en ? wr_mask : 4'b0000);
-assign dtcm_wdata = dtcm_wr_en ? dtcm_wr_data : wr_data;
+assign dtcm_addr  = dtcm_download_en ? dtcm_download_addr[DTCM_SIZE_WIDTH-1:0] : access_addr[DTCM_SIZE_WIDTH-1:0];
+assign dtcm_we    = dtcm_download_en ? {ALIGN_BYTES{1'b1}} : (wr_en ? wr_mask : 4'b0000);
+assign dtcm_wdata = dtcm_download_en ? dtcm_download_data : wr_data;
 
 generate 
     if(`TCM_Reg_or_BRAM=="BRAM") begin : gen_bram

@@ -16,13 +16,13 @@ module uart_download #(
     input   logic   [7:0]               uart_rec_byte,
     input   logic                       uart_rx_valid,
     // ITCM写接口
-    output  logic                       itcm_wr_en,
-    output  logic   [ADDR_WIDTH-1:0]    itcm_wr_addr,
-    output  logic   [DATA_WIDTH-1:0]    itcm_wr_data,
+    output  logic                       itcm_download_en,
+    output  logic   [ADDR_WIDTH-1:0]    itcm_download_addr,
+    output  logic   [DATA_WIDTH-1:0]    itcm_download_data,
     // DTCM写接口
-    output  logic                       dtcm_wr_en,
-    output  logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr,
-    output  logic   [DATA_WIDTH-1:0]    dtcm_wr_data,
+    output  logic                       dtcm_download_en,
+    output  logic   [ADDR_WIDTH-1:0]    dtcm_download_addr,
+    output  logic   [DATA_WIDTH-1:0]    dtcm_download_data,
     output  logic                       download_done
 );
 
@@ -47,8 +47,8 @@ logic             start_frame_det;
 logic             uart_rx_valid_d, uart_rx_valid_pos;
 
 // 寄存器输出打拍
-logic             itcm_wr_en_comb, dtcm_wr_en_comb;
-logic [31:0]      itcm_wr_data_comb, dtcm_wr_data_comb;
+logic             itcm_download_en_comb, dtcm_download_en_comb;
+logic [31:0]      itcm_download_data_comb, dtcm_download_data_comb;
 
 // uart_rx_valid 上升沿检测
 always_ff @(posedge clk) uart_rx_valid_d <= #1 uart_rx_valid;
@@ -88,8 +88,8 @@ always_ff @(posedge clk or negedge rst_n) begin
         if ((current_state == RECV_ITCM_CNT || current_state == RECV_DTCM_CNT)
             && (byte_cnt == 2'b11) && uart_rx_valid_pos) begin
             word_count <= #1 recv_data_n;  // 加载 count
-        end else if ((current_state == RECV_ITCM && itcm_wr_en_comb)
-                   || (current_state == RECV_DTCM && dtcm_wr_en_comb)) begin
+        end else if ((current_state == RECV_ITCM && itcm_download_en_comb)
+                   || (current_state == RECV_DTCM && dtcm_download_en_comb)) begin
             word_count <= #1 word_count - 1;  // 每写一字减 1
         end
     end
@@ -98,10 +98,10 @@ end
 // 组合逻辑：状态转移 + 写信号
 always_comb begin
     next_state = current_state;
-    itcm_wr_en_comb = 1'b0;
-    dtcm_wr_en_comb = 1'b0;
-    itcm_wr_data_comb = 'h0;
-    dtcm_wr_data_comb = 'h0;
+    itcm_download_en_comb = 1'b0;
+    dtcm_download_en_comb = 1'b0;
+    itcm_download_data_comb = 'h0;
+    dtcm_download_data_comb = 'h0;
 
     case(current_state)
         IDLE: begin
@@ -117,8 +117,8 @@ always_comb begin
 
         RECV_ITCM: begin
             if (word_count > 0 && (byte_cnt == 2'b11) && uart_rx_valid_pos) begin
-                itcm_wr_en_comb = 1'b1;
-                itcm_wr_data_comb = recv_data_n;
+                itcm_download_en_comb = 1'b1;
+                itcm_download_data_comb = recv_data_n;
             end else if (word_count == 0) begin
                 // 上一笔已写完，跳转 DTCM 长度接收
                 next_state = RECV_DTCM_CNT;
@@ -137,8 +137,8 @@ always_comb begin
 
         RECV_DTCM: begin
             if (word_count > 0 && (byte_cnt == 2'b11) && uart_rx_valid_pos) begin
-                dtcm_wr_en_comb = 1'b1;
-                dtcm_wr_data_comb = recv_data_n;
+                dtcm_download_en_comb = 1'b1;
+                dtcm_download_data_comb = recv_data_n;
             end else if (word_count == 0) begin
                 next_state = NORMAL_MODE;
             end
@@ -152,36 +152,36 @@ end
 // 寄存器输出
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        itcm_wr_en   <= #1 1'b0;
-        itcm_wr_data <= #1 'h0;
-        dtcm_wr_en   <= #1 1'b0;
-        dtcm_wr_data <= #1 'h0;
+        itcm_download_en   <= #1 1'b0;
+        itcm_download_data <= #1 'h0;
+        dtcm_download_en   <= #1 1'b0;
+        dtcm_download_data <= #1 'h0;
     end else begin
-        itcm_wr_en   <= #1 itcm_wr_en_comb;
-        itcm_wr_data <= #1 itcm_wr_data_comb;
-        dtcm_wr_en   <= #1 dtcm_wr_en_comb;
-        dtcm_wr_data <= #1 dtcm_wr_data_comb;
+        itcm_download_en   <= #1 itcm_download_en_comb;
+        itcm_download_data <= #1 itcm_download_data_comb;
+        dtcm_download_en   <= #1 dtcm_download_en_comb;
+        dtcm_download_data <= #1 dtcm_download_data_comb;
     end
 end
 
 // 地址递增
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        itcm_wr_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        dtcm_wr_addr <= #1 {`DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        itcm_download_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        dtcm_download_addr <= #1 {`DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else begin
         // ITCM 地址复位
         if (current_state == IDLE && next_state == RECV_ITCM_CNT) begin
-            itcm_wr_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        end else if (current_state == RECV_ITCM && itcm_wr_en) begin
-            itcm_wr_addr[31:ALIGN_WIDTH] <= #1 itcm_wr_addr[31:ALIGN_WIDTH] + 1;
+            itcm_download_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        end else if (current_state == RECV_ITCM && itcm_download_en) begin
+            itcm_download_addr[31:ALIGN_WIDTH] <= #1 itcm_download_addr[31:ALIGN_WIDTH] + 1;
         end
 
         // DTCM 地址复位
         if (current_state == RECV_DTCM_CNT && next_state == RECV_DTCM) begin
-            dtcm_wr_addr <= #1 {`DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        end else if (current_state == RECV_DTCM && dtcm_wr_en) begin
-            dtcm_wr_addr[31:ALIGN_WIDTH] <= #1 dtcm_wr_addr[31:ALIGN_WIDTH] + 1;
+            dtcm_download_addr <= #1 {`DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        end else if (current_state == RECV_DTCM && dtcm_download_en) begin
+            dtcm_download_addr[31:ALIGN_WIDTH] <= #1 dtcm_download_addr[31:ALIGN_WIDTH] + 1;
         end
     end
 end

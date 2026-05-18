@@ -80,12 +80,12 @@ Cdc_Sync #(
 // =========================================================================
 // CPU 核心信号
 // =========================================================================
-logic                       itcm_wr_en;
-logic   [ADDR_WIDTH-1:0]    itcm_wr_addr;
-logic   [DATA_WIDTH-1:0]    itcm_wr_data;
-logic                       dtcm_wr_en;
-logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr;
-logic   [DATA_WIDTH-1:0]    dtcm_wr_data;
+logic                       itcm_download_en;
+logic   [ADDR_WIDTH-1:0]    itcm_download_addr;
+logic   [DATA_WIDTH-1:0]    itcm_download_data;
+logic                       dtcm_download_en;
+logic   [ADDR_WIDTH-1:0]    dtcm_download_addr;
+logic   [DATA_WIDTH-1:0]    dtcm_download_data;
 
 logic                       bus_transfer;
 logic   [ADDR_WIDTH-1:0]    bus_access_addr;
@@ -252,12 +252,12 @@ RISC_V_Core #(
 ) u_RISC_V_Core (
     .clk                (clk_soc  ),
     .rst_n              (rst_n_sync      ),
-    .itcm_wr_en         (itcm_wr_en      ),
-    .itcm_wr_addr       (itcm_wr_addr    ),
-    .itcm_wr_data       (itcm_wr_data    ),
-    .dtcm_wr_en         (dtcm_wr_en      ),
-    .dtcm_wr_addr       (dtcm_wr_addr    ),
-    .dtcm_wr_data       (dtcm_wr_data    ),
+    .itcm_download_en         (itcm_download_en      ),
+    .itcm_download_addr       (itcm_download_addr    ),
+    .itcm_download_data       (itcm_download_data    ),
+    .dtcm_download_en         (dtcm_download_en      ),
+    .dtcm_download_addr       (dtcm_download_addr    ),
+    .dtcm_download_data       (dtcm_download_data    ),
     .mtime_shadow       (mtime_shadow    ),
     .software_int       (software_int    ),
     .timer_int          (timer_int       ),
@@ -655,12 +655,12 @@ apb_uart #(
     .irq_o        (uart_irq       ),
     .uart_rx_i    (uart_rx        ),
     .uart_tx_o    (uart_tx        ),
-    .itcm_wr_en_o (itcm_wr_en     ),
-    .itcm_wr_addr_o(itcm_wr_addr  ),
-    .itcm_wr_data_o(itcm_wr_data  ),
-    .dtcm_wr_en_o (dtcm_wr_en     ),
-    .dtcm_wr_addr_o(dtcm_wr_addr  ),
-    .dtcm_wr_data_o(dtcm_wr_data  )
+    .itcm_download_en_o (itcm_download_en     ),
+    .itcm_download_addr_o(itcm_download_addr  ),
+    .itcm_download_data_o(itcm_download_data  ),
+    .dtcm_download_en_o (dtcm_download_en     ),
+    .dtcm_download_addr_o(dtcm_download_addr  ),
+    .dtcm_download_data_o(dtcm_download_data  )
 );
 
 // --- PSEL[4]: Timer ---

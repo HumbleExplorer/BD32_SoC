@@ -173,6 +173,7 @@ always_comb begin
         if_id_flush = 1'b1;
         id_ex_flush = 1'b1;
         if(sel_stage == 2'b11) ex_mem_flush = 1'b1;//MEM 异常
+        mem_wb_stall = 1'b1;  // 保护 WB 阶段数据不被覆盖（lui 写寄存器还没提交）
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
     end else if (~mem_access_ready) begin
@@ -180,7 +181,7 @@ always_comb begin
         if_id_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
         id_ex_stall     = 1'b1;
-        mem_wb_stall    = access_wr_ex;
+        mem_wb_stall    = 1'b1;
     end else if (branch_jump_en) begin
         if_id_flush  = 1'b1;
         id_ex_flush  = 1'b1;

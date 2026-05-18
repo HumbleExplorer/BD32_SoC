@@ -23,13 +23,13 @@ module apb_uart #(
     input   logic                       uart_rx_i,    // UART接收信号
     output  logic                       uart_tx_o,    // UART发送信号
     // 
-    output  logic                       itcm_wr_en_o,
-    output  logic   [ADDR_WIDTH-1:0]    itcm_wr_addr_o,
-    output  logic   [DATA_WIDTH-1:0]    itcm_wr_data_o,
+    output  logic                       itcm_download_en_o,
+    output  logic   [ADDR_WIDTH-1:0]    itcm_download_addr_o,
+    output  logic   [DATA_WIDTH-1:0]    itcm_download_data_o,
     // DTCM下载写接口
-    output  logic                       dtcm_wr_en_o,
-    output  logic   [ADDR_WIDTH-1:0]    dtcm_wr_addr_o,
-    output  logic   [DATA_WIDTH-1:0]    dtcm_wr_data_o
+    output  logic                       dtcm_download_en_o,
+    output  logic   [ADDR_WIDTH-1:0]    dtcm_download_addr_o,
+    output  logic   [DATA_WIDTH-1:0]    dtcm_download_data_o
 );
 
 
@@ -343,12 +343,12 @@ uart_download #(
     .download_en    (download_en    ),
     .uart_rec_byte  (rx_fifo_rdata  ),
     .uart_rx_valid  (rx_fifo_rd_en  ),
-    .itcm_wr_en     (itcm_wr_en_o   ),
-    .itcm_wr_addr   (itcm_wr_addr_o ),
-    .itcm_wr_data   (itcm_wr_data_o ),
-    .dtcm_wr_en     (dtcm_wr_en_o   ),
-    .dtcm_wr_addr   (dtcm_wr_addr_o ),
-    .dtcm_wr_data   (dtcm_wr_data_o ),
+    .itcm_download_en     (itcm_download_en_o   ),
+    .itcm_download_addr   (itcm_download_addr_o ),
+    .itcm_download_data   (itcm_download_data_o ),
+    .dtcm_download_en     (dtcm_download_en_o   ),
+    .dtcm_download_addr   (dtcm_download_addr_o ),
+    .dtcm_download_data   (dtcm_download_data_o ),
     .download_done  (download_done  )
 );
 

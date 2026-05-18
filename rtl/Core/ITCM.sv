@@ -18,9 +18,9 @@ module ITCM #(
 )( 
     input   logic                       clk,
     input   logic                       rst_n,
-    input   logic                       itcm_wr_en,
-    input   logic   [ADDR_WIDTH-1:0]    itcm_wr_addr,
-    input   logic   [DATA_WIDTH-1:0]    itcm_wr_data,
+    input   logic                       itcm_download_en,
+    input   logic   [ADDR_WIDTH-1:0]    itcm_download_addr,
+    input   logic   [DATA_WIDTH-1:0]    itcm_download_data,
     input   logic   [ADDR_WIDTH-1:0]    inst_addr,  // 读地址（= PC_counter.pc，提前一拍）
     output  logic   [DATA_WIDTH-1:0]    inst_o      // 同步读输出
 );
@@ -31,9 +31,9 @@ generate
         // 例化 Xilinx BRAM IP
         imem u_imem (
             .clka(clk),            // input wire clka
-            .wea(itcm_wr_en),              // input wire [0 : 0] wea
-            .addra(itcm_wr_addr[15:2]),          // input wire [13 : 0] addra
-            .dina(itcm_wr_data),            // input wire [31 : 0] dina
+            .wea(itcm_download_en),              // input wire [0 : 0] wea
+            .addra(itcm_download_addr[15:2]),          // input wire [13 : 0] addra
+            .dina(itcm_download_data),            // input wire [31 : 0] dina
             .clkb(clk),            // input wire clkb
             .addrb(inst_addr[15:2]),          // input wire [13 : 0] addrb
             .doutb(inst)          // output wire [31 : 0] doutb
@@ -57,8 +57,8 @@ generate
 
         // 同步写（UART 下载程序时写入）
         always_ff @(posedge clk) begin
-            if(itcm_wr_en) begin
-                itcm_mem[itcm_wr_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]] <= #1 itcm_wr_data;
+            if(itcm_download_en) begin
+                itcm_mem[itcm_download_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]] <= #1 itcm_download_data;
             end
         end
     `endif

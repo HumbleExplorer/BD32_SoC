@@ -18,13 +18,8 @@ module EX_MEM #(
     input   logic                           wr_reg_en_i,
     input   logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_i,
     input   logic   [DATA_WIDTH-1:0]        wr_reg_data_i,
-    input   logic   [ADDR_WIDTH-1:0]        mem_addr_i,
     input   logic                           access_en_i,
     input   logic                           access_wr_i,
-    input   logic   [2:0]                   rd_mem_func3_i,
-
-    input   logic   [DATA_WIDTH-1:0]        wr_mem_data_i,
-    input   logic   [ALIGN_BYTES-1:0]       wr_mem_mask_i,
 
 `ifdef BRANCH_JUMP_DELAYED
     // ====================================================================
@@ -62,12 +57,8 @@ module EX_MEM #(
     // to mem
     output  logic   [ADDR_WIDTH-1:0]        inst_addr_o,
     output  logic   [DATA_WIDTH-1:0]        inst_o,
-    output  logic   [ADDR_WIDTH-1:0]        mem_addr_o,
     output  logic                           access_en_o,
     output  logic                           access_wr_o,
-    output  logic   [2:0]                   rd_mem_func3_o,
-    output  logic   [DATA_WIDTH-1:0]        wr_mem_data_o,
-    output  logic   [ALIGN_BYTES-1:0]       wr_mem_mask_o,
     // to wb
     output  logic                           wr_reg_en_o,
     output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_o,
@@ -104,12 +95,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= #1 `INST_NOP;
-        mem_addr_o      <= #1 'h0;
         access_en_o     <= #1 1'b0;
-        rd_mem_func3_o  <= #1 'h0;
         access_wr_o     <= #1 1'b0;
-        wr_mem_data_o   <= #1 'h0;
-        wr_mem_mask_o   <= #1 'h0;
         wr_reg_en_o     <= #1 1'b0;
         wr_reg_addr_o   <= #1 'h0;
         wr_reg_data_o   <= #1 'h0;
@@ -128,12 +115,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else if(flush) begin
         inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         inst_o          <= #1 `INST_NOP;
-        mem_addr_o      <= #1 'h0;
         access_en_o     <= #1 1'b0;
-        rd_mem_func3_o  <= #1 'h0;
         access_wr_o     <= #1 1'b0;
-        wr_mem_data_o   <= #1 'h0;
-        wr_mem_mask_o   <= #1 'h0;
         wr_reg_en_o     <= #1 1'b0;
         wr_reg_addr_o   <= #1 'h0;
         wr_reg_data_o   <= #1 'h0;
@@ -152,12 +135,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else if(!stall) begin
         inst_addr_o     <= #1 inst_addr_i;
         inst_o          <= #1 inst_i;
-        mem_addr_o      <= #1 mem_addr_i;
         access_en_o     <= #1 access_en_i;
-        rd_mem_func3_o  <= #1 rd_mem_func3_i;
         access_wr_o     <= #1 access_wr_i;
-        wr_mem_data_o   <= #1 wr_mem_data_i;
-        wr_mem_mask_o   <= #1 wr_mem_mask_i;
         wr_reg_en_o     <= #1 wr_reg_en_i;
         wr_reg_addr_o   <= #1 wr_reg_addr_i;
         wr_reg_data_o   <= #1 wr_reg_data_i;

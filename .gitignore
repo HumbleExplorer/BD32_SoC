@@ -9,3 +9,4 @@ ip_repo/
 .history/
 archive/
 **/~$*
+**/*.log
