@@ -200,23 +200,22 @@ static inline void clint_delay_ms(uint32_t ms) {
  * 7. PLIC (0xFC00_0000) — 平台级中断控制器
  *    NUM_SOURCES=16, 中断源: 1=UART, 2=GPIO, 3=Timer
  *
- *    BD32 PLIC 使用 PADDR[15:2] 做内部译码：
- *      PADDR[15:12]=0 → Priority, [11:2]=src_id
- *      PADDR[15:12]=1 → Pending
- *      PADDR[15:12]≥2 → Target (Enable/Threshold/Claim)
+ *    BD32 PLIC 使用 PADDR[15:12] 做区域译码（直接字节地址）：
+ *      PADDR[15:12]=0 → Priority (0x0000~0x0FFF), [11:2]=src_id
+ *      PADDR[15:12]=1 → Pending  (0x1000~0x1FFF), [6:2]=word
+ *      PADDR[15:12]≥2 → Target  (0x2000~0x2FFF)
  *        [11:8]=tgt_id, [7:2]=offset
- *    PADDR[15:0] = PADDR[15:2] * 4
  *
- *      Enable:     PADDR[15:2]=0x2000 → addr=0x8000
- *      Threshold:  PADDR[15:2]=0x2020 → addr=0x8080
- *      Claim:      PADDR[15:2]=0x2021 → addr=0x8084
+ *      Enable:     0x2000   (直接字节地址)
+ *      Threshold:  0x2080
+ *      Claim:      0x2084
  * =================================================================== */
 #define PLIC_BASE        0xFC000000UL
 #define PLIC_PRIORITY(id) (*(volatile uint32_t*)(PLIC_BASE + 4*(id)))
-#define PLIC_PENDING      (*(volatile uint32_t*)(PLIC_BASE + 0x4000))
-#define PLIC_ENABLE       (*(volatile uint32_t*)(PLIC_BASE + 0x8000))
-#define PLIC_THRESHOLD    (*(volatile uint32_t*)(PLIC_BASE + 0x8080))
-#define PLIC_CLAIM        (*(volatile uint32_t*)(PLIC_BASE + 0x8084))
+#define PLIC_PENDING      (*(volatile uint32_t*)(PLIC_BASE + 0x1000))
+#define PLIC_ENABLE       (*(volatile uint32_t*)(PLIC_BASE + 0x2000))
+#define PLIC_THRESHOLD    (*(volatile uint32_t*)(PLIC_BASE + 0x2080))
+#define PLIC_CLAIM        (*(volatile uint32_t*)(PLIC_BASE + 0x2084))
 #define PLIC_COMPLETE     PLIC_CLAIM
 
 /* ===================================================================

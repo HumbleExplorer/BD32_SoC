@@ -136,6 +136,8 @@ always_ff @(posedge clk) begin
     lsr6_d <= #1 u_SoC_top.u_apb_uart.lsr[6];
     if (u_SoC_top.u_apb_uart.lsr[6] && ~lsr6_d)
         uart_tx_complete <= #1 1'b1;
+    else
+        uart_tx_complete <= #1 1'b0;
 end
 
 // ------------------------ PWM Output Monitoring ------------------------

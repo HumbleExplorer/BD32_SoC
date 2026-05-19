@@ -110,46 +110,50 @@ always_ff @(posedge clk or negedge rst_n) begin
         push_ras_o             <= #1 1'b0;
         pop_ras_o              <= #1 1'b0;
 `endif
-    end else if(flush) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        inst_o          <= #1 `INST_NOP;
-        access_en_o     <= #1 1'b0;
-        access_wr_o     <= #1 1'b0;
-        wr_reg_en_o     <= #1 1'b0;
-        wr_reg_addr_o   <= #1 'h0;
-        wr_reg_data_o   <= #1 'h0;
-`ifdef BRANCH_JUMP_DELAYED
-        is_fence_i_o           <= #1 1'b0;
-        predict_taken_r        <= #1 1'b0;
-        predict_target_r       <= #1 '0;
-        inst_addr_plus_4_r     <= #1 '0;
-        branch_taken_o         <= #1 1'b0;
-        branch_target_o        <= #1 '0;
-        branch_req_o           <= #1 1'b0;
-        branch_inst_type_o     <= #1 2'b00;
-        push_ras_o             <= #1 1'b0;
-        pop_ras_o              <= #1 1'b0;
-`endif
-    end else if(!stall) begin
-        inst_addr_o     <= #1 inst_addr_i;
-        inst_o          <= #1 inst_i;
-        access_en_o     <= #1 access_en_i;
-        access_wr_o     <= #1 access_wr_i;
-        wr_reg_en_o     <= #1 wr_reg_en_i;
-        wr_reg_addr_o   <= #1 wr_reg_addr_i;
-        wr_reg_data_o   <= #1 wr_reg_data_i;
-`ifdef BRANCH_JUMP_DELAYED
-        predict_taken_r        <= #1 predict_taken_i;
-        predict_target_r       <= #1 predict_target_i;
-        inst_addr_plus_4_r     <= #1 inst_addr_plus_4_i;
-        branch_taken_o         <= #1 branch_taken_i;
-        branch_target_o        <= #1 branch_target_i;
-        branch_req_o           <= #1 branch_req_i;
-        branch_inst_type_o     <= #1 branch_inst_type_i;
-        push_ras_o             <= #1 push_ras_i;
-        pop_ras_o              <= #1 pop_ras_i;
-        is_fence_i_o           <= #1 is_fence_i_i;
-`endif
+    end else begin
+        if(flush) begin
+            inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+            inst_o          <= #1 `INST_NOP;
+            access_en_o     <= #1 1'b0;
+            access_wr_o     <= #1 1'b0;
+            wr_reg_en_o     <= #1 1'b0;
+            wr_reg_addr_o   <= #1 'h0;
+            wr_reg_data_o   <= #1 'h0;
+        `ifdef BRANCH_JUMP_DELAYED
+            is_fence_i_o           <= #1 1'b0;
+            predict_taken_r        <= #1 1'b0;
+            predict_target_r       <= #1 '0;
+            inst_addr_plus_4_r     <= #1 '0;
+            branch_taken_o         <= #1 1'b0;
+            branch_target_o        <= #1 '0;
+            branch_req_o           <= #1 1'b0;
+            branch_inst_type_o     <= #1 2'b00;
+            push_ras_o             <= #1 1'b0;
+            pop_ras_o              <= #1 1'b0;
+        `endif
+        end else begin
+        `ifdef BRANCH_JUMP_DELAYED
+            predict_taken_r        <= #1 predict_taken_i;
+            predict_target_r       <= #1 predict_target_i;
+            inst_addr_plus_4_r     <= #1 inst_addr_plus_4_i;
+            branch_taken_o         <= #1 branch_taken_i;
+            branch_target_o        <= #1 branch_target_i;
+            branch_req_o           <= #1 branch_req_i;
+            branch_inst_type_o     <= #1 branch_inst_type_i;
+            push_ras_o             <= #1 push_ras_i;
+            pop_ras_o              <= #1 pop_ras_i;
+            is_fence_i_o           <= #1 is_fence_i_i;
+        `endif
+            if(!stall) begin
+                inst_addr_o     <= #1 inst_addr_i;
+                inst_o          <= #1 inst_i;
+                access_en_o     <= #1 access_en_i;
+                access_wr_o     <= #1 access_wr_i;
+                wr_reg_en_o     <= #1 wr_reg_en_i;
+                wr_reg_addr_o   <= #1 wr_reg_addr_i;
+                wr_reg_data_o   <= #1 wr_reg_data_i;
+            end
+        end
     end
 end
 

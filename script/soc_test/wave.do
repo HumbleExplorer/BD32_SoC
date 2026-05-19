@@ -2,13 +2,16 @@ onerror {resume}
 quietly WaveActivateNextPane {} 0
 add wave -noupdate /tb_soc_top/*
 add wave -noupdate /tb_soc_top/u_SoC_top/*
+add wave -noupdate /tb_soc_top/u_SoC_top/u_apb_uart/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_apb_uart/u_uart_download/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Pipeline_Ctrl/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Data_Hazard_Forward/*
+add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Dynamic_Branch_Predictor/*
+add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_RegFile/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Executer/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Mem_Access/*
-add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Dynamic_Branch_Predictor/*
+add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_DTCM/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_AXI_Interconnect/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_AXI_APB_Bridge/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_Bus_Access/*

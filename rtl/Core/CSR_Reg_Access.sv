@@ -79,7 +79,8 @@ assign trap_return = mret_req;
 assign trap_jump = trap_occur | trap_return;
 
 always_comb begin 
-    if (exception_trap) mcause_temp = {1'b0,exception_code};
+    if (exception_trap)
+        mcause_temp = {1'b0,exception_code};
     else if (external_int_trap)
         mcause_temp = {1'd1,31'd11};
     else if (software_int_trap)
@@ -96,7 +97,7 @@ always_comb begin
     else if (mret_req)
         trap_jump_addr = mepc;
     else if (int_trap)
-        trap_jump_addr = mtvec[0] ? ({mtvec[31:2] + mcause_temp[30:0] ,2'b00}): {mtvec[31:2],2'b00};
+        trap_jump_addr = mtvec[0] ? ({mtvec[31:2] + mcause_temp[3:0] ,2'b00}): {mtvec[31:2],2'b00};
     else
         trap_jump_addr = 'h0;
 end

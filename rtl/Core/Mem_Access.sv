@@ -51,42 +51,36 @@ assign mem_access_ready = bus_sel ? bus_tran_done : 1'b1;
 // 在 stall 周期保持有效，确保数据选择和 func3 扩展正确
 // ============================================
 logic        dtcm_rvalid_q;
-logic        bus_rvalid_q;
 logic [2:0]  rd_mem_func3_r;
 logic [1:0]  access_byte_r;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        dtcm_rvalid_q  <= 1'b0;
-        bus_rvalid_q   <= 1'b0;
-        rd_mem_func3_r <= '0;
-        access_byte_r  <= '0;
+        dtcm_rvalid_q  <= #1 1'b0;
+        rd_mem_func3_r <= #1 '0;
+        access_byte_r  <= #1 '0;
     end else begin
         // dtcm_rvalid: 在访问开始时锁存，下一拍自动清除（DTCM 同步读 1 拍延迟）
-        dtcm_rvalid_q <= (access_en && ~access_wr && dtcm_sel);
-            
-        // bus_rvalid: 在访问开始时锁存，bus_tran_done 时清除
-        if (access_en && ~access_wr && bus_sel)
-            bus_rvalid_q <= ~bus_tran_done;
+        dtcm_rvalid_q <= #1 (access_en && ~access_wr && dtcm_sel);
             
         // 锁存 func3 和地址低位（用于 stall 周期保持正确 func3 扩展）
         if (access_en  && ~access_wr && (dtcm_sel || bus_sel)) begin
-            rd_mem_func3_r <= rd_mem_func3;
-            access_byte_r  <= access_addr[1:0];
+            rd_mem_func3_r <= #1 rd_mem_func3;
+            access_byte_r  <= #1 access_addr[1:0];
         end
     end
 end
 
 assign dtcm_rvalid = dtcm_rvalid_q;
-assign bus_rvalid  = bus_rvalid_q;
+assign bus_rvalid  = access_en && ~access_wr && bus_tran_done;
 
 // 读数据选择：使用锁存后的 valid 信号，在 stall 周期仍能正确选择数据源
-assign rd_mem_data = dtcm_rvalid_q ? rd_dtcm_data : 
-                     bus_rvalid_q  ? rd_bus_data  : '0;
+assign rd_mem_data = dtcm_rvalid ? rd_dtcm_data : 
+                     bus_rvalid  ? rd_bus_data  : '0;
 
 // 符号扩展：使用锁存后的 func3 和地址低位，在 stall 周期保持正确
 always_comb begin
-    if (dtcm_rvalid_q | bus_rvalid_q) begin
+    if (dtcm_rvalid | bus_rvalid) begin
         case (rd_mem_func3_r)
             `INST_LB : begin
                 case (access_byte_r)

@@ -65,16 +65,17 @@
     `endif
 `else
     `define DIRECT_LOAD  // 注释掉则走 UART 下载
+    // `define DEBUG
     `define PATH "../../test_data/"
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
     `ifdef DIRECT_LOAD
-        `define ITCM_FILE "custom/step2_irq_pwm_itcm.mem"
-        `define DTCM_FILE "custom/step2_irq_pwm_dtcm.mem"
+        `define ITCM_FILE "custom/step2_itcm.mem"
+        `define DTCM_FILE "custom/step2_dtcm.mem"
         `define ITCM_DIRECT_LOAD
     `else
-        `define ITCM_FILE "custom/all_asm.uartbin"
-        `define DTCM_FILE "custom/all_asm.uartbin"
+        `define ITCM_FILE "custom/step2.uartbin"
+        `define DTCM_FILE "custom/step2.uartbin"
     `endif
     `define TCM_Reg_or_BRAM "Reg"
 `endif

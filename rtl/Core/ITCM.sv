@@ -50,9 +50,9 @@ generate
         // 同步读：地址在上升沿采样，下一拍输出数据
         always_ff @(posedge clk or negedge rst_n) begin
             if (!rst_n)
-                inst_o <= `INST_NOP;
+                inst_o <= #1 `INST_NOP;
             else
-                inst_o <= itcm_mem[inst_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]];
+                inst_o <= #1 itcm_mem[inst_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]];
         end
 
         // 同步写（UART 下载程序时写入）

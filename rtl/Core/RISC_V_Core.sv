@@ -41,17 +41,18 @@ module RISC_V_Core #(
 );
 
 // Pipeline Ctrl
+`ifndef BRANCH_JUMP_DELAYED
 logic                       branch_jump_en_ex;
 logic   [ADDR_WIDTH-1:0]    branch_jump_addr_ex;
 // EX_MEM delayed branch signals (always declared; used by Pipeline_Ctrl / Dynamic_Branch_Predictor when BRANCH_JUMP_DELAYED)
-`ifdef BRANCH_JUMP_DELAYED
+`else
 logic                       branch_jump_en_mem;
 logic   [ADDR_WIDTH-1:0]    branch_jump_addr_mem;
 `endif
-logic                       trap_jump;
+(* max_fanout = 32 *) logic                       trap_jump;
 logic   [ADDR_WIDTH-1:0]    trap_jump_addr;
 logic   [1:0]               priv_mode;
-logic                       load_use_flag;
+(* max_fanout = 32 *) logic                       load_use_flag;
 logic                       mem_access_ready;
 logic                       mul_div_ready;
 
@@ -61,7 +62,7 @@ logic   [DATA_WIDTH-2:0]    exception_code_ex;
 logic   [DATA_WIDTH-1:0]    exception_val_if;
 logic   [DATA_WIDTH-1:0]    exception_val_id;
 logic   [DATA_WIDTH-1:0]    exception_val_ex;
-logic                       pc_stall;
+(* max_fanout = 32 *) logic                       pc_stall;
 logic                       ctrl_jump_en;
 logic   [ADDR_WIDTH-1:0]    ctrl_jump_addr;
 logic                       if_id_stall;
@@ -69,11 +70,11 @@ logic                       if_id_flush;
 logic                       id_ex_stall;
 logic                       id_ex_flush;
 logic                       ex_mem_stall;
-logic                       ex_mem_flush;
+(* max_fanout = 32 *) logic                       ex_mem_flush;
 logic                       mem_wb_stall;
 logic                       mem_wb_flush;
 logic   [ADDR_WIDTH-1:0]    exception_inst_addr;
-logic                       exception_trap;
+(* max_fanout = 32 *) logic                       exception_trap;
 logic   [DATA_WIDTH-2:0]    exception_code;
 logic   [DATA_WIDTH-1:0]    exception_val;
 logic   [ADDR_WIDTH-1:0]    next_inst_addr;
@@ -155,7 +156,7 @@ logic                       branch_taken_ex;
 logic   [ADDR_WIDTH-1:0]    branch_target_ex;
 logic   [1:0]               branch_inst_type_ex;
 logic                       branch_req_ex;
-`ifdef BRANCH_JUMP_DELAYED
+`ifndef BRANCH_JUMP_DELAYED
 logic                       branch_predict_success_ex;
 `endif
 logic                       push_ras_ex;
@@ -201,6 +202,9 @@ logic                       dtcm_sel;
 logic                       bus_sel;
 logic                       dtcm_rvalid;
 logic                       bus_rvalid;
+logic                       bus_rvalid_r1;
+logic                       bus_rvalid_r2;
+logic                       bus_ready_r;
 // MEM/WB bypass for bus loads (wr_reg_en/addr from EX stage, bypassing EX/MEM)
 logic                       wr_reg_selected_en_mem;
 logic   [REG_ADDR_WIDTH-1:0]wr_reg_selected_addr_mem;
@@ -209,7 +213,9 @@ logic   [REG_ADDR_WIDTH-1:0]wr_reg_selected_addr_mem;
 // WB
 logic   [ADDR_WIDTH-1:0]    inst_addr_wb;
 logic   [DATA_WIDTH-1:0]    inst_wb;
-logic                       bus_rvalid_wb;
+logic                       wr_reg_en_wb;
+logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_wb;
+logic   [DATA_WIDTH-1:0]    wr_reg_data_wb;
 
 Pipeline_Ctrl #(
     .ADDR_WIDTH(ADDR_WIDTH),
@@ -226,7 +232,6 @@ Pipeline_Ctrl #(
     .trap_jump_addr      	(trap_jump_addr       ),
     .priv_mode           	(priv_mode            ),
     .load_use_flag       	(load_use_flag        ),
-    .bus_transfer        	(bus_transfer         ),
     .mem_access_ready    	(mem_access_ready     ),
     .mul_div_ready       	(mul_div_ready        ),
     .inst_addr_if        	(inst_addr_if         ),
@@ -273,20 +278,21 @@ Data_Hazard_Forward #(
     .wr_reg_addr_ex     	(wr_reg_addr_ex     ),
     .access_en_ex       	(access_en_ex       ),
     .access_wr_ex       	(access_wr_ex       ),
-    .access_en_mem      	(access_en_mem          ),
-    .access_wr_mem      	(access_wr_mem          ),
+    .access_en_mem      	(access_en_mem      ),
+    .access_wr_mem      	(access_wr_mem      ),
     .wr_reg_en_mem      	(wr_reg_en_mem      ),
     .wr_reg_addr_mem    	(wr_reg_addr_mem    ),
-    .wr_reg_en_wb       	(wr_reg_en          ),
-    .wr_reg_addr_wb     	(wr_reg_addr        ),
+    .wr_reg_en_wb       	(wr_reg_en_wb       ),
+    .wr_reg_addr_wb     	(wr_reg_addr_wb     ),
     .alu_op1_from_id_ex 	(alu_op1_from_id_ex ),
     .alu_op2_from_id_ex 	(alu_op2_from_id_ex ),
     .rd_rs2_data_ex     	(rs2_data_ex        ),
     .wr_reg_data_mem    	(wr_reg_data_mem    ),
-    .wr_reg_data_wb     	(wr_reg_data        ),
+    .wr_reg_data_wb     	(wr_reg_data_wb     ),
     .bus_sel                (bus_sel            ),
-    .bus_rvalid             (bus_rvalid_wb      ),
+    .bus_rvalid             (bus_rvalid_r1      ),
     .mem_access_ready       (mem_access_ready   ),
+    .bus_ready_r            (bus_ready_r        ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
     .alu_op2_o          	(alu_op2_forward    ),
@@ -728,27 +734,104 @@ MEM_WB #(
     .wr_reg_addr_i  (wr_reg_selected_addr_mem),
     .wr_reg_data_i  (wr_reg_selected_data_mem),
     .bus_rvalid_i   (bus_rvalid),
-    .bus_rvalid_o   (bus_rvalid_wb),
+    .bus_rvalid_o   (bus_rvalid_r1),
     .inst_o         (inst_wb),
     .inst_addr_o    (inst_addr_wb),
-    .wr_reg_en_o    (wr_reg_en),
-    .wr_reg_addr_o  (wr_reg_addr),
-    .wr_reg_data_o  (wr_reg_data)
+    .wr_reg_en_o    (wr_reg_en_wb),
+    .wr_reg_addr_o  (wr_reg_addr_wb),
+    .wr_reg_data_o  (wr_reg_data_wb)
 );
+
+assign wr_reg_data = bus_rvalid ? wr_reg_data_mem : wr_reg_data_wb;
+assign wr_reg_en   = bus_rvalid ? wr_reg_en_mem   : (wr_reg_en_wb && ~bus_rvalid_r2);
+assign wr_reg_addr = bus_rvalid ? wr_reg_addr_mem : wr_reg_addr_wb;
 
 
 // bus_rvalid 经 MEM_WB 延迟一拍后给 Data_Hazard_Forward 做 bus_done
-logic bus_ready_r;
 always_ff @(posedge clk) begin
-    bus_ready_r <= mem_access_ready;
+    bus_ready_r <= #1 mem_access_ready;
+    bus_rvalid_r2 <= #1 bus_rvalid_r1;
 end
 
-assign bus_transfer   = bus_sel && (bus_ready_r && ~mem_access_ready);
+assign bus_transfer   = (bus_ready_r && ~mem_access_ready) && ~ex_mem_flush;
 assign bus_access_write  = access_wr_ex;
 assign bus_access_wdata  = wr_mem_data_ex;
 assign bus_access_addr  = access_addr_ex;
 assign bus_access_wstrb  = wr_mem_mask_ex;
 
 
+// ============================================================
+// 诊断监控：追踪 PC 跳转和异常事件
+// ============================================================
+`ifdef DEBUG  // 仅在仿真时启用
+logic [31:0] debug_cycle_cnt;
+logic        debug_prev_ctrl_jump_en;
+logic        debug_prev_trap_jump;
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        debug_cycle_cnt <= 0;
+        debug_prev_ctrl_jump_en <= 0;
+        debug_prev_trap_jump <= 0;
+    end else begin
+        debug_cycle_cnt <= debug_cycle_cnt + 1;
+        debug_prev_ctrl_jump_en <= ctrl_jump_en;
+        debug_prev_trap_jump <= trap_jump;
+    end
+end
+
+// 捕捉 ctrl_jump_en 上升沿：打印跳转详情
+always_ff @(posedge clk) begin
+    if (ctrl_jump_en && ~debug_prev_ctrl_jump_en && rst_n) begin
+        $display("[%0t] JUMP: PC=0x%08h → target=0x%08h | trap=%b branch=%b | pc_if=0x%08h pc_id=0x%08h pc_ex=0x%08h",
+                 $time, inst_addr_if, ctrl_jump_addr, trap_jump, branch_jump_en_mem,
+                 inst_addr_if, inst_addr_id, inst_addr_ex);
+    end
+end
+
+// 捕捉 trap_jump 上升沿：打印异常/中断详情
+always_ff @(posedge clk) begin
+    if (trap_jump && ~debug_prev_trap_jump && rst_n) begin
+        $display("[%0t] TRAP: trap_addr=0x%08h | exc_code=0x%04h exc_trap=%b | mepc=0x%08h",
+                 $time, trap_jump_addr, exception_code, exception_trap,
+                 inst_addr_id);
+    end
+end
+
+// 当 PC 跳回 ITCM 低地址（疑似重启）时打印
+logic [31:0] debug_last_itcm_pc;
+always_ff @(posedge clk) begin
+    if (!rst_n)
+        debug_last_itcm_pc <= 0;
+    else if (itcm_sel)
+        debug_last_itcm_pc <= inst_addr_if;
+end
+
+// 检测 PC 突然跳回 ITCM 起始区域（0x00010000~0x000100FF）
+// 排除正常的上电启动（前1000周期）
+always_ff @(posedge clk) begin
+    if (rst_n && debug_cycle_cnt > 1000 &&
+        itcm_sel && inst_addr_if >= 32'h00010000 && inst_addr_if <= 32'h000100FF &&
+        (debug_last_itcm_pc > 32'h00010100 || debug_last_itcm_pc == 0)) begin
+        $display("[%0t] *** RESTART DETECTED: pc=0x%08h last_itcm_pc=0x%08h cycle=%0d",
+                 $time, inst_addr_if, debug_last_itcm_pc, debug_cycle_cnt);
+    end
+end
+
+// 每隔 ~50ms 打印一次周期计数和当前 PC（可选，观察长时间运行状态）
+logic [31:0] debug_heartbeat_cnt;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)
+        debug_heartbeat_cnt <= 0;
+    else
+        debug_heartbeat_cnt <= debug_heartbeat_cnt + 1;
+end
+always_ff @(posedge clk) begin
+    if (rst_n && (debug_heartbeat_cnt % 5000000 == 0) && debug_heartbeat_cnt > 0) begin
+        $display("[%0t] HB: pc=0x%08h cycle=%0d trap_jump=%b exc_code=0x%04h",
+                 $time, inst_addr_if, debug_cycle_cnt, trap_jump, exception_code);
+    end
+end
+`endif
 
 endmodule

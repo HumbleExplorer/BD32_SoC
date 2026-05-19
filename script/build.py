@@ -7,7 +7,6 @@ BD32 SoC 统一构建工具
   .dump   - 反汇编文本
   .uartbin- UART 下载二进制（含帧头，上板用）
   .mem    - $readmemh 兼容的 hex 文本格式（ITCM/DTCM 仿真直接加载用）
-  .download- 计数协议格式（旧版下载用）
   .dat    - 裸 hex 文本格式（每行一个 32 位字，riscv-tests 风格）
   .hex    - Intel HEX 格式
 
@@ -257,26 +256,6 @@ def gen_uartbin(elf_path, output_path, verbose=False):
     return True, ""
 
 
-def gen_download(elf_path, output_path, verbose=False):
-    """生成计数协议 .download 格式"""
-    itcm_words = extract_words_from_elf(elf_path, ITCM_SECTIONS, verbose)
-    dtcm_words = extract_words_from_elf(elf_path, DTCM_SECTIONS, verbose)
-
-    if not itcm_words:
-        return False, "No ITCM data found"
-
-    with open(output_path, 'w') as f:
-        f.write(f'{len(itcm_words):08x}\n')
-        for w in itcm_words:
-            f.write(f'{w:08x}\n')
-        for w in dtcm_words:
-            f.write(f'{w:08x}\n')
-
-    if verbose:
-        print(f"    -> {output_path} ({1 + len(itcm_words) + len(dtcm_words)} lines)")
-    return True, ""
-
-
 def gen_dat(elf_path, output_path, verbose=False):
     """生成 .dat 格式（裸 hex，ITCM + DTCM 连续拼接，riscv-tests 风格）"""
     itcm_words = extract_words_from_elf(elf_path, ITCM_SECTIONS, verbose)
@@ -325,7 +304,6 @@ FORMATS = {
     'dump':     (gen_dump,     '.dump',     '反汇编文本'),
     'uartbin':  (gen_uartbin,  '.uartbin',  'UART 下载二进制（含帧头）'),
     'mem':      (gen_mem,      '.mem',      'hex 文本格式（$readmemh 兼容）'),
-    'download': (gen_download, '.download', '计数协议格式'),
     'dat':      (gen_dat,      '.dat',      '裸 hex 文本格式'),
     'hex':      (gen_hex,      '.hex',      'Intel HEX 格式'),
 }
@@ -515,8 +493,6 @@ def main():
         elif fmt_name == 'dump':
             ok, msg = gen_func(elf_path, out_path, verbose=args.verbose)
         elif fmt_name == 'uartbin':
-            ok, msg = gen_func(elf_path, out_path, verbose=args.verbose)
-        elif fmt_name == 'download':
             ok, msg = gen_func(elf_path, out_path, verbose=args.verbose)
         elif fmt_name == 'hex':
             ok, msg = gen_func(elf_path, out_path, verbose=args.verbose)

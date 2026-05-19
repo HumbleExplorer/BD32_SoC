@@ -206,7 +206,7 @@ always_comb    begin
             endcase
         end
         `INST_SYSTEM:begin
-            csr_addr = imm;
+            csr_addr = zimm;
             case(func3)
                 `INST_CSRRW, `INST_CSRRS, `INST_CSRRC:begin
                     wr_reg_en       = 1'b1;

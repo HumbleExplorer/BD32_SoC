@@ -21,7 +21,6 @@ module Pipeline_Ctrl #(
     // from Forward
     input   logic                       load_use_flag,
     // from EX
-    input   logic                       bus_transfer,
     input   logic                       mem_access_ready,
     input   logic                       mul_div_ready,
     // from IF/ID/EX
@@ -162,18 +161,20 @@ always_comb begin
         ex_mem_flush = 1'b1;
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
+    end else if (branch_jump_en) begin
+        if_id_flush  = 1'b1;
+        id_ex_flush  = 1'b1;
+    `ifdef BRANCH_JUMP_DELAYED
+        ex_mem_flush = 1'b1;
+    `endif 
+        ctrl_jump_en = 1'b1;
+        ctrl_jump_addr = branch_jump_addr;
     end else if (~mem_access_ready) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
-        mem_wb_stall    = ~bus_transfer;
-    end else if (branch_jump_en) begin
-        if_id_flush  = 1'b1;
-        id_ex_flush  = 1'b1;
-        ex_mem_flush = 1'b1;
-        ctrl_jump_en = 1'b1;
-        ctrl_jump_addr = branch_jump_addr;
+        mem_wb_stall    = 1'b1;
     end else if (load_use_flag) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;

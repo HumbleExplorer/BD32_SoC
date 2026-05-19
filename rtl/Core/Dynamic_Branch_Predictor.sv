@@ -263,25 +263,25 @@ logic                      btb_update_push_ras_latched;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin
-        btb_update_en_latched       <= 1'b0;
-        btb_update_idx_latched      <= '0;
-        btb_update_tag_latched      <= '0;
-        btb_update_target_latched   <= '0;
-        btb_update_type_latched     <= '0;
-        btb_update_pop_ras_latched  <= 1'b0;
-        btb_update_push_ras_latched <= 1'b0;
+        btb_update_en_latched       <= #1 1'b0;
+        btb_update_idx_latched      <= #1 '0;
+        btb_update_tag_latched      <= #1 '0;
+        btb_update_target_latched   <= #1 '0;
+        btb_update_type_latched     <= #1 '0;
+        btb_update_pop_ras_latched  <= #1 1'b0;
+        btb_update_push_ras_latched <= #1 1'b0;
     end else if (btb_update_en_latched) begin
         // 上一拍捕获的更新请求在本拍执行，执行后清零
-        btb_update_en_latched <= 1'b0;
+        btb_update_en_latched <= #1 1'b0;
     end else if (!stall) begin
         // 无待处理请求且当前不 stall，捕获新的更新请求和数据
-        btb_update_en_latched       <= branch_req && branch_taken;
-        btb_update_idx_latched      <= update_btb_idx;
-        btb_update_tag_latched      <= branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_update_target_latched   <= branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        btb_update_type_latched     <= branch_inst_type;
-        btb_update_pop_ras_latched  <= pop_ras;
-        btb_update_push_ras_latched <= push_ras;
+        btb_update_en_latched       <= #1 branch_req && branch_taken;
+        btb_update_idx_latched      <= #1 update_btb_idx;
+        btb_update_tag_latched      <= #1 branch_pc[BTB_TAG_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_update_target_latched   <= #1 branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_update_type_latched     <= #1 branch_inst_type;
+        btb_update_pop_ras_latched  <= #1 pop_ras;
+        btb_update_push_ras_latched <= #1 push_ras;
     end
 end
 
@@ -326,16 +326,19 @@ end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin
-        ghr_pht_update_en_latched <= 1'b0;
+        ghr_pht_update_en_latched <= #1 1'b0;
+        ghr_update_value_latched  <= #1 '0;
+        pht_update_idx_latched    <= #1 '0;
+        pht_update_taken_latched  <= #1 '0;
     end else if (ghr_pht_update_en_latched) begin
         // 上一拍捕获的更新请求在本拍执行，执行后清零
-        ghr_pht_update_en_latched <= 1'b0;
+        ghr_pht_update_en_latched <= #1 1'b0;
     end else if (!stall && branch_req && branch_inst_type == BRANCH_INST_TYPE_B) begin
         // 无待处理请求且当前不 stall，捕获新的 GHR/PHT 更新请求和数据
-        ghr_pht_update_en_latched <= 1'b1;
-        ghr_update_value_latched  <= {real_global_history[GHR_WIDTH-2:0], branch_taken};
-        pht_update_idx_latched    <= update_pht_idx;
-        pht_update_taken_latched  <= branch_taken;
+        ghr_pht_update_en_latched <= #1 1'b1;
+        ghr_update_value_latched  <= #1 {real_global_history[GHR_WIDTH-2:0], branch_taken};
+        pht_update_idx_latched    <= #1 update_pht_idx;
+        pht_update_taken_latched  <= #1 branch_taken;
     end
 end
 
@@ -357,21 +360,21 @@ logic [RAS_DATA_WIDTH-1:0] ras_update_data_latched;   // push数据 (branch_pc�
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin
-        ras_update_en_latched   <= 1'b0;
-        ras_push_latched        <= 1'b0;
-        ras_pop_latched         <= 1'b0;
-        ras_update_ptr_latched  <= '0;
-        ras_update_data_latched <= '0;
+        ras_update_en_latched   <= #1 1'b0;
+        ras_push_latched        <= #1 1'b0;
+        ras_pop_latched         <= #1 1'b0;
+        ras_update_ptr_latched  <= #1 '0;
+        ras_update_data_latched <= #1 '0;
     end else if (ras_update_en_latched) begin
         // 上一拍捕获的更新请求在本拍执行，执行后清零
-        ras_update_en_latched <= 1'b0;
+        ras_update_en_latched <= #1 1'b0;
     end else if (!stall && (push_ras || pop_ras)) begin
         // 无待处理请求且当前不 stall，捕获新的 RAS 更新请求和数据
-        ras_update_en_latched   <= 1'b1;
-        ras_push_latched        <= push_ras;
-        ras_pop_latched         <= pop_ras;
-        ras_update_ptr_latched  <= real_ras_ptr;
-        ras_update_data_latched <= branch_pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
+        ras_update_en_latched   <= #1 1'b1;
+        ras_push_latched        <= #1 push_ras;
+        ras_pop_latched         <= #1 pop_ras;
+        ras_update_ptr_latched  <= #1 real_ras_ptr;
+        ras_update_data_latched <= #1 branch_pc[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
     end
 end
 
@@ -408,17 +411,17 @@ logic spec_outcome_taken_latched;    // 预测方向 (correct prediction 时有�
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin
-        spec_outcome_en_latched      <= 1'b0;
-        spec_outcome_mispred_latched <= 1'b0;
-        spec_outcome_taken_latched   <= 1'b0;
+        spec_outcome_en_latched      <= #1 1'b0;
+        spec_outcome_mispred_latched <= #1 1'b0;
+        spec_outcome_taken_latched   <= #1 1'b0;
     end else if (spec_outcome_en_latched) begin
         // 上一拍捕获的结果在本拍执行，执行后清零
-        spec_outcome_en_latched <= 1'b0;
+        spec_outcome_en_latched <= #1 1'b0;
     end else if (!stall && branch_req) begin
         // 无待处理请求且当前不 stall，捕获分支结果
-        spec_outcome_en_latched      <= 1'b1;
-        spec_outcome_mispred_latched <= !branch_predict_success;
-        spec_outcome_taken_latched   <= predict_taken;
+        spec_outcome_en_latched      <= #1 1'b1;
+        spec_outcome_mispred_latched <= #1 !branch_predict_success;
+        spec_outcome_taken_latched   <= #1 predict_taken;
     end
 end
 
