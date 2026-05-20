@@ -36,7 +36,6 @@ module CSR_Reg_Access #(
 // to CLINT
 );
 
-
 //机器陷阱配置
 logic   [DATA_WIDTH-1:0]    mstatus;//状态0x300
 logic   [DATA_WIDTH-1:0]    mie;//中断使能0x304
@@ -52,16 +51,15 @@ logic   [DATA_WIDTH-1:0]    mip;//中断挂起
 //机器计数器/计时器
 logic   [2*DATA_WIDTH-1:0]  mcycle;
 logic   [2*DATA_WIDTH-1:0]  minstret;
-
 logic                       mcycle_clear;
 logic                       minstret_clear;
-
 
 logic   external_int_trap, software_int_trap, timer_int_trap;
 logic   trap_occur;
 logic   trap_return;
 logic   [DATA_WIDTH-1:0] mcause_temp;
-
+logic   [DATA_WIDTH-1:0] int_jump_addr;
+logic                    int_trap_latched;   // 中断延迟1拍：本周期预算地址，下周期触发
 logic           int_come;
 logic           waiting_int;
 
@@ -76,7 +74,8 @@ assign waiting_int  = (!int_come & wfi_req);
 assign priv_mode = mstatus[12:11];
 assign trap_occur = exception_trap | int_trap;
 assign trap_return = mret_req;
-assign trap_jump = trap_occur | trap_return;
+// 异常：本周期立即触发；中断：延迟1拍（预计算地址，指令边界响应）
+assign trap_jump = exception_trap | int_trap_latched | trap_return;
 
 always_comb begin 
     if (exception_trap)
@@ -92,14 +91,27 @@ always_comb begin
 end
 
 always_comb begin
-    if(exception_trap)
-        trap_jump_addr = {mtvec[31:2],2'b00};
+    if (exception_trap)
+        trap_jump_addr = {mtvec[31:2], 2'b00};              // 异常：直接模式，无加法
     else if (mret_req)
         trap_jump_addr = mepc;
-    else if (int_trap)
-        trap_jump_addr = mtvec[0] ? ({mtvec[31:2] + mcause_temp[3:0] ,2'b00}): {mtvec[31:2],2'b00};
+    else if (int_trap_latched)
+        trap_jump_addr = int_jump_addr;                      // 中断：上一周期预计算值
     else
         trap_jump_addr = 'h0;
+end
+
+// 中断预计算：int_trap 有效且无异常时，锁存 trap 地址（CARRY4 不参与关键路径）
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        int_trap_latched <= 1'b0;
+        int_jump_addr    <= 'h0;
+    end else begin
+        int_trap_latched <= exception_trap ? 1'b0 : int_trap;                     // 锁存中断
+        int_jump_addr <= mtvec[0]                         // 本周期预计算，下周期直接用
+                        ? ({mtvec[31:2] + mcause_temp[3:0], 2'b00})
+                        : {mtvec[31:2], 2'b00};
+    end
 end
 
 always_ff @(posedge clk or negedge rst_n) begin

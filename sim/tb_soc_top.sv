@@ -128,8 +128,8 @@ logic lsr6_d;
 always_ff @(posedge clk) begin
     tx_data_valid_d <= #1 tx_data_valid;
     if (tx_data_valid && ~tx_data_valid_d) begin
-        // $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
-        $write("[%t]:%c\n", $time, u_SoC_top.u_apb_uart.tx_data_in);
+        $write("%c",u_SoC_top.u_apb_uart.tx_data_in);
+        // $write("[%t]:%c\n", $time, u_SoC_top.u_apb_uart.tx_data_in);
     end
     // 检测 UART TX 完全完成：TEMT (LSR[6]) 上升沿
     // TEMT=1 表示发送 FIFO 空 && 移位寄存器空闲，所有字符已发完
