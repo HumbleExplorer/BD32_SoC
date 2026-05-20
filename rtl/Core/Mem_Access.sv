@@ -19,10 +19,9 @@ module Mem_Access #(
     //to dtcm/bus
     output  logic                       dtcm_sel,
     output  logic                       bus_sel,
+    output  logic                       access_illegal,
     //to crtl
     output  logic                       mem_access_ready,
-    output  logic   [DATA_WIDTH-2:0]    exception_code,
-    output  logic   [DATA_WIDTH-1:0]    exception_val,
     //to Mux (func3 expanded data, only for load instructions)
     output  logic   [DATA_WIDTH-1:0]    func3_expanded_data,
     // 锁存后的 load valid 信号，在 stall 周期保持数据选择正确
@@ -31,7 +30,6 @@ module Mem_Access #(
 );
 
 logic [DATA_WIDTH-1:0] rd_mem_data;
-logic                  access_illegal;
 
 assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `DTCM_BASE_TAG) ;
 assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) ;
@@ -85,9 +83,6 @@ assign bus_rvalid  = bus_rvalid_q;
 // 读数据选择：使用锁存后的 valid 信号，在 stall 周期仍能正确选择数据源
 assign rd_mem_data = dtcm_rvalid_q ? rd_dtcm_data : 
                      bus_rvalid_q  ? rd_bus_data  : '0;
-
-assign exception_code = access_illegal ? (access_wr ? 4'd7 : 4'd5) : {DATA_WIDTH-1{1'b1}};
-assign exception_val = access_addr;
 
 // 符号扩展：使用锁存后的 func3 和地址低位，在 stall 周期保持正确
 always_comb begin

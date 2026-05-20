@@ -1,6 +1,12 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
 `timescale 1ns / 1ps
+// =============================================================================
+// Pipeline_Ctrl - 流水线控制（4级流水线精简版）
+// =============================================================================
+// 已合并 EX/MEM 阶段，不再有 ex_mem_stall/flush
+// 异常优先级：IF → ID → EX（访存异常在 EX 级检测）
+// =============================================================================
 module Pipeline_Ctrl #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH
@@ -8,17 +14,17 @@ module Pipeline_Ctrl #(
     // from EX
     input   logic                       branch_jump_en,
     input   logic   [ADDR_WIDTH-1:0]    branch_jump_addr,
-    input   logic                       access_wr_ex,
     // from CSR
     input   logic                       trap_jump,
     input   logic   [ADDR_WIDTH-1:0]    trap_jump_addr,
     input   logic   [1:0]               priv_mode,
     // from Forward
     input   logic                       load_use_flag,
-    // from MEM
+    // from EX
+    input   logic                       bus_transfer,
     input   logic                       mem_access_ready,
     input   logic                       mul_div_ready,
-    // from IF/ID/EX(CSR)/MEM
+    // from IF/ID/EX
     (* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_if,
     (* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_id,
     (* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_ex,
@@ -26,11 +32,9 @@ module Pipeline_Ctrl #(
     input   logic   [DATA_WIDTH-2:0]    exception_code_if,
     input   logic   [DATA_WIDTH-2:0]    exception_code_id,
     input   logic   [DATA_WIDTH-2:0]    exception_code_ex,
-    input   logic   [DATA_WIDTH-2:0]    exception_code_mem,
     input   logic   [DATA_WIDTH-1:0]    exception_val_if,
     input   logic   [DATA_WIDTH-1:0]    exception_val_id,
     input   logic   [DATA_WIDTH-1:0]    exception_val_ex,
-    input   logic   [DATA_WIDTH-1:0]    exception_val_mem,
 
     // to pc
     output  logic                       pc_stall,
@@ -54,7 +58,7 @@ module Pipeline_Ctrl #(
 );
 
 function automatic [3:0] get_priority;
-    input [1:0] stage; // 0:IF, 1:ID, 2:EX, 3:MEM
+    input [1:0] stage; // 0:IF, 1:ID, 2:EX
     input [DATA_WIDTH-2:0] code;
 begin
     get_priority = {4{1'b1}};
@@ -72,14 +76,9 @@ begin
                 4'd8,4'd9,4'd11: get_priority = 4'd5; // 环境调用
             endcase
         end
-        2'd2: begin // EX阶段
+        2'd2: begin // EX阶段（含访存异常）
             case(code)
                 4'd2: get_priority = 4'd3; // 非法指令CSR
-                // 4'd4,4'd6: get_priority = 4'd11; // 访存地址未对齐，但本设计支持非对齐地址访存
-            endcase
-        end
-        2'd3: begin // MEM阶段
-            case(code)
                 4'd5,4'd7: get_priority = 4'd10; // 访存错误
             endcase
         end
@@ -91,23 +90,16 @@ endfunction
 logic [3:0] priority_if;
 logic [3:0] priority_id;
 logic [3:0] priority_ex;
-logic [3:0] priority_mem;
 logic [3:0] min_priority;
 logic [1:0] sel_stage;
 
-//只看code最高位，简化逻辑
 assign priority_if = exception_code_if[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd0, exception_code_if);
 assign priority_id = exception_code_id[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd1, exception_code_id);
 assign priority_ex = exception_code_ex[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd2, exception_code_ex);
-assign priority_mem = exception_code_mem[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd3, exception_code_mem);
 
 always_comb begin
     min_priority = 4'd15;
     sel_stage = 2'd0;
-    if (priority_mem < min_priority) begin
-        min_priority = priority_mem;
-        sel_stage = 2'd3;
-    end
     if (priority_ex < min_priority) begin
         min_priority = priority_ex;
         sel_stage = 2'd2;
@@ -121,13 +113,9 @@ always_comb begin
         sel_stage = 2'd0;
     end
 end
+
 always_comb begin
     case(sel_stage)
-        2'd3: begin // MEM阶段
-            exception_code = exception_code_mem;
-            exception_inst_addr = inst_addr_mem;
-            exception_val = exception_val_mem;
-        end
         2'd2: begin // EX阶段
             exception_code = exception_code_ex;
             exception_inst_addr = inst_addr_ex;
@@ -151,11 +139,10 @@ always_comb begin
     endcase
 end
 
-
 assign next_inst_addr = trap_jump ? trap_jump_addr :
                         branch_jump_en ? branch_jump_addr :
                         inst_addr_id;
-assign exception_trap = ~exception_code[DATA_WIDTH-2];//简化逻辑
+assign exception_trap = ~exception_code[DATA_WIDTH-2];
 
 always_comb begin
     pc_stall        = 1'b0;
@@ -172,22 +159,19 @@ always_comb begin
     if(trap_jump) begin
         if_id_flush = 1'b1;
         id_ex_flush = 1'b1;
-        if(sel_stage == 2'b11) ex_mem_flush = 1'b1;//MEM 异常
-        mem_wb_stall = 1'b1;  // 保护 WB 阶段数据不被覆盖（lui 写寄存器还没提交）
+        ex_mem_flush = 1'b1;
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
     end else if (~mem_access_ready) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
-        ex_mem_stall    = 1'b1;
         id_ex_stall     = 1'b1;
-        mem_wb_stall    = 1'b1;
+        ex_mem_stall    = 1'b1;
+        mem_wb_stall    = ~bus_transfer;
     end else if (branch_jump_en) begin
         if_id_flush  = 1'b1;
         id_ex_flush  = 1'b1;
-`ifdef BRANCH_JUMP_DELAYED
-        ex_mem_flush = 1'b1;   // 多冲1级：杀掉错误路径的 EX 结果
-`endif
+        ex_mem_flush = 1'b1;
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = branch_jump_addr;
     end else if (load_use_flag) begin

@@ -15,10 +15,15 @@ module Executer #(
     input   logic   [DATA_WIDTH-1:0]        imm,
     input   logic                           predict_taken,
     input   logic   [ADDR_WIDTH-1:0]        predict_target,
+    `ifndef BRANCH_JUMP_DELAYED
     input   logic                           is_fence_i,
+    `endif
+    input   logic                           access_wr,
     // from CSR
     input   logic   [DATA_WIDTH-1:0]        rd_csr_data,
     input   logic                           illegal_inst_csr,
+    // from MEM
+    input   logic                           access_illegal,
     // from data_hazard
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op1,
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op2,
@@ -30,15 +35,17 @@ module Executer #(
     input   logic                           mul_div_valid,
     input   logic   [DATA_WIDTH-1:0]        result_mul_div,
     // to ctrl
+    `ifndef BRANCH_JUMP_DELAYED
     output  logic                           branch_jump_en,//实际上是否跳转
     output  logic   [ADDR_WIDTH-1:0]        branch_jump_addr,//实际跳转地址
+    `endif
     output  logic   [DATA_WIDTH-2:0]        exception_code,
     output  logic   [DATA_WIDTH-1:0]        exception_val,
     // to mul_div
     output  logic                           mul_div_en,
     output  logic   [2:0]                   mul_div_func3,
     // to mem
-    output  logic   [ADDR_WIDTH-1:0]        mem_addr,
+    output  logic   [ADDR_WIDTH-1:0]        access_addr,
     output  logic   [DATA_WIDTH-1:0]        wr_mem_data,
     output  logic   [ALIGN_BYTES-1:0]       wr_mem_mask,
     output  logic   [2:0]                   rd_mem_func3,
@@ -51,8 +58,10 @@ module Executer #(
     output  logic                           mret_req,
     // to IF
     output  logic                           branch_taken,    // 分支跳转方向
-    output  logic   [ADDR_WIDTH-1:0]        branch_target,   // 分支目标跳转地址
+    output  logic   [ADDR_WIDTH-1:0]        branch_target   // 分支目标跳转地址
+    `ifndef BRANCH_JUMP_DELAYED,
     output  logic                           branch_predict_success
+    `endif
 );
 
 logic   [6:0]               opcode;
@@ -82,17 +91,15 @@ assign  less_unsigned   =   (alu_op1 < alu_op2);
 assign  sr_shift        =   alu_op1 >> alu_op2[4:0];
 assign  sr_shift_mask   =   {DATA_WIDTH{1'b1}} >> alu_op2[4:0];
 
-assign  mem_addr = alu_op1 + imm;
-// assign  access_addr_misalign = |mem_addr[ALIGN_WIDTH-1:0];
+assign  access_addr = alu_op1 + imm;
+// assign  access_addr_misalign = |access_addr[ALIGN_WIDTH-1:0];
 assign  rd_mem_func3 = func3;
 assign  mul_div_en = (opcode == `INST_TYPE_R_M) && (func7 == 7'b0000001);
 assign  mul_div_func3 = func3;
 
-// assign  exception_code = (illegal_inst_csr) ? 'h3 : (access_addr_misalign) ? 'h11 : {DATA_WIDTH-1{1'b1}};
-assign  exception_code = (illegal_inst_csr) ? 'h3 : {DATA_WIDTH-1{1'b1}};
-// assign exception_code = {DATA_WIDTH-1{1'b1}};
-assign  exception_val = 'h0;
-
+assign exception_code =(illegal_inst_csr) ? 'h3 : access_illegal ? (access_wr ? 4'd7 : 4'd5) : {DATA_WIDTH-1{1'b1}};
+assign exception_val = access_illegal ? access_addr : 'h0;
+`ifndef BRANCH_JUMP_DELAYED
 assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);
 assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
 always_comb begin
@@ -109,8 +116,8 @@ always_comb begin
     end else begin //其他
         branch_jump_addr = inst_addr_plus_4;
     end
-
 end
+`endif
 
 always_comb begin
     wr_reg_addr     = 5'h0;
@@ -192,7 +199,7 @@ always_comb begin
         `INST_TYPE_S:begin
             case(func3)
                 `INST_SB:begin
-                    case (mem_addr[1:0])
+                    case (access_addr[1:0])
                         2'b00: begin
                             wr_mem_data = {24'h0,wr_mem_data_temp[7:0]};
                             wr_mem_mask = 4'b0001;
@@ -216,7 +223,7 @@ always_comb begin
                     endcase
                 end
                 `INST_SH: begin
-                    case (mem_addr[1])
+                    case (access_addr[1])
                         1'b0: begin
                             wr_mem_data = {16'h0,wr_mem_data_temp[15:0]};
                             wr_mem_mask = 4'b0011;

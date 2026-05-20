@@ -5,7 +5,6 @@ module EX_MEM #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
-    parameter ALIGN_BYTES = `ALIGN_BYTES,
     localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
  )( 
     input   logic                           clk,
@@ -20,7 +19,6 @@ module EX_MEM #(
     input   logic   [DATA_WIDTH-1:0]        wr_reg_data_i,
     input   logic                           access_en_i,
     input   logic                           access_wr_i,
-
 `ifdef BRANCH_JUMP_DELAYED
     // ====================================================================
     // BRANCH_JUMP_DELAYED 模式下：

@@ -32,6 +32,7 @@ module Data_Hazard_Forward #(
     input   logic                           bus_sel,
     input   logic                           bus_rvalid,
     input   logic                           mem_access_ready,
+    input   logic                           bus_ready_r,
     // Load-Use冒险标志(停顿给pc_hold，if_id_hold，id_ex_clear)
     output  logic                           load_use_flag,
     output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
@@ -102,7 +103,7 @@ always_comb begin
         2'b00: alu_op1_o = alu_op1_from_id_ex;
         2'b01: alu_op1_o = wr_reg_data_wb;
         2'b10: alu_op1_o = wr_reg_data_mem;
-        2'b11: alu_op1_o = bus_rvalid ? wr_reg_data_wb : wr_reg_data_mem;  // bus_rvalid=bus_rvalid延迟1拍，此时WB已有数据
+        2'b11: alu_op1_o = (~bus_ready_r && ~access_wr_ex) ? wr_reg_data_wb : wr_reg_data_mem;  // bus_rvalid=bus_rvalid延迟1拍，此时WB已有数据
         default: alu_op1_o = alu_op1_from_id_ex;
     endcase
 end
@@ -112,7 +113,7 @@ always_comb begin
         2'b00: alu_op2_o = alu_op2_from_id_ex;
         2'b01: alu_op2_o = wr_reg_data_wb;
         2'b10: alu_op2_o = wr_reg_data_mem;
-        2'b11: alu_op2_o = bus_rvalid ? wr_reg_data_wb : wr_reg_data_mem;
+        2'b11: alu_op2_o = (~bus_ready_r && ~access_wr_ex) ? wr_reg_data_wb : wr_reg_data_mem;
         default: alu_op2_o = alu_op2_from_id_ex;
     endcase
 end
@@ -122,7 +123,7 @@ always_comb begin
         2'b00: wr_mem_data = rd_rs2_data_ex;
         2'b01: wr_mem_data = wr_reg_data_wb;
         2'b10: wr_mem_data = wr_reg_data_mem;
-        2'b11: wr_mem_data = bus_rvalid ? wr_reg_data_wb : wr_reg_data_mem;
+        2'b11: wr_mem_data = (~bus_ready_r && ~access_wr_ex) ? wr_reg_data_wb : wr_reg_data_mem;
         default: wr_mem_data = rd_rs2_data_ex;
     endcase
 end

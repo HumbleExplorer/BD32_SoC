@@ -58,11 +58,9 @@ logic                       mul_div_ready;
 logic   [DATA_WIDTH-2:0]    exception_code_if;
 logic   [DATA_WIDTH-2:0]    exception_code_id;
 logic   [DATA_WIDTH-2:0]    exception_code_ex;
-logic   [DATA_WIDTH-2:0]    exception_code_mem;
 logic   [DATA_WIDTH-1:0]    exception_val_if;
 logic   [DATA_WIDTH-1:0]    exception_val_id;
 logic   [DATA_WIDTH-1:0]    exception_val_ex;
-logic   [DATA_WIDTH-1:0]    exception_val_mem;
 logic                       pc_stall;
 logic                       ctrl_jump_en;
 logic   [ADDR_WIDTH-1:0]    ctrl_jump_addr;
@@ -114,7 +112,6 @@ logic   [ADDR_WIDTH-1:0]    predict_target_id;
 logic   [DATA_WIDTH-1:0]    alu_op1_id;
 logic   [DATA_WIDTH-1:0]    alu_op2_id;
 logic   [DATA_WIDTH-1:0]    imm_id;
-logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_id;
 logic                       access_en_id;
 logic                       access_wr_id;
 logic                       wr_reg_en_id;
@@ -140,7 +137,7 @@ logic   [ADDR_WIDTH-1:0]    jump_imm_ex;
 logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_ex;
 logic                       access_en_ex;
 logic                       access_wr_ex;
-logic   [ADDR_WIDTH-1:0]    mem_addr_ex;
+logic   [ADDR_WIDTH-1:0]    access_addr_ex;
 logic   [2:0]               rd_mem_func3_ex;
 logic   [DATA_WIDTH-1:0]    wr_mem_data_ex;
 logic   [ALIGN_BYTES-1:0]   wr_mem_mask_ex;
@@ -158,7 +155,9 @@ logic                       branch_taken_ex;
 logic   [ADDR_WIDTH-1:0]    branch_target_ex;
 logic   [1:0]               branch_inst_type_ex;
 logic                       branch_req_ex;
+`ifdef BRANCH_JUMP_DELAYED
 logic                       branch_predict_success_ex;
+`endif
 logic                       push_ras_ex;
 logic                       pop_ras_ex;
 
@@ -185,8 +184,8 @@ logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_mem;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_mem;
 logic   [DATA_WIDTH-1:0]    func3_expanded_data;
 logic   [DATA_WIDTH-1:0]    wr_reg_selected_data_mem;   // MUX2 output: load data or ALU result
-logic                       access_en;                  // EX/MEM delayed, used by Data_Hazard_Forward
-logic                       access_wr;                  // EX/MEM delayed, used by Data_Hazard_Forward
+logic                       access_en_mem;                  // EX/MEM delayed, used by Data_Hazard_Forward
+logic                       access_wr_mem;                  // EX/MEM delayed, used by Data_Hazard_Forward
 `ifdef BRANCH_JUMP_DELAYED
 logic                       is_fence_i_mem;
 logic                       branch_taken_mem;
@@ -203,14 +202,13 @@ logic                       bus_sel;
 logic                       dtcm_rvalid;
 logic                       bus_rvalid;
 // MEM/WB bypass for bus loads (wr_reg_en/addr from EX stage, bypassing EX/MEM)
-logic                       mem_wb_wr_reg_en;
-logic   [REG_ADDR_WIDTH-1:0]mem_wb_wr_reg_addr;
+logic                       wr_reg_selected_en_mem;
+logic   [REG_ADDR_WIDTH-1:0]wr_reg_selected_addr_mem;
 
 
 // WB
 logic   [ADDR_WIDTH-1:0]    inst_addr_wb;
 logic   [DATA_WIDTH-1:0]    inst_wb;
-logic   [DATA_WIDTH-1:0]    wr_reg_data_wb;
 logic                       bus_rvalid_wb;
 
 Pipeline_Ctrl #(
@@ -224,11 +222,11 @@ Pipeline_Ctrl #(
     .branch_jump_en      	(branch_jump_en_ex    ),
     .branch_jump_addr    	(branch_jump_addr_ex  ),
 `endif
-    .access_wr_ex           (access_wr_ex         ),
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
     .priv_mode           	(priv_mode            ),
     .load_use_flag       	(load_use_flag        ),
+    .bus_transfer        	(bus_transfer         ),
     .mem_access_ready    	(mem_access_ready     ),
     .mul_div_ready       	(mul_div_ready        ),
     .inst_addr_if        	(inst_addr_if         ),
@@ -238,11 +236,9 @@ Pipeline_Ctrl #(
     .exception_code_if   	(exception_code_if    ),
     .exception_code_id   	(exception_code_id    ),
     .exception_code_ex   	(exception_code_ex    ),
-    .exception_code_mem  	(exception_code_mem   ),
     .exception_val_if    	(exception_val_if     ),
     .exception_val_id    	(exception_val_id     ),
     .exception_val_ex    	(exception_val_ex     ),
-    .exception_val_mem   	(exception_val_mem    ),
     .pc_stall            	(pc_stall             ),
     .ctrl_jump_en        	(ctrl_jump_en         ),
     .ctrl_jump_addr      	(ctrl_jump_addr       ),
@@ -277,8 +273,8 @@ Data_Hazard_Forward #(
     .wr_reg_addr_ex     	(wr_reg_addr_ex     ),
     .access_en_ex       	(access_en_ex       ),
     .access_wr_ex       	(access_wr_ex       ),
-    .access_en_mem      	(access_en          ),
-    .access_wr_mem      	(access_wr          ),
+    .access_en_mem      	(access_en_mem          ),
+    .access_wr_mem      	(access_wr_mem          ),
     .wr_reg_en_mem      	(wr_reg_en_mem      ),
     .wr_reg_addr_mem    	(wr_reg_addr_mem    ),
     .wr_reg_en_wb       	(wr_reg_en          ),
@@ -289,7 +285,7 @@ Data_Hazard_Forward #(
     .wr_reg_data_mem    	(wr_reg_data_mem    ),
     .wr_reg_data_wb     	(wr_reg_data        ),
     .bus_sel                (bus_sel            ),
-    .bus_rvalid             (bus_rvalid_wb        ),
+    .bus_rvalid             (bus_rvalid_wb      ),
     .mem_access_ready       (mem_access_ready   ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
@@ -532,9 +528,13 @@ Executer #(
     .imm              	(imm_ex             ),
     .predict_taken    	(predict_taken_ex   ),
     .predict_target	    (predict_target_ex  ),
+`ifndef BRANCH_JUMP_DELAYED
     .is_fence_i         (is_fence_i_ex      ),
+`endif
     .rd_csr_data      	(rd_csr_data        ),
     .illegal_inst_csr   (illegal_inst_csr   ),
+    .access_wr        	(access_wr_ex       ),
+    .access_illegal     (access_illegal     ),
     .alu_op1          	(alu_op1_forward    ),
     .alu_op2          	(alu_op2_forward    ),
     .jump_imm         	(jump_imm_ex        ),
@@ -542,13 +542,15 @@ Executer #(
     .wr_mem_data_temp 	(wr_mem_data_temp   ),
     .mul_div_valid    	(mul_div_valid      ),
     .result_mul_div   	(result_mul_div     ),
+`ifndef BRANCH_JUMP_DELAYED
     .branch_jump_en     (branch_jump_en_ex  ),
     .branch_jump_addr   (branch_jump_addr_ex),
+`endif
     .exception_code  	(exception_code_ex  ),
     .exception_val   	(exception_val_ex   ),
     .mul_div_en       	(mul_div_en         ),
     .mul_div_func3    	(mul_div_func3      ),
-    .mem_addr         	(mem_addr_ex        ),
+    .access_addr        (access_addr_ex     ),
     .wr_mem_data      	(wr_mem_data_ex     ),
     .wr_mem_mask      	(wr_mem_mask_ex     ),
     .rd_mem_func3     	(rd_mem_func3_ex    ),
@@ -558,8 +560,10 @@ Executer #(
     .wfi_req            (wfi_req            ),
     .mret_req           (mret_req           ),
     .branch_taken       (branch_taken_ex    ),
-    .branch_target      (branch_target_ex   ),
-    .branch_predict_success(branch_predict_success_ex)
+    .branch_target      (branch_target_ex   )
+`ifndef BRANCH_JUMP_DELAYED,
+    .branch_predict_success_o(branch_predict_success_ex)
+`endif
 );
 
 mul_div #(
@@ -586,7 +590,7 @@ CSR_Reg_Access #(
     .CSR_ADDR_WIDTH (CSR_ADDR_WIDTH)
 )u_CSR_Reg_Access(
     .clk            	(clk                ),
-    .rst_n          	(rst_n         ),
+    .rst_n          	(rst_n              ),
     .access_csr_en      (access_csr_en      ),
     .csr_addr       	(csr_addr           ),
     .wr_csr_data    	(wr_csr_data        ),
@@ -611,8 +615,7 @@ CSR_Reg_Access #(
 EX_MEM #(
     .ADDR_WIDTH     (ADDR_WIDTH),
     .DATA_WIDTH     (DATA_WIDTH),
-    .REG_ADDR_WIDTH (REG_ADDR_WIDTH),
-    .ALIGN_BYTES    (ALIGN_BYTES)
+    .REG_ADDR_WIDTH (REG_ADDR_WIDTH)
 )u_EX_MEM(
     .clk            (clk),
     .rst_n          (rst_n),
@@ -649,8 +652,8 @@ EX_MEM #(
 `endif
     .inst_addr_o    (inst_addr_mem),
     .inst_o         (inst_mem),
-    .access_en_o    (access_en),
-    .access_wr_o    (access_wr),
+    .access_en_o    (access_en_mem),
+    .access_wr_o    (access_wr_mem),
     .wr_reg_en_o    (wr_reg_en_mem),
     .wr_reg_addr_o  (wr_reg_addr_mem),
     .wr_reg_data_o  (wr_reg_data_mem)
@@ -662,7 +665,7 @@ Mem_Access #(
 )u_Mem_Access(
     .clk                        (clk),
     .rst_n                      (rst_n),
-    .access_addr                (mem_addr_ex),
+    .access_addr                (access_addr_ex),
     .access_en                  (access_en_ex),
     .access_wr                  (access_wr_ex),
     .bus_tran_done              (bus_tran_done),
@@ -671,9 +674,8 @@ Mem_Access #(
     .rd_mem_func3               (rd_mem_func3_ex),
     .dtcm_sel                   (dtcm_sel),
     .bus_sel                    (bus_sel),
+    .access_illegal             (access_illegal),
     .mem_access_ready           (mem_access_ready),
-    .exception_code             (exception_code_mem),
-    .exception_val              (exception_val_mem),
     .func3_expanded_data        (func3_expanded_data),
     .dtcm_rvalid                (dtcm_rvalid),
     .bus_rvalid                 (bus_rvalid)
@@ -689,7 +691,7 @@ DTCM #(
 )u_DTCM(
     .clk        (clk),
     .rst_n      (rst_n),
-    .access_addr(mem_addr_ex),
+    .access_addr(access_addr_ex),
     `ifdef BRANCH_JUMP_DELAYED
     .wr_en      (access_wr_ex && dtcm_sel && ~ex_mem_flush && ~ex_mem_stall),
     `else
@@ -708,8 +710,8 @@ DTCM #(
 assign wr_reg_selected_data_mem = (dtcm_rvalid || bus_rvalid) ? func3_expanded_data : wr_reg_data_mem;
 
 // MEM/WB wr_reg_en/wr_reg_addr bypass: bus loads skip EX/MEM, DTCM/ALU go through EX/MEM
-assign mem_wb_wr_reg_en   = bus_rvalid ? wr_reg_en_ex   : wr_reg_en_mem;
-assign mem_wb_wr_reg_addr = bus_rvalid ? wr_reg_addr_ex : wr_reg_addr_mem;
+assign wr_reg_selected_en_mem   = bus_rvalid ? wr_reg_en_ex   : wr_reg_en_mem;
+assign wr_reg_selected_addr_mem = bus_rvalid ? wr_reg_addr_ex : wr_reg_addr_mem;
 
 MEM_WB #(
     .ADDR_WIDTH     (ADDR_WIDTH),
@@ -722,8 +724,8 @@ MEM_WB #(
     .flush          (mem_wb_flush),
     .inst_addr_i    (inst_addr_mem),
     .inst_i         (inst_mem),
-    .wr_reg_en_i    (mem_wb_wr_reg_en),
-    .wr_reg_addr_i  (mem_wb_wr_reg_addr),
+    .wr_reg_en_i    (wr_reg_selected_en_mem),
+    .wr_reg_addr_i  (wr_reg_selected_addr_mem),
     .wr_reg_data_i  (wr_reg_selected_data_mem),
     .bus_rvalid_i   (bus_rvalid),
     .bus_rvalid_o   (bus_rvalid_wb),
@@ -731,11 +733,9 @@ MEM_WB #(
     .inst_addr_o    (inst_addr_wb),
     .wr_reg_en_o    (wr_reg_en),
     .wr_reg_addr_o  (wr_reg_addr),
-    .wr_reg_data_o  (wr_reg_data_wb)
+    .wr_reg_data_o  (wr_reg_data)
 );
 
-// 写回数据直接从 MEM/WB 寄存器输出，不再通过 WB_Arbiter
-assign wr_reg_data = wr_reg_data_wb;
 
 // bus_rvalid 经 MEM_WB 延迟一拍后给 Data_Hazard_Forward 做 bus_done
 logic bus_ready_r;
@@ -746,7 +746,7 @@ end
 assign bus_transfer   = bus_sel && (bus_ready_r && ~mem_access_ready);
 assign bus_access_write  = access_wr_ex;
 assign bus_access_wdata  = wr_mem_data_ex;
-assign bus_access_addr  = mem_addr_ex;
+assign bus_access_addr  = access_addr_ex;
 assign bus_access_wstrb  = wr_mem_mask_ex;
 
 
