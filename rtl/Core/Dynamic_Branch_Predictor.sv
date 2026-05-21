@@ -74,7 +74,7 @@ module Dynamic_Branch_Predictor #(
     input   logic                       stall,
 
     // From IF
-    input   logic   [ADDR_WIDTH-1:0]    pc,                 // IF阶段的PC
+    (* max_fanout = 32 *) input logic [ADDR_WIDTH-1:0] pc,  // IF阶段的PC (BTB tag比对fanout巨大)
 
     // From EX
     input   logic   [ADDR_WIDTH-1:0]    branch_pc,          // 分支指令PC

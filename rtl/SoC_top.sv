@@ -63,9 +63,9 @@ assign clk_soc = sys_clk;
 `endif
 
 // =========================================================================
-// 异步复位同步释放
+// 异步复位同步释放 + BUFG 全局缓冲
 // =========================================================================
-(* MAX_FANOUT = 32 *)logic rst_n_sync;
+logic rst_n_sync_pre;
 Cdc_Sync #(
     .WIDTH      (1),
     .RESET_VAL  (0),
@@ -74,8 +74,19 @@ Cdc_Sync #(
     .dst_clk    (clk_soc),
     .dst_rst_n  (rst_async_n),
     .async_sig  (1'b1),
-    .sync_sig   (rst_n_sync)
+    .sync_sig   (rst_n_sync_pre)
 );
+
+// BUFG：将同步释放后的复位推上全局时钟网络，降低 skew、减轻布线拥塞
+`ifdef XILINX
+wire rst_n_sync;
+BUFG u_rst_bufg (
+    .I (rst_n_sync_pre),
+    .O (rst_n_sync)
+);
+`else
+wire rst_n_sync = rst_n_sync_pre;
+`endif
 
 // =========================================================================
 // CPU 核心信号

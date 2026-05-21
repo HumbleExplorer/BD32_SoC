@@ -50,7 +50,7 @@ task uart_download_program(
     $display("File Path: %s", file_path);
     $display("==============================================================\n");
 
-    fd = $fopen(file_path, "r");
+    fd = $fopen(file_path, "rb");  // 二进制模式，避免 0x1A (Ctrl-Z) 误判 EOF
     if (fd == 0) begin
         $error("UART Download Error: Cannot open file %s", file_path);
         return;

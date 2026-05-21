@@ -31,11 +31,6 @@
 // `define FORWARD_C_EN
 
 // `define APB_ACCESS_DELAYED_DONE
-
-// AXI-Lite 响应打拍：在 rsp_* 输出处插寄存器，切断 AXI Bus → CPU 长组合路径
-// 增加 1 拍响应延迟，但大幅改善时序。Vivado 综合时启用。
-`define AXI_LITE_DELAYED_DONE
-
 // `define GPIO_SIM
 // `define TIMER_SIM
 
@@ -64,7 +59,7 @@
         `define TCM_Reg_or_BRAM "BRAM"
     `endif
 `else
-    `define DIRECT_LOAD  // 注释掉则走 UART 下载
+    // `define DIRECT_LOAD  // 注释掉则走 UART 下载
     // `define DEBUG
     `define PATH "../../test_data/"
     `define ITCM_DEPTH 16*1024//8K

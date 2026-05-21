@@ -13,13 +13,13 @@ module PC_counter #(
     input   logic                       predict_taken,
     input   logic   [DATA_WIDTH-1:0]    predict_target,
     input   logic                       stall,
-    output  logic   [ADDR_WIDTH-1:0]    pc,          // 下一条指令地址（给 ROM/RAM，提前一拍送地址）
+    (* MAX_FANOUT = 16 *)output  logic   [ADDR_WIDTH-1:0]    pc,          // 下一条指令地址（给 ROM/RAM，提前一拍送地址）
     output  logic   [DATA_WIDTH-2:0]    exception_code,
     output  logic   [DATA_WIDTH-1:0]    exception_val,
     output  logic   [ADDR_WIDTH-1:0]    inst_addr_o  // 当前指令地址（给流水线，= 上一拍 pc）
 );
 
-logic [ADDR_WIDTH-1:0] inst_addr;
+(* MAX_FANOUT = 16 *)logic [ADDR_WIDTH-1:0] inst_addr;
 
 // 异常检查基于 inst_addr（已寄存器化的当前取指地址），避免与 pc 形成组合回路
 assign exception_code = (inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_TAG || inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_TAG) ?

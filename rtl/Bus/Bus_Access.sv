@@ -1,14 +1,10 @@
 `include "./../SoC_Config.sv"
 `timescale 1ns / 1ps
 // =============================================================================
-// Bus_Access - BIU 顶层
+// Bus_Access - BIU 顶层（薄封装）
 // =============================================================================
-// 将 CPU 的 Request-Response 同步阻塞接口转换为 AXI4 总线事务
+// CPU 侧直通 → AXI_Lite_Master（请求/响应寄存器均在 AXI_Lite_Master 内部）
 // 对外连接 AXI_Interconnect，由其路由到 MROM/APB Bridge/Flash/DDR
-//
-// CPU 侧接口：
-//   i_transfer + i_write + i_addr + i_wdata + i_wmask → req_valid + req_write + ...
-//   o_rdata + o_tran_done ← rsp_rdata + rsp_valid
 // =============================================================================
 
 module Bus_Access #(
@@ -89,7 +85,17 @@ module Bus_Access #(
 );
 
     // =========================================================================
-    // 实例化 AXI_Lite_Master
+    // CPU 侧直通 → AXI_Lite_Master（输入寄存器已移入 AXI_Lite_Master）
+    // =========================================================================
+    logic                      axi_rsp_valid;
+    logic                      axi_rsp_error;
+    logic [DATA_WIDTH-1:0]     axi_rsp_rdata;
+
+    assign o_tran_done = axi_rsp_valid;
+    assign o_rdata     = axi_rsp_rdata;
+
+    // =========================================================================
+    // AXI_Lite_Master
     // =========================================================================
     AXI_Lite_Master #(
         .ADDR_WIDTH  (ADDR_WIDTH  ),
@@ -98,19 +104,19 @@ module Bus_Access #(
         .ID_WIDTH    (ID_WIDTH    ),
         .LEN_WIDTH   (LEN_WIDTH   )
     ) u_AXI_Lite_Master (
-        .clk          (clk         ),
-        .rst_n        (rst_n       ),
+        .clk          (clk           ),
+        .rst_n        (rst_n         ),
 
-        // CPU 侧
-        .req_valid    (i_transfer  ),
-        .req_write    (i_write     ),
-        .req_addr     (i_addr      ),
-        .req_wdata    (i_wdata     ),
-        .req_wstrb    (i_wmask     ),
-        .req_ready    (),                       // CPU 不需要背压（同步阻塞）
-        .rsp_valid    (o_tran_done ),
-        .rsp_error    (),
-        .rsp_rdata    (o_rdata     ),
+        // CPU 侧（直通，寄存器在 AXI_Lite_Master 内部）
+        .req_valid    (i_transfer    ),
+        .req_write    (i_write       ),
+        .req_addr     (i_addr        ),
+        .req_wdata    (i_wdata       ),
+        .req_wstrb    (i_wmask       ),
+        .req_ready    (),
+        .rsp_valid    (axi_rsp_valid ),
+        .rsp_error    (axi_rsp_error ),
+        .rsp_rdata    (axi_rsp_rdata ),
 
         // AXI Master → Interconnect
         .m_awid       (o_awid      ),
