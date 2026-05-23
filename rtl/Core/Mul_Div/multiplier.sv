@@ -27,7 +27,7 @@ typedef enum logic [3:0] {
     CLA_CALC  = 4'b0100,
     DONE      = 4'b1000
 } state_t;
-(*MAX_FANOUT=32*)state_t state;
+(*MAX_FANOUT = 32*)state_t state;
 
 //==========================================================================
 // 信号定义：完全保留原乘法器所有核心运算信号，无删减、无修改
@@ -55,7 +55,7 @@ logic   a_sign_en;  // a_i的符号使能：1=有符号(补符号位)，0=无符
 logic   b_sign_en;  // b_i的符号使能：1=有符号(补符号位)，0=无符号(补0)
 logic   [DATA_WIDTH-1:0] a_reg;
 logic   [DATA_WIDTH-1:0] b_reg;
-logic   start;
+(*MAX_FANOUT = 32*)logic   start;
 assign  a_sign_en = (func3_mode_i == 2'b00) || (func3_mode_i == 2'b01) || (func3_mode_i == 2'b10);
 assign  b_sign_en = (func3_mode_i == 2'b00) || (func3_mode_i == 2'b01);
 

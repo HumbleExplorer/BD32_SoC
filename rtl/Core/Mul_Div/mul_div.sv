@@ -32,7 +32,7 @@ logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr_reg;    // 锁存上一次运算的�
 logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr_reg;    // 锁存上一次运算的操作数b_i
 logic   [DATA_WIDTH*2-1:0]      full_result_reg;    // 锁存上一次运算的完整64位结果
 logic   [2:0]                   op_func3_reg;       // 锁存上一次运算的func3_i指令编码
-logic                           fuse_hit;    // 融合命中标志：1=命中融合指令，0=正常独立运算
+(* MAX_FANOUT = 16 *)logic                           fuse_hit;    // 融合命中标志：1=命中融合指令，0=正常独立运算
 logic   [DATA_WIDTH*2-1:0]      full_result_sel;// 选择后的64位源结果（融合/独立运算）
 
 assign mul_en = (!func3_i[2] && enable) && ~fuse_hit;// 融合命中时关闭乘法使能

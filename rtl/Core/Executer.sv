@@ -9,6 +9,8 @@ module Executer #(
     parameter ALIGN_BYTES = `ALIGN_BYTES,
     parameter ALIGN_WIDTH = `ALIGN_WIDTH
 )(
+    input   logic                           clk,
+    input   logic                           rst_n,
     // from id_ex
     input   logic   [ADDR_WIDTH-1:0]        inst_addr,
     input   logic   [DATA_WIDTH-1:0]        inst,
@@ -24,16 +26,14 @@ module Executer #(
     input   logic                           illegal_inst_csr,
     // from MEM
     input   logic                           access_illegal,
-    // from data_hazard
+    // from data_hazard (register values + addresses)
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op1,
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op2,
+    input   logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr,
+    input   logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr,
     input   logic   [ADDR_WIDTH-1:0]        jump_imm,       // 预计算分支目标
     input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4,// 预计算 PC+4
     input   logic   [DATA_WIDTH-1:0]        wr_mem_data_temp,
-
-    // from mul_div
-    input   logic                           mul_div_valid,
-    input   logic   [DATA_WIDTH-1:0]        result_mul_div,
     // to ctrl
     `ifndef BRANCH_JUMP_DELAYED
     output  logic                           branch_jump_en,//实际上是否跳转
@@ -41,9 +41,7 @@ module Executer #(
     `endif
     output  logic   [DATA_WIDTH-2:0]        exception_code,
     output  logic   [DATA_WIDTH-1:0]        exception_val,
-    // to mul_div
-    output  logic                           mul_div_en,
-    output  logic   [2:0]                   mul_div_func3,
+    output  logic                           mul_div_ready,
     // to mem
     output  logic   [ADDR_WIDTH-1:0]        access_addr,
     output  logic   [DATA_WIDTH-1:0]        wr_mem_data,
@@ -94,6 +92,11 @@ assign  sr_shift_mask   =   {DATA_WIDTH{1'b1}} >> alu_op2[4:0];
 assign  access_addr = alu_op1 + imm;
 // assign  access_addr_misalign = |access_addr[ALIGN_WIDTH-1:0];
 assign  rd_mem_func3 = func3;
+logic                       mul_div_en;
+logic   [2:0]               mul_div_func3;
+logic                       mul_div_valid;
+logic   [DATA_WIDTH-1:0]    result_mul_div;
+
 assign  mul_div_en = (opcode == `INST_TYPE_R_M) && (func7 == 7'b0000001);
 assign  mul_div_func3 = func3;
 
@@ -307,5 +310,26 @@ always_comb begin
         `INST_NOP_OP:;
     endcase
 end
+
+    // =========================================================================
+    // mul_div 乘法除法单元
+    // =========================================================================
+    mul_div #(
+        .DATA_WIDTH     	(DATA_WIDTH),
+        .REG_ADDR_WIDTH 	(REG_ADDR_WIDTH)
+    ) u_mul_div (
+        .clk         	(clk            ),
+        .rst_n       	(rst_n          ),
+        .enable      	(mul_div_en     ),
+        .rd_rs1_addr 	(rd_rs1_addr    ),
+        .rd_rs2_addr 	(rd_rs2_addr    ),
+        .wr_rd_addr  	(wr_reg_addr    ),
+        .func3_i     	(mul_div_func3  ),
+        .a_i         	(alu_op1        ),
+        .b_i         	(alu_op2        ),
+        .result_o    	(result_mul_div ),
+        .data_valid  	(mul_div_valid  ),
+        .ready       	(mul_div_ready  )
+    );
     
 endmodule

@@ -35,7 +35,7 @@ module Data_Hazard_Forward #(
     input   logic                           bus_ready_r,
     // Load-Use冒险标志(停顿给pc_hold，if_id_hold，id_ex_clear)
     output  logic                           load_use_flag,
-    output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
+    (* MAX_FANOUT = 16 *)output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
     output  logic   [DATA_WIDTH-1:0]        alu_op2_o,
     output  logic   [DATA_WIDTH-1:0]        wr_mem_data_temp
 );

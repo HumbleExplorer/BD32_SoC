@@ -31,7 +31,7 @@ module CSR_Reg_Access #(
     output  logic                           illegal_inst_csr,
 // to ctrl
     output  logic   [1:0]                   priv_mode,//特权模式 0：U；  1：S；  3：M
-    output  logic                           trap_jump,
+    (* MAX_FANOUT = 16 *)output  logic                           trap_jump,
     output  logic   [DATA_WIDTH-1:0]        trap_jump_addr
 // to CLINT
 );

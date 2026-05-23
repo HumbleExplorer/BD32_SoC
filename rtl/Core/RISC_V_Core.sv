@@ -163,13 +163,6 @@ logic                       push_ras_ex;
 logic                       pop_ras_ex;
 
 
-
-// Mul_Div
-logic                       mul_div_en;
-logic   [2:0]               mul_div_func3;
-logic   [DATA_WIDTH-1:0]    result_mul_div;
-logic                       mul_div_valid;
-
 //CSR
 logic                       access_csr_en;
 logic   [CSR_ADDR_WIDTH-1:0]csr_addr;
@@ -529,6 +522,8 @@ Executer #(
     .ALIGN_BYTES    	(ALIGN_BYTES   ),
     .ALIGN_WIDTH    	(ALIGN_WIDTH   )
 )u_Executer(
+    .clk                (clk                ),
+    .rst_n              (rst_n              ),
     .inst_addr        	(inst_addr_ex       ),
     .inst             	(inst_ex            ),
     .imm              	(imm_ex             ),
@@ -543,19 +538,18 @@ Executer #(
     .access_illegal     (access_illegal     ),
     .alu_op1          	(alu_op1_forward    ),
     .alu_op2          	(alu_op2_forward    ),
+    .rd_rs1_addr        (rd_rs1_addr_ex     ),
+    .rd_rs2_addr        (rd_rs2_addr_ex     ),
     .jump_imm         	(jump_imm_ex        ),
     .inst_addr_plus_4   (inst_addr_plus_4_ex),
     .wr_mem_data_temp 	(wr_mem_data_temp   ),
-    .mul_div_valid    	(mul_div_valid      ),
-    .result_mul_div   	(result_mul_div     ),
 `ifndef BRANCH_JUMP_DELAYED
     .branch_jump_en     (branch_jump_en_ex  ),
     .branch_jump_addr   (branch_jump_addr_ex),
 `endif
     .exception_code  	(exception_code_ex  ),
     .exception_val   	(exception_val_ex   ),
-    .mul_div_en       	(mul_div_en         ),
-    .mul_div_func3    	(mul_div_func3      ),
+    .mul_div_ready      (mul_div_ready      ),
     .access_addr        (access_addr_ex     ),
     .wr_mem_data      	(wr_mem_data_ex     ),
     .wr_mem_mask      	(wr_mem_mask_ex     ),
@@ -570,24 +564,6 @@ Executer #(
 `ifndef BRANCH_JUMP_DELAYED,
     .branch_predict_success_o(branch_predict_success_ex)
 `endif
-);
-
-mul_div #(
-    .DATA_WIDTH     	(DATA_WIDTH),
-    .REG_ADDR_WIDTH 	(REG_ADDR_WIDTH)
-)u_mul_div(
-    .clk         	(clk            ),
-    .rst_n       	(rst_n          ),
-    .enable      	(mul_div_en     ),
-    .rd_rs1_addr 	(rd_rs1_addr_ex ),
-    .rd_rs2_addr 	(rd_rs2_addr_ex ),
-    .wr_rd_addr  	(wr_reg_addr_ex ),
-    .func3_i     	(mul_div_func3  ),
-    .a_i         	(alu_op1_forward),
-    .b_i         	(alu_op2_forward),
-    .result_o    	(result_mul_div ),
-    .data_valid  	(mul_div_valid  ),
-    .ready       	(mul_div_ready  )
 );
 
 CSR_Reg_Access #(

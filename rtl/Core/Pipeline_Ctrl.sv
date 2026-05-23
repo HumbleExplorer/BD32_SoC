@@ -36,8 +36,8 @@ module Pipeline_Ctrl #(
     input   logic   [DATA_WIDTH-1:0]    exception_val_ex,
 
     // to pc
-    output  logic                       pc_stall,
-    output  logic                       ctrl_jump_en,
+    (* MAX_FANOUT = 16 *)output  logic                       pc_stall,
+    (* MAX_FANOUT = 16 *)output  logic                       ctrl_jump_en,
     output  logic   [ADDR_WIDTH-1:0]    ctrl_jump_addr,
     // to pipeline reg
     (* MAX_FANOUT = 16 *)output  logic                       if_id_stall,
@@ -50,7 +50,7 @@ module Pipeline_Ctrl #(
     (* MAX_FANOUT = 16 *)output  logic                       mem_wb_flush,
     // to CSR
     output  logic   [ADDR_WIDTH-1:0]    exception_inst_addr,
-    output  logic                       exception_trap,
+    (* MAX_FANOUT = 16 *)output  logic                       exception_trap,
     output  logic   [DATA_WIDTH-2:0]    exception_code,
     output  logic   [DATA_WIDTH-1:0]    exception_val,
     output  logic   [ADDR_WIDTH-1:0]    next_inst_addr
@@ -141,7 +141,7 @@ end
 assign next_inst_addr = trap_jump ? trap_jump_addr :
                         branch_jump_en ? branch_jump_addr :
                         inst_addr_id;
-assign exception_trap = ~exception_code[DATA_WIDTH-2];
+assign exception_trap = ~(exception_code_if[DATA_WIDTH-2] && exception_code_id[DATA_WIDTH-2] && exception_code_ex[DATA_WIDTH-2]);
 
 always_comb begin
     pc_stall        = 1'b0;

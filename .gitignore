@@ -10,3 +10,6 @@ ip_repo/
 archive/
 **/~$*
 **/*.log
+*.xlsx
+**/tools/*
+**/build/*

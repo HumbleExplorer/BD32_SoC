@@ -51,7 +51,7 @@ module Dynamic_Branch_Predictor #(
     parameter ADDR_WIDTH = `ADDR_WIDTH, // 地址宽度
     parameter DATA_WIDTH = `DATA_WIDTH,  // 数据宽度
     parameter ALIGN_WIDTH = `ALIGN_WIDTH, // 字节对齐宽度
-    parameter BTB_ENTRIES = 256,        // BTB表项数 (必须为2的幂)
+    parameter BTB_ENTRIES = 128,        // BTB表项数 (必须为2的幂，原256→128减MUX树深度)
     parameter PHT_ENTRIES = 128,        // PHT表项数 (必须为2的幂)
     parameter RAS_DEPTH = 8,            // 返回地址堆栈深度
     localparam GHR_WIDTH = $clog2(PHT_ENTRIES),            // 全局历史寄存器宽度
@@ -74,7 +74,7 @@ module Dynamic_Branch_Predictor #(
     input   logic                       stall,
 
     // From IF
-    (* max_fanout = 32 *) input logic [ADDR_WIDTH-1:0] pc,  // IF阶段的PC (BTB tag比对fanout巨大)
+    (* max_fanout = 16 *) input logic [ADDR_WIDTH-1:0] pc,  // IF阶段的PC (BTB tag比对fanout巨大)
 
     // From EX
     input   logic   [ADDR_WIDTH-1:0]    branch_pc,          // 分支指令PC
@@ -87,7 +87,7 @@ module Dynamic_Branch_Predictor #(
     input   logic                       pop_ras,     // ret
 
     // To IF
-    output  logic                       predict_taken,      // 预测的跳转方向
+    (* max_fanout = 16 *)output  logic                       predict_taken,      // 预测的跳转方向
     output  logic   [ADDR_WIDTH-1:0]    predict_target     // 预测的目标地址
 
 
@@ -215,7 +215,7 @@ assign predict_target = (predict_btb_hit && btb_pop_ras_array[predict_btb_idx]) 
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        // 复位: 初始化所有PHT表项为"弱不跳转"
+        // 复位: 初始化所有PHT表项为"弱不跳转"（仿真用，综合跳过减复位树）
         for (int i = 0; i < PHT_ENTRIES; i++) begin
             pht_array[i] <= #1 WEAKLY_NOT_TAKEN;
         end
@@ -291,11 +291,13 @@ end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || is_fence_i) begin//fence.i后不再使用旧的跳转属性
-        // 复位: 清空所有BTB表项
+        // 复位: 清空所有BTB表项（valid必须复位；tag/target/PHT综合跳过，减复位树）
         for (int i = 0; i < BTB_ENTRIES; i++) begin
             btb_valid_array[i]      <= #1 1'b0;
+`ifndef SYNTHESIS
             btb_tag_array[i]        <= #1 'h0;
             btb_target_array[i]     <= #1 'h0;
+`endif
             btb_inst_type_array[i]  <= #1 2'b00;
             btb_push_ras_array[i]   <= #1 1'b0;
             btb_pop_ras_array[i]    <= #1 1'b0;
