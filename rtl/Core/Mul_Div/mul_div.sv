@@ -28,6 +28,7 @@ logic                           div_valid;
 logic   [1:0]                   func3_mode_i;
 logic   [DATA_WIDTH*2-1:0]      mul_o;
 logic   [DATA_WIDTH*2-1:0]      quot_rem_o;
+logic                           data_valid_reg;    // 使能信号锁存
 logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr_reg;    // 锁存上一次运算的操作数a_i
 logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr_reg;    // 锁存上一次运算的操作数b_i
 logic   [DATA_WIDTH*2-1:0]      full_result_reg;    // 锁存上一次运算的完整64位结果
@@ -40,13 +41,16 @@ assign div_en = (func3_i[2]  && enable) && ~fuse_hit;// 融合命中时关闭除
 assign func3_mode_i = func3_i[1:0];
 assign data_valid   = mul_valid || div_valid;
 assign ready        = data_valid || ~enable;
+
 //==========================================================================
 // 3. 融合运算核心：锁存寄存器 + 融合检测信号【少量寄存器，无额外运算开销】
 //==========================================================================
-
+always_ff @(posedge clk) begin
+    data_valid_reg <= #1 data_valid;
+end
 // 融合检测核心逻辑
 // 规则：使能+源寄存器地址相同+读写寄存器不同+是融合指令对(MULHx+MUL / DIVx+REMx)
-assign fuse_hit = enable && (rd_rs1_addr == rd_rs1_addr_reg) && (rd_rs2_addr == rd_rs2_addr_reg)
+assign fuse_hit = enable && data_valid_reg && (rd_rs1_addr == rd_rs1_addr_reg) && (rd_rs2_addr == rd_rs2_addr_reg)
                     && (rd_rs1_addr != wr_rd_addr) && (rd_rs2_addr != wr_rd_addr) // 读和写的不能是一个寄存器
                     && (((op_func3_reg == `INST_MULH  && func3_i == `INST_MUL)
                     ||   (op_func3_reg == `INST_MULHU && func3_i == `INST_MUL)

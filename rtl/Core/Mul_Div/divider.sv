@@ -15,7 +15,7 @@ module divider #(
 
 typedef enum logic [2:0] {
     IDLE      = 3'b001,
-    CALCULATE = 3'b010,   // 等待 AW/W 都完成
+    CALCULATE = 3'b010,   // 等待计算完成
     DONE      = 3'b100   // 等待写响应
 } state_t;
 
