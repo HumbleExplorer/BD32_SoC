@@ -197,7 +197,7 @@ always_ff @(posedge PCLK,negedge PRESETn)
 //Writing a '1' clears the status register
 always_ff @(posedge PCLK,negedge PRESETn)
     if      (!PRESETn                  ) tr_status_reg <= #1 {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(TR_STAT)) tr_status_reg <= #1 get_clearonwrite_value(tr_status_reg) | tr_status;
+    else if ( is_write_to_addr(TR_STAT)) tr_status_reg <= #1 get_clearonwrite_value(tr_status_reg);
     else                                 tr_status_reg <= #1 tr_status_reg | tr_status;
 
 

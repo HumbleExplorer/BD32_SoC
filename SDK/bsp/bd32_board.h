@@ -6,8 +6,8 @@
 #define BD32_BOARD_H
 
 /* 板载 LED */
-#define PIN_LED0         (1 << 3)
-#define PIN_LED1         (1 << 4)
+#define PIN_LED0         (1 << 3) /* H15 */
+#define PIN_LED1         (1 << 4) /* J16 */
 #define LED_MASK         (PIN_LED0 | PIN_LED1)
 
 /* 按键 */

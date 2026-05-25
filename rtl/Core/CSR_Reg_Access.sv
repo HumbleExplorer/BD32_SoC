@@ -15,6 +15,8 @@ module CSR_Reg_Access #(
 // from ctrl
     input   logic   [ADDR_WIDTH-1:0]        exception_inst_addr,
     input   logic   [ADDR_WIDTH-1:0]        next_inst_addr,//IF/ID或者jump_addr
+    input   logic                           bus_access_ready,
+    input   logic                           mul_div_ready,
 // from EX
     input   logic                           wfi_req,
     input   logic                           mret_req,
@@ -32,7 +34,8 @@ module CSR_Reg_Access #(
 // to ctrl
     output  logic   [1:0]                   priv_mode,//特权模式 0：U；  1：S；  3：M
     (* MAX_FANOUT = 16 *)output  logic                           trap_jump,
-    output  logic   [DATA_WIDTH-1:0]        trap_jump_addr
+    output  logic   [DATA_WIDTH-1:0]        trap_jump_addr,
+    output  logic                           waiting_int
 // to CLINT
 );
 
@@ -55,13 +58,13 @@ logic                       mcycle_clear;
 logic                       minstret_clear;
 
 logic   external_int_trap, software_int_trap, timer_int_trap;
-logic   trap_occur;
-logic   trap_return;
 logic   [DATA_WIDTH-1:0] mcause_temp;
 logic   [DATA_WIDTH-1:0] int_jump_addr;
 logic                    int_trap_latched;   // 中断延迟1拍：本周期预算地址，下周期触发
 logic           int_come;
-logic           waiting_int;
+logic           exception_jump;
+logic           int_waiting_jump;
+logic           int_trap_jump;
 
 // 优先级：外部中断>软件中断>定时器中断
 assign external_int_trap = mstatus[3] & mip[11] & mie[11];
@@ -69,16 +72,22 @@ assign software_int_trap = mstatus[3] & mip[3] & mie[3] & (!external_int_trap);
 assign timer_int_trap    = mstatus[3] & mip[7] & mie[7] & (!external_int_trap & !software_int_trap);
 assign int_trap     = external_int_trap | software_int_trap | timer_int_trap;
 assign int_come     = (mip[11] & mie[11]) | (mip[3] & mie[3]) | (mip[7] & mie[7]);
-assign waiting_int  = (!int_come & wfi_req);
+
 
 assign priv_mode = mstatus[12:11];
-assign trap_occur = exception_trap | int_trap;
-assign trap_return = mret_req;
-// 异常：本周期立即触发；中断：延迟1拍（预计算地址，指令边界响应）
-assign trap_jump = exception_trap | int_trap_latched | trap_return;
+assign exception_jump = exception_trap;
+// 异常：本周期立即触发；中断：延迟1拍（预计算地址，指令边界响应）,但多周期指令和总线指令需要等待。
+assign trap_jump = exception_jump | int_trap_jump | mret_req;
 
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        waiting_int <= #1 1'b0;
+    end else begin
+        waiting_int <= #1 wfi_req ? 1'b1 :(!int_come & waiting_int);
+    end
+end
 always_comb begin 
-    if (exception_trap)
+    if (exception_jump)
         mcause_temp = {1'b0,exception_code};
     else if (external_int_trap)
         mcause_temp = {1'd1,31'd11};
@@ -91,11 +100,11 @@ always_comb begin
 end
 
 always_comb begin
-    if (exception_trap)
+    if (exception_jump)
         trap_jump_addr = {mtvec[31:2], 2'b00};              // 异常：直接模式，无加法
     else if (mret_req)
         trap_jump_addr = mepc;
-    else if (int_trap_latched)
+    else if (int_trap_jump)
         trap_jump_addr = int_jump_addr;                      // 中断：上一周期预计算值
     else
         trap_jump_addr = 'h0;
@@ -104,13 +113,16 @@ end
 // 中断预计算：int_trap 有效且无异常时，锁存 trap 地址（CARRY4 不参与关键路径）
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        int_trap_latched <= 1'b0;
-        int_jump_addr    <= 'h0;
+        int_waiting_jump <= #1 1'b0;
+        int_jump_addr    <= #1 'h0;
+        int_trap_jump    <= #1 1'b0;
     end else begin
-        int_trap_latched <= exception_trap ? 1'b0 : int_trap;                     // 锁存中断
-        int_jump_addr <= mtvec[0]                         // 本周期预计算，下周期直接用
-                        ? ({mtvec[31:2] + mcause_temp[3:0], 2'b00})
-                        : {mtvec[31:2], 2'b00};
+        int_waiting_jump <= #1 int_trap ? 1'b1 :
+                                (bus_access_ready & mul_div_ready) ? 1'b0 :
+                                int_waiting_jump;
+        int_trap_jump   <= #1 (int_waiting_jump | int_trap) && (bus_access_ready & mul_div_ready);
+        int_jump_addr   <= #1 int_trap ?(mtvec[0]                         // 本周期预计算，下周期直接用
+                        ? ({mtvec[31:2] + mcause_temp[3:0], 2'b00}) : {mtvec[31:2], 2'b00}) : int_jump_addr;
     end
 end
 
@@ -129,17 +141,16 @@ always_ff @(posedge clk or negedge rst_n) begin
         minstret_clear      <= #1 'h0;
     end else begin//优先级：异常>外部中断>软件中断>定时器中断
         mip     <= #1 {mip[31:12],external_int,mip[10:8],timer_int,mip[6:4],software_int,mip[2:0]};
-        mcause  <= #1 mcause_temp;//写入异常原因 
+        mcause  <= #1 mcause_temp;//写入异常原因
         if (exception_trap) begin//进入异常
             mstatus[7]  <= #1 mstatus[3];//MPIE <- MIE
             mstatus[3]  <= #1 1'b0;//禁用全局中断
             mepc        <= #1 exception_inst_addr;//保存异常PC值
             mtval       <= #1 exception_val;//保存异常信息
-        end else if (mret_req) begin//从异常返回
-            mepc        <= #1 'd0;
+        end else if (mret_req) begin//从异常返回 mepc保持不变
             mstatus[3]  <= #1 mstatus[7];//MIE <- MPIE
             mstatus[7]  <= #1 1'b1;
-        end else if(int_trap) begin
+        end else if(int_trap && !wfi_req) begin
             mepc        <= #1 next_inst_addr;
             mstatus[7]  <= #1 mstatus[3];
             mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus
@@ -215,6 +226,5 @@ always_ff @(posedge clk or negedge rst_n) begin
     else
         minstret <= #1 minstret + 'h1;
 end
-
 
 endmodule

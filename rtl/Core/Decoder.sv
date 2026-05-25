@@ -44,7 +44,9 @@ logic [4:0] rs1;
 logic [4:0] rs2;
 logic [4:0] rd;
 logic [6:0] func7;
+logic [11:0]func12;
 logic [11:0]zimm;
+
 
 logic       invalid_inst;
 logic       ecall_req;
@@ -74,6 +76,7 @@ assign  func3   = inst[14:12];
 assign  rs1     = inst[19:15];
 assign  rs2     = inst[24:20];
 assign  func7   = inst[31:25];
+assign  func12  = inst[31:20];
 assign  zimm    = inst[31:20];
 
 assign  rd_link = (rd == 'd1 || rd == 'd5);
@@ -206,9 +209,10 @@ always_comb    begin
             endcase
         end
         `INST_SYSTEM:begin
-            csr_addr = zimm;
+            
             case(func3)
                 `INST_CSRRW, `INST_CSRRS, `INST_CSRRC:begin
+                    csr_addr        = zimm;
                     wr_reg_en       = 1'b1;
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
@@ -219,6 +223,7 @@ always_comb    begin
                     alu_op2         = 'h0;
                 end
                 `INST_CSRRWI, `INST_CSRRSI, `INST_CSRRCI:begin
+                    csr_addr        = zimm;
                     wr_reg_en       = 1'b1;
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
@@ -229,7 +234,7 @@ always_comb    begin
                     alu_op2         = 'h0;
                 end
                 `INST_PRIV: begin
-                    case(zimm)
+                    case(func12)
                         `INST_EBREAK: ebreak_req = 1'b1;
                         `INST_ECALL :  ecall_req = 1'b1;
                         `INST_WFI,`INST_MRET : ;

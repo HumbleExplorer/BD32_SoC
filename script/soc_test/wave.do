@@ -12,6 +12,8 @@ add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_RegFile/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Executer/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Mem_Access/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_DTCM/*
+add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_CSR_Reg_Access/*
+add wave -noupdate /tb_soc_top/u_SoC_top/u_PLIC/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_AXI_Interconnect/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_AXI_APB_Bridge/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_Bus_Access/*
@@ -33,4 +35,3 @@ configure wave -griddelta 40
 configure wave -timeline 0
 configure wave -timelineunits ps
 update
-WaveRestoreZoom {171250 ps} {308267 ps}

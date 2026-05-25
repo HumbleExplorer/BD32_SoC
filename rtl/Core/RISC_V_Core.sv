@@ -52,8 +52,9 @@ logic   [ADDR_WIDTH-1:0]    branch_jump_addr_mem;
 (* MAX_FANOUT = 16 *) logic                       trap_jump;
 logic   [ADDR_WIDTH-1:0]    trap_jump_addr;
 logic   [1:0]               priv_mode;
+logic                       waiting_int;
 (* MAX_FANOUT = 16 *) logic                       load_use_flag;
-logic                       mem_access_ready;
+logic                       bus_access_ready;
 logic                       mul_div_ready;
 
 logic   [DATA_WIDTH-2:0]    exception_code_if;
@@ -62,6 +63,7 @@ logic   [DATA_WIDTH-2:0]    exception_code_ex;
 logic   [DATA_WIDTH-1:0]    exception_val_if;
 logic   [DATA_WIDTH-1:0]    exception_val_id;
 logic   [DATA_WIDTH-1:0]    exception_val_ex;
+
 (* MAX_FANOUT = 16 *) logic                       pc_stall;
 logic                       ctrl_jump_en;
 logic   [ADDR_WIDTH-1:0]    ctrl_jump_addr;
@@ -196,7 +198,6 @@ logic                       bus_sel;
 logic                       dtcm_rvalid;
 logic                       bus_rvalid;
 logic                       bus_rvalid_r1;
-logic                       bus_rvalid_r2;
 logic                       bus_ready_r;
 // MEM/WB bypass for bus loads (wr_reg_en/addr from EX stage, bypassing EX/MEM)
 logic                       wr_reg_selected_en_mem;
@@ -214,6 +215,7 @@ Pipeline_Ctrl #(
     .ADDR_WIDTH(ADDR_WIDTH),
     .DATA_WIDTH(DATA_WIDTH)
 )u_Pipeline_Ctrl(
+    .clk            (clk),
 `ifdef BRANCH_JUMP_DELAYED
     .branch_jump_en      	(branch_jump_en_mem),
     .branch_jump_addr    	(branch_jump_addr_mem),
@@ -224,8 +226,11 @@ Pipeline_Ctrl #(
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
     .priv_mode           	(priv_mode            ),
+    .waiting_int           	(waiting_int          ),
     .load_use_flag       	(load_use_flag        ),
-    .mem_access_ready    	(mem_access_ready     ),
+    .branch_taken           (branch_taken_ex      ),
+    .branch_target          (branch_target_ex     ),
+    .bus_access_ready    	(bus_access_ready     ),
     .mul_div_ready       	(mul_div_ready        ),
     .inst_addr_if        	(inst_addr_if         ),
     .inst_addr_id        	(inst_addr_id         ),
@@ -283,9 +288,8 @@ Data_Hazard_Forward #(
     .wr_reg_data_mem    	(wr_reg_data_mem    ),
     .wr_reg_data_wb     	(wr_reg_data_wb     ),
     .bus_sel                (bus_sel            ),
-    .bus_rvalid             (bus_rvalid_r1      ),
-    .mem_access_ready       (mem_access_ready   ),
-    .bus_ready_r            (bus_ready_r        ),
+    .bus_rvalid_r1          (bus_rvalid_r1      ),
+    .bus_access_ready       (bus_access_ready   ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
     .alu_op2_o          	(alu_op2_forward    ),
@@ -579,6 +583,8 @@ CSR_Reg_Access #(
     .rd_csr_data    	(rd_csr_data        ),
     .exception_inst_addr(exception_inst_addr),
     .next_inst_addr 	(next_inst_addr     ),
+    .bus_access_ready   (bus_access_ready   ),
+    .mul_div_ready      (mul_div_ready      ),
     .wfi_req        	(wfi_req            ),
     .mret_req       	(mret_req           ),
     .exception_trap 	(exception_trap     ),
@@ -591,7 +597,8 @@ CSR_Reg_Access #(
     .illegal_inst_csr   (illegal_inst_csr   ),
     .priv_mode      	(priv_mode          ),
     .trap_jump      	(trap_jump          ),
-    .trap_jump_addr 	(trap_jump_addr     )
+    .trap_jump_addr 	(trap_jump_addr     ),
+    .waiting_int        (waiting_int        )
 );
 
 EX_MEM #(
@@ -610,6 +617,7 @@ EX_MEM #(
     .wr_reg_data_i  (wr_reg_data_ex),
     .access_en_i    (access_en_ex),
     .access_wr_i    (access_wr_ex),
+    .bus_sel        (bus_sel),
 `ifdef BRANCH_JUMP_DELAYED
     .inst_addr_plus_4_i   (inst_addr_plus_4_ex),
     .is_fence_i_i         (is_fence_i_ex),
@@ -657,7 +665,7 @@ Mem_Access #(
     .dtcm_sel                   (dtcm_sel),
     .bus_sel                    (bus_sel),
     .access_illegal             (access_illegal),
-    .mem_access_ready           (mem_access_ready),
+    .bus_access_ready           (bus_access_ready),
     .func3_expanded_data        (func3_expanded_data),
     .dtcm_rvalid                (dtcm_rvalid),
     .bus_rvalid                 (bus_rvalid)
@@ -709,8 +717,6 @@ MEM_WB #(
     .wr_reg_en_i    (wr_reg_selected_en_mem),
     .wr_reg_addr_i  (wr_reg_selected_addr_mem),
     .wr_reg_data_i  (wr_reg_selected_data_mem),
-    .bus_rvalid_i   (bus_rvalid),
-    .bus_rvalid_o   (bus_rvalid_r1),
     .inst_o         (inst_wb),
     .inst_addr_o    (inst_addr_wb),
     .wr_reg_en_o    (wr_reg_en_wb),
@@ -719,17 +725,17 @@ MEM_WB #(
 );
 
 assign wr_reg_data = bus_rvalid ? wr_reg_data_mem : wr_reg_data_wb;
-assign wr_reg_en   = bus_rvalid ? wr_reg_en_mem   : (wr_reg_en_wb && ~bus_rvalid_r2);
+assign wr_reg_en   = bus_rvalid ? wr_reg_en_mem   : wr_reg_en_wb;
 assign wr_reg_addr = bus_rvalid ? wr_reg_addr_mem : wr_reg_addr_wb;
 
 
 // bus_rvalid 经 MEM_WB 延迟一拍后给 Data_Hazard_Forward 做 bus_done
 always_ff @(posedge clk) begin
-    bus_ready_r <= #1 mem_access_ready;
-    bus_rvalid_r2 <= #1 bus_rvalid_r1;
+    bus_ready_r <= #1 bus_access_ready;
+    bus_rvalid_r1 <= #1 bus_rvalid;
 end
 
-assign bus_transfer   = (bus_ready_r && ~mem_access_ready) && ~ex_mem_flush;
+assign bus_transfer   = (bus_ready_r && ~bus_access_ready) && ~ex_mem_flush;
 assign bus_access_write  = access_wr_ex;
 assign bus_access_wdata  = wr_mem_data_ex;
 assign bus_access_addr  = access_addr_ex;

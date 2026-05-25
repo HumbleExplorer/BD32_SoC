@@ -11,17 +11,21 @@ module Pipeline_Ctrl #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH
 )(
-    // from EX
+    input   logic                       clk,
+    // from EX/MEM
     input   logic                       branch_jump_en,
     input   logic   [ADDR_WIDTH-1:0]    branch_jump_addr,
     // from CSR
     input   logic                       trap_jump,
     input   logic   [ADDR_WIDTH-1:0]    trap_jump_addr,
     input   logic   [1:0]               priv_mode,
+    input   logic                       waiting_int,
     // from Forward
     input   logic                       load_use_flag,
     // from EX
-    input   logic                       mem_access_ready,
+    input   logic                       branch_taken,
+    input   logic   [ADDR_WIDTH-1:0]    branch_target,
+    input   logic                       bus_access_ready,
     input   logic                       mul_div_ready,
     // from IF/ID/EX
     (* MAX_FANOUT = 16 *)(* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_if,
@@ -55,6 +59,7 @@ module Pipeline_Ctrl #(
     output  logic   [DATA_WIDTH-1:0]    exception_val,
     output  logic   [ADDR_WIDTH-1:0]    next_inst_addr
 );
+
 
 function automatic [3:0] get_priority;
     input [1:0] stage; // 0:IF, 1:ID, 2:EX
@@ -98,7 +103,7 @@ assign priority_ex = exception_code_ex[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(
 
 always_comb begin
     min_priority = 4'd15;
-    sel_stage = 2'd0;
+    sel_stage = 2'd3;
     if (priority_ex < min_priority) begin
         min_priority = priority_ex;
         sel_stage = 2'd2;
@@ -138,9 +143,12 @@ always_comb begin
     endcase
 end
 
-assign next_inst_addr = trap_jump ? trap_jump_addr :
-                        branch_jump_en ? branch_jump_addr :
-                        inst_addr_id;
+logic branch_jump_en_r;
+always_ff @(posedge clk) begin
+    branch_jump_en_r <= branch_jump_en;
+end
+// 中断处理的下一条指令地址选择（不受停顿影响，受冲刷影响）
+assign next_inst_addr = branch_jump_en ? branch_jump_addr : branch_taken ? branch_target : branch_jump_en_r ? inst_addr_if : inst_addr_id;
 assign exception_trap = ~(exception_code_if[DATA_WIDTH-2] && exception_code_id[DATA_WIDTH-2] && exception_code_ex[DATA_WIDTH-2]);
 
 always_comb begin
@@ -155,13 +163,7 @@ always_comb begin
     mem_wb_stall    = 1'b0;
     mem_wb_flush    = 1'b0;
     ctrl_jump_addr  = `BOOT_BASE_TAG;
-    if(trap_jump) begin
-        if_id_flush = 1'b1;
-        id_ex_flush = 1'b1;
-        ex_mem_flush = 1'b1;
-        ctrl_jump_en = 1'b1;
-        ctrl_jump_addr = trap_jump_addr;
-    end else if (branch_jump_en) begin
+    if (branch_jump_en) begin
         if_id_flush  = 1'b1;
         id_ex_flush  = 1'b1;
     `ifdef BRANCH_JUMP_DELAYED
@@ -169,7 +171,13 @@ always_comb begin
     `endif 
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = branch_jump_addr;
-    end else if (~mem_access_ready) begin
+    end else if(trap_jump) begin
+        if_id_flush = 1'b1;
+        id_ex_flush = (sel_stage >= 2'd1);
+        ex_mem_flush = (sel_stage >= 2'd2);
+        ctrl_jump_en = 1'b1;
+        ctrl_jump_addr = trap_jump_addr;
+    end else if (waiting_int || ~bus_access_ready || ~mul_div_ready) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
@@ -179,10 +187,6 @@ always_comb begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_flush     = 1'b1;
-    end else if (~mul_div_ready) begin
-        pc_stall        = 1'b1;
-        if_id_stall     = 1'b1;
-        id_ex_stall     = 1'b1;
     end
 end
 

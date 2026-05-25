@@ -20,6 +20,7 @@ localparam  SAMPLE_PER_BIT = 16;
 logic   clk;
 logic   rst_n;
 logic   download_en;
+logic   key0_val;
 wire    [GPIO_NUM-1:0]  gpio_io;
 // GPIO[0] (MODE_SEL) 浮空，BootROM 读到 0 → 进入 UART 下载模式
 // 注：GPIO_SIM 模式下 gpio_io 不连到 apb_gpio（用 gpio_i/gpio_o/gpio_oe 替代）
@@ -35,6 +36,9 @@ logic   [DATA_WIDTH-1:0] itcm_mem [0:`ITCM_DEPTH-1];
 integer inst_cnt; // 实际读取的指令条数
 // GPIO[0] (MODE_SEL): download_en=1 模拟跳线帽接3.3V → UART下载模式
 assign  gpio_io[0] = download_en;
+
+/* KEY0 模拟: 三态驱动 (z = 不驱动，外部上拉) */
+assign  gpio_io[1] = key0_val;
 assign download_done = tb_soc_top.u_SoC_top.u_apb_uart.download_done;
 
 // ------------------------ UART下载ITCM程序的核心Task ------------------------
@@ -227,6 +231,25 @@ initial  begin
     uart_download_program(ITCM_FULL_PATH);
 `endif
     #200;
+end
+
+/* KEY0 模拟: 等 UART 开始输出（中断已开）后再按 */
+initial begin
+    key0_val = 1;  /* 初始高 */
+    wait(tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mstatus[3]
+     && tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mie[11]);
+    #10000000;
+    key0_val = 0;  /* 按下 */
+    #5000000;
+    key0_val = 1;  /* 松开 */
+    #5000000;
+    key0_val = 0;  /* 按下 */
+    #5000000;
+    key0_val = 1;  /* 松开 */
+    #5000000;
+    key0_val = 0;  /* 按下 */
+    #5000000;
+    key0_val = 1;  /* 松开 */
 end
 
 SoC_top #(

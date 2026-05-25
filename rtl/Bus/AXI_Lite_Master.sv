@@ -149,9 +149,6 @@ module AXI_Lite_Master #(
     logic take_req;
     assign take_req = req_valid && req_ready;
 
-    // 写事务中记录 AW/W 是否已完成
-    logic aw_done, w_done;
-
         // ── 状态寄存器 ──
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) state <= IDLE;

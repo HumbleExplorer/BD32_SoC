@@ -19,6 +19,7 @@ module EX_MEM #(
     input   logic   [DATA_WIDTH-1:0]        wr_reg_data_i,
     input   logic                           access_en_i,
     input   logic                           access_wr_i,
+    input   logic                           bus_sel,
 `ifdef BRANCH_JUMP_DELAYED
     // ====================================================================
     // BRANCH_JUMP_DELAYED 模式下：
@@ -112,7 +113,7 @@ always_ff @(posedge clk or negedge rst_n) begin
 `endif
     end else begin
         if(flush) begin
-            inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+            inst_addr_o     <= #1 inst_addr_i;
             inst_o          <= #1 `INST_NOP;
             access_en_o     <= #1 1'b0;
             access_wr_o     <= #1 1'b0;
@@ -149,7 +150,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 inst_o          <= #1 inst_i;
                 access_en_o     <= #1 access_en_i;
                 access_wr_o     <= #1 access_wr_i;
-                wr_reg_en_o     <= #1 wr_reg_en_i;
+                wr_reg_en_o     <= #1 bus_sel ? 1'b0 : wr_reg_en_i;
                 wr_reg_addr_o   <= #1 wr_reg_addr_i;
                 wr_reg_data_o   <= #1 wr_reg_data_i;
             end

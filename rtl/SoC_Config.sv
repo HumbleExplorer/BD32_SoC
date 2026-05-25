@@ -34,7 +34,7 @@
 // `define GPIO_SIM
 // `define TIMER_SIM
 
-// `define DIRECT_LOAD  // 注释掉则走 UART 下载
+`define DIRECT_LOAD  // 注释掉则走 UART 下载
 // `define XILINX
 // `define SIMULATION
 `ifdef XILINX
@@ -66,8 +66,8 @@
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
     `ifdef DIRECT_LOAD
-        `define ITCM_FILE "custom/empty.mem"
-        `define DTCM_FILE "custom/empty.mem"
+        `define ITCM_FILE "custom/breathing_itcm.mem"
+        `define DTCM_FILE "custom/breathing_dtcm.mem"
         `define ITCM_DIRECT_LOAD
     `else
         `define ITCM_FILE "custom/empty.uartbin"

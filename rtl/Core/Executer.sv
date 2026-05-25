@@ -67,6 +67,7 @@ logic   [4:0]               rd;
 logic   [2:0]               func3;
 logic   [4:0]               zimm;
 logic   [6:0]               func7;
+logic   [11:0]              func12;
 logic                       equal;
 logic                       less_signed;
 logic                       less_unsigned;
@@ -82,6 +83,7 @@ assign  rd              =   inst[11:7];
 assign  func3           =   inst[14:12];
 assign  zimm            =   inst[19:15];
 assign  func7           =   inst[31:25];
+assign  func12          =   inst[31:20];
 assign  equal           =   (alu_op1 == alu_op2);
 assign  less_signed     =   ($signed(alu_op1) < $signed(alu_op2));
 assign  less_unsigned   =   (alu_op1 < alu_op2);
@@ -261,7 +263,9 @@ always_comb begin
                 `INST_CSRRSI:wr_csr_data = rd_csr_data | {27'h0,zimm};
                 `INST_CSRRCI:wr_csr_data = rd_csr_data & {~{27'h0,zimm}};
                 `INST_PRIV:
-                    case(zimm)
+                    case(func12)
+                        // `INST_EBREAK: ebreak_req = 1'b1;
+                        // `INST_ECALL :  ecall_req = 1'b1;
                         `INST_MRET: mret_req = 1'b1;
                         `INST_WFI:  wfi_req =  1'b1;
                     endcase
