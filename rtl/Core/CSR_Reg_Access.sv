@@ -36,6 +36,12 @@ module CSR_Reg_Access #(
     (* MAX_FANOUT = 16 *)output  logic                           trap_jump,
     output  logic   [DATA_WIDTH-1:0]        trap_jump_addr,
     output  logic                           waiting_int
+`ifdef ENABLE_HPM
+    ,
+    input   logic                           hpm_valid,
+    input   logic   [2:0]                   hpm_inst_type,
+    input   logic                           hpm_mispredict
+`endif
 // to CLINT
 );
 
@@ -43,8 +49,7 @@ module CSR_Reg_Access #(
 logic   [DATA_WIDTH-1:0]    mstatus;//状态0x300
 logic   [DATA_WIDTH-1:0]    mie;//中断使能0x304
 logic   [DATA_WIDTH-1:0]    mtvec;//中断向量（异常处理程序基地址）0x305
-logic   [DATA_WIDTH-1:0]    mcounteren;
-logic   [DATA_WIDTH-1:0]    mcountinhibit;
+
 //机器陷阱处理程序
 logic   [DATA_WIDTH-1:0]    mepc;//异常PC
 logic   [DATA_WIDTH-1:0]    mcause;//异常原因
@@ -54,13 +59,133 @@ logic   [DATA_WIDTH-1:0]    mip;//中断挂起
 //机器计数器/计时器
 logic   [2*DATA_WIDTH-1:0]  mcycle;
 logic   [2*DATA_WIDTH-1:0]  minstret;
-logic                       mcycle_clear;
-logic                       minstret_clear;
+logic   [DATA_WIDTH-1:0]    mcounteren;
+logic   [DATA_WIDTH-1:0]    mcountinhibit;
+logic   [DATA_WIDTH-1:0]    mcounterclr;
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)
+        mcycle <= #1 'h0;
+    else if(mcounterclr[0])
+        mcycle <= #1 'h0;
+    else if(mcountinhibit[0])
+        mcycle <= #1 mcycle;
+    else if (mcounteren[0])
+        mcycle <= #1 mcycle + 'h1;
+end
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)
+        minstret <= #1 'h0; 
+    else if(mcounterclr[2]) 
+        minstret <= #1 'h0;
+    else if(mcountinhibit[2])
+        minstret <= #1 minstret;
+    else if (hpm_valid && mcounteren[2])
+        minstret <= #1 minstret + 'h1;
+end
+
+`ifdef ENABLE_HPM
+// HPM 计数器（64位，0xBC3-0xBC9/0xC43-0xC49）
+// 各计数器受 mcounteren / mcountinhibit / mcounterclr 对应位控制
+//   mhp_counter3 (ALU)      0
+//   mhp_counter4 (LOAD)     1
+//   mhp_counter5 (STORE)    2
+//   mhp_counter6 (BRANCH)   3
+//   mhp_counter7 (JUMP)     4
+//   mhp_counter8 (MULDIV)   5
+//   mhp_counter9 (MISPREDICT) 6
+// WB 级指令类型: 0:OTHER 1:ALU 2:LOAD 3:STORE 4:BRANCH 5:JUMP 6:MULDIV
+logic   [2*DATA_WIDTH-1:0]  mhpmcounter[7];
+
+generate
+    genvar i;
+    for (i = 0; i < 6; i = i + 1) begin
+        always_ff @(posedge clk or negedge rst_n) begin
+            if(!rst_n) begin
+                mhpmcounter[i] <= #1 'h0;
+            end
+            else if(mcounterclr[i+3]) begin
+                mhpmcounter[i] <= #1 'h0;
+            end
+            else if(mcountinhibit[i+3]) begin
+                mhpmcounter[i] <= #1 mhpmcounter[i];
+            end
+            else if (hpm_valid && mcounteren[i+3] && hpm_inst_type == i+1) begin
+                mhpmcounter[i] <= #1 mhpmcounter[i] + 'h1;
+            end
+        end
+    end
+endgenerate
+
+// // ALU 运算计数器（mhp_counter3, bit 3）
+// always_ff @(posedge clk or negedge rst_n) begin
+//     if(!rst_n)                              mhpmcounter[0] <= #1 'h0;
+//     else if(mcounterclr[3])                 mhpmcounter[0] <= #1 'h0;
+//     else if(mcountinhibit[3])               mhpmcounter[0] <= #1 mhpmcounter[0];
+//     else if(hpm_valid && mcounteren[3] && hpm_inst_type == 3'd1)
+//                                             mhpmcounter[0] <= #1 mhpmcounter[0] + 'h1;
+// end
+
+// // Load 计数器（mhp_counter4, bit 4）
+// always_ff @(posedge clk or negedge rst_n) begin
+//     if(!rst_n)                              mhpmcounter[1] <= #1 'h0;
+//     else if(mcounterclr[4])                 mhpmcounter[1] <= #1 'h0;
+//     else if(mcountinhibit[4])               mhpmcounter[1] <= #1 mhpmcounter[1];
+//     else if(hpm_valid && mcounteren[4] && hpm_inst_type == 3'd2)
+//                                             mhpmcounter[1] <= #1 mhpmcounter[1] + 'h1;
+// end
+
+// // Store 计数器（mhp_counter5, bit 5）
+// always_ff @(posedge clk or negedge rst_n) begin
+//     if(!rst_n)                              mhpmcounter[2] <= #1 'h0;
+//     else if(mcounterclr[5])                 mhpmcounter[2] <= #1 'h0;
+//     else if(mcountinhibit[5])               mhpmcounter[2] <= #1 mhpmcounter[2];
+//     else if(hpm_valid && mcounteren[5] && hpm_inst_type == 3'd3)
+//                                             mhpmcounter[2] <= #1 mhpmcounter[2] + 'h1;
+// end
+
+// // 条件分支计数器（mhp_counter6, bit 6）
+// always_ff @(posedge clk or negedge rst_n) begin
+//     if(!rst_n)                              mhpmcounter[3] <= #1 'h0;
+//     else if(mcounterclr[6])                 mhpmcounter[3] <= #1 'h0;
+//     else if(mcountinhibit[6])               mhpmcounter[3] <= #1 mhpmcounter[3];
+//     else if(hpm_valid && mcounteren[6] && hpm_inst_type == 3'd4)
+//                                             mhpmcounter[3] <= #1 mhpmcounter[3] + 'h1;
+// end
+
+// // 跳转计数器（mhp_counter7, bit 7）
+// always_ff @(posedge clk or negedge rst_n) begin
+//     if(!rst_n)                              mhpmcounter[4] <= #1 'h0;
+//     else if(mcounterclr[7])                 mhpmcounter[4] <= #1 'h0;
+//     else if(mcountinhibit[7])               mhpmcounter[4] <= #1 mhpmcounter[4];
+//     else if(hpm_valid && mcounteren[7] && hpm_inst_type == 3'd5)
+//                                             mhpmcounter[4] <= #1 mhpmcounter[4] + 'h1;
+// end
+
+// // 乘除计数器（mhp_counter8, bit 8）
+// always_ff @(posedge clk or negedge rst_n) begin
+//     if(!rst_n)                              mhpmcounter[5] <= #1 'h0;
+//     else if(mcounterclr[8])                 mhpmcounter[5] <= #1 'h0;
+//     else if(mcountinhibit[8])               mhpmcounter[5] <= #1 mhpmcounter[5];
+//     else if(hpm_valid && mcounteren[8] && hpm_inst_type == 3'd6)
+//                                             mhpmcounter[5] <= #1 mhpmcounter[5] + 'h1;
+// end
+
+// 预测成功计数器（mhp_counter9, bit 9）
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                              mhpmcounter[6] <= #1 'h0;
+    else if(mcounterclr[9])                 mhpmcounter[6] <= #1 'h0;
+    else if(mcountinhibit[9])               mhpmcounter[6] <= #1 mhpmcounter[6];
+    else if(hpm_valid && mcounteren[9] && (hpm_inst_type == 3'd4 || hpm_inst_type == 3'd5) && hpm_mispredict)
+                                            mhpmcounter[6] <= #1 mhpmcounter[6] + 'h1;
+end
+
+`endif
 
 logic   external_int_trap, software_int_trap, timer_int_trap;
 logic   [DATA_WIDTH-1:0] mcause_temp;
 logic   [DATA_WIDTH-1:0] int_jump_addr;
-logic                    int_trap_latched;   // 中断延迟1拍：本周期预算地址，下周期触发
 logic           int_come;
 logic           exception_jump;
 logic           int_waiting_jump;
@@ -136,9 +261,8 @@ always_ff @(posedge clk or negedge rst_n) begin
         mtval               <= #1 'h0;
         mcounteren          <= #1 'h0;
         mcountinhibit       <= #1 'h0;
+        mcounterclr         <= #1 'h0;
         mip                 <= #1 'h0;
-        mcycle_clear        <= #1 'h0;
-        minstret_clear      <= #1 'h0;
     end else begin//优先级：异常>外部中断>软件中断>定时器中断
         mip     <= #1 {mip[31:12],external_int,mip[10:8],timer_int,mip[6:4],software_int,mip[2:0]};
         mcause  <= #1 mcause_temp;//写入异常原因
@@ -166,12 +290,8 @@ always_ff @(posedge clk or negedge rst_n) begin
                 // 12'h343  : mtval            <= #1 wr_csr_data;
                 // 12'h344  : mip              <= #1 wr_csr_data;
                 //自定义寄存器
-                12'hbc4  : begin
-
-                end
-                12'hbc5  : begin
-                    mcycle_clear            <= #1 wr_csr_data[0];
-                    minstret_clear          <= #1 wr_csr_data[2];
+                12'hbc0  : begin
+                    mcounterclr <= #1 wr_csr_data;
                 end
                 default  : ;
             endcase
@@ -197,34 +317,29 @@ always_comb begin
             12'hb80  : rd_csr_data = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
             12'hb02  : rd_csr_data = minstret[DATA_WIDTH-1:0];
             12'hb82  : rd_csr_data = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
+`ifdef ENABLE_HPM
+            // hpm_counter3-9 / 3h-9h (CSR 0xBC3-0xBC9 / 0xC43-0xC49)
+            12'hbc3  : rd_csr_data = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
+            12'hbc4  : rd_csr_data = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
+            12'hbc5  : rd_csr_data = mhpmcounter[2][DATA_WIDTH-1:0];  // STORE
+            12'hbc6  : rd_csr_data = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
+            12'hbc7  : rd_csr_data = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
+            12'hbc8  : rd_csr_data = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
+            12'hbc9  : rd_csr_data = mhpmcounter[6][DATA_WIDTH-1:0];  // 预测成功
+            // hpm_counter3h-9h (高32位)
+            12'hc43  : rd_csr_data = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc44  : rd_csr_data = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc45  : rd_csr_data = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc46  : rd_csr_data = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc47  : rd_csr_data = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc48  : rd_csr_data = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc49  : rd_csr_data = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+`endif
             default  : begin
                 illegal_inst_csr = 1'b1;
             end
         endcase
     end
-end
-
-
-always_ff @(posedge clk or negedge rst_n) begin
-    if(!rst_n)
-        mcycle <= #1 'h0;
-    else if(mcycle_clear)
-        mcycle <= #1 'h0;
-    else if(mcountinhibit[0])
-        mcycle <= #1 mcycle;
-    else
-        mcycle <= #1 mcycle + 'h1;
-end
-
-always_ff @(posedge clk or negedge rst_n) begin
-    if(!rst_n)
-        minstret <= #1 'h0; 
-    else if(minstret_clear) 
-        minstret <= #1 'h0;
-    else if(mcountinhibit[2])
-        minstret <= #1 minstret;
-    else
-        minstret <= #1 minstret + 'h1;
 end
 
 endmodule

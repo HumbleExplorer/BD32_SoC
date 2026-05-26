@@ -35,7 +35,14 @@ module Decoder #(
     //to Ctrl
     output  logic   [DATA_WIDTH-2:0]        exception_code,
     output  logic   [DATA_WIDTH-1:0]        exception_val
+
+`ifdef ENABLE_HPM
+    ,
+    output  logic   [2:0]                   inst_type           // 0:OTHER 1:ALU 2:LOAD 3:STORE 4:BR 5:JMP 6:MULDIV
+`endif
 );
+
+
 
 logic [6:0] opcode;
 // logic [4:0]     rd;
@@ -85,6 +92,23 @@ assign  rs1_eq_rd = (inst[19:15] == rd);
 
 assign  exception_code = invalid_inst ? 'h2 : ecall_req ? ((priv_mode == 2'b00) ? 'h8 : 'h11): ebreak_req ? 'h3 : {(DATA_WIDTH-1){1'b1}};
 assign  exception_val  = 'h0;
+
+`ifdef ENABLE_HPM
+always_comb begin
+    inst_type = 3'd0;
+    case(opcode)
+        `INST_TYPE_I:            inst_type = 3'd1;  // ALU
+        `INST_TYPE_R_M:          inst_type = func7[0] ? 3'd6 : 3'd1;  // MULDIV or ALU
+        `INST_TYPE_B:            inst_type = 3'd4;  // BRANCH
+        `INST_TYPE_S:            inst_type = 3'd3;  // STORE
+        `INST_TYPE_L:            inst_type = 3'd2;  // LOAD
+        `INST_JAL, `INST_JALR:  inst_type = 3'd5;  // JUMP
+        `INST_LUI, `INST_AUIPC:  inst_type = 3'd1;  // ALU
+        default:                 inst_type = 3'd0;  // OTHER
+    endcase
+end
+`endif
+
 always_comb begin
     case(opcode)
         `INST_TYPE_I,`INST_TYPE_L,`INST_JALR:

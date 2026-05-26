@@ -31,8 +31,13 @@ void _init(void) {
     /* 用户板级初始化 */
     board_init();
 
-    /* 使能 mcycle CSR 读取（BD32 的 mcycle 受 mcounteren[0] 控制，复位为 0） */
-    set_csr(mcounteren, 1);
+    /* 使能 mcycle + mhpm_counter3~9 CSR 读取 */
+    /* bit 0 = mcycle, bit 2 = minstret */
+    /* bit 3~9 = mhp_counter3~9 (ALU/LOAD/STORE/BRANCH/JUMP/MULDIV/PRED_OK) */
+    __asm__ volatile("li a0, %0\n"
+                     "csrrs x0, mcounteren, a0\n"
+                     : : "i"((1 << 0) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) |
+                             (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9)));
 
     /* 注意：这里不开 mstatus.MIE！
      * 由应用程序在 main 中合适时机手动开启：

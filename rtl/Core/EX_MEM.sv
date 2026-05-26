@@ -62,6 +62,14 @@ module EX_MEM #(
     output  logic                           wr_reg_en_o,
     output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_o,
     output  logic   [DATA_WIDTH-1:0]        wr_reg_data_o
+
+`ifdef ENABLE_HPM
+    ,
+    input   logic   [2:0]                   inst_type_i,
+    output  logic   [2:0]                   inst_type_o,
+    input   logic                           valid_i,
+    output  logic                           valid_o
+`endif
 );
 
 `ifdef BRANCH_JUMP_DELAYED
@@ -99,6 +107,9 @@ always_ff @(posedge clk or negedge rst_n) begin
         wr_reg_en_o     <= #1 1'b0;
         wr_reg_addr_o   <= #1 'h0;
         wr_reg_data_o   <= #1 'h0;
+`ifdef ENABLE_HPM
+        inst_type_o     <= #1 3'd0;
+`endif
 `ifdef BRANCH_JUMP_DELAYED
         is_fence_i_o           <= #1 1'b0;
         predict_taken_r        <= #1 1'b0;
@@ -120,6 +131,9 @@ always_ff @(posedge clk or negedge rst_n) begin
             wr_reg_en_o     <= #1 1'b0;
             wr_reg_addr_o   <= #1 'h0;
             wr_reg_data_o   <= #1 'h0;
+`ifdef ENABLE_HPM
+            inst_type_o     <= #1 3'd0;
+`endif
         `ifdef BRANCH_JUMP_DELAYED
             is_fence_i_o           <= #1 1'b0;
             predict_taken_r        <= #1 1'b0;
@@ -153,9 +167,20 @@ always_ff @(posedge clk or negedge rst_n) begin
                 wr_reg_en_o     <= #1 bus_sel ? 1'b0 : wr_reg_en_i;
                 wr_reg_addr_o   <= #1 wr_reg_addr_i;
                 wr_reg_data_o   <= #1 wr_reg_data_i;
+`ifdef ENABLE_HPM
+                inst_type_o     <= #1 inst_type_i;
+`endif
             end
         end
     end
 end
+
+`ifdef ENABLE_HPM
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                    valid_o <= #1 1'b0;
+    else if(flush)                valid_o <= #1 1'b0;
+    else if(!stall)               valid_o <= #1 valid_i;
+end
+`endif
 
 endmodule

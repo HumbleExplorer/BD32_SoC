@@ -89,7 +89,6 @@ logic   [DATA_WIDTH-1:0]    alu_op2_forward;
 logic   [DATA_WIDTH-1:0]    wr_mem_data_temp;
 logic   [DATA_WIDTH-1:0]    rs2_data_ex;
 
-
 //RegFile
 logic                       wr_reg_en;
 logic   [REG_ADDR_WIDTH-1:0]rd_rs1_addr;
@@ -210,6 +209,30 @@ logic   [DATA_WIDTH-1:0]    inst_wb;
 logic                       wr_reg_en_wb;
 logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_wb;
 logic   [DATA_WIDTH-1:0]    wr_reg_data_wb;
+
+
+`ifdef ENABLE_HPM
+// HPM：流水线 valid 链
+logic                       if_id_valid;
+logic                       id_ex_valid;
+logic                       ex_mem_valid;
+logic                       mem_wb_valid;
+logic                       hpm_valid;
+// HPM：指令类型（Decoder → ID_EX → EX_MEM → MEM_WB → CSR）
+logic   [2:0]               inst_type_id;
+logic   [2:0]               inst_type_ex;
+logic   [2:0]               inst_type_mem;
+logic   [2:0]               inst_type_wb;
+logic   [2:0]               hpm_inst_type;
+logic                       hpm_mispredict;
+`ifdef BRANCH_JUMP_DELAYED
+assign hpm_mispredict = ~branch_predict_success_mem;
+`else
+assign hpm_mispredict = ~branch_predict_success_ex;
+`endif
+assign hpm_valid = mem_wb_valid & ~mem_wb_stall;
+assign hpm_inst_type = inst_type_wb;
+`endif
 
 Pipeline_Ctrl #(
     .ADDR_WIDTH(ADDR_WIDTH),
@@ -415,6 +438,10 @@ IF_ID #(
     .inst_o             (inst_id),
     .predict_taken_o    (predict_taken_id),
     .predict_target_o   (predict_target_id)
+`ifdef ENABLE_HPM
+    ,
+    .valid_o            (if_id_valid)
+`endif
 );  
 
 Decoder #(
@@ -445,6 +472,10 @@ Decoder #(
     .pop_ras        (pop_ras_id),
     .exception_code (exception_code_id),
     .exception_val  (exception_val_id)
+`ifdef ENABLE_HPM
+    ,
+    .inst_type      (inst_type_id)
+`endif
 );
 
 RegFile #(
@@ -516,6 +547,13 @@ ID_EX #(
     .pop_ras_o      (pop_ras_ex),
     .rd_rs1_addr_o  (rd_rs1_addr_ex),
     .rd_rs2_addr_o  (rd_rs2_addr_ex)
+`ifdef ENABLE_HPM
+    ,
+    .inst_type_i    (inst_type_id),
+    .inst_type_o    (inst_type_ex),
+    .valid_i        (if_id_valid),
+    .valid_o        (id_ex_valid)
+`endif
 );
 
 Executer #(
@@ -599,6 +637,12 @@ CSR_Reg_Access #(
     .trap_jump      	(trap_jump          ),
     .trap_jump_addr 	(trap_jump_addr     ),
     .waiting_int        (waiting_int        )
+`ifdef ENABLE_HPM
+    ,
+    .hpm_valid          (hpm_valid          ),
+    .hpm_inst_type      (hpm_inst_type      ),
+    .hpm_mispredict(hpm_mispredict)
+`endif
 );
 
 EX_MEM #(
@@ -647,6 +691,13 @@ EX_MEM #(
     .wr_reg_en_o    (wr_reg_en_mem),
     .wr_reg_addr_o  (wr_reg_addr_mem),
     .wr_reg_data_o  (wr_reg_data_mem)
+`ifdef ENABLE_HPM
+    ,
+    .inst_type_i    (inst_type_ex),
+    .inst_type_o    (inst_type_mem),
+    .valid_i        (id_ex_valid),
+    .valid_o        (ex_mem_valid)
+`endif
 );
 
 Mem_Access #(
@@ -722,6 +773,13 @@ MEM_WB #(
     .wr_reg_en_o    (wr_reg_en_wb),
     .wr_reg_addr_o  (wr_reg_addr_wb),
     .wr_reg_data_o  (wr_reg_data_wb)
+`ifdef ENABLE_HPM
+    ,
+    .inst_type_i    (inst_type_mem),
+    .inst_type_o    (inst_type_wb),
+    .valid_i        (ex_mem_valid),
+    .valid_o        (mem_wb_valid)
+`endif
 );
 
 assign wr_reg_data = bus_rvalid ? wr_reg_data_mem : wr_reg_data_wb;

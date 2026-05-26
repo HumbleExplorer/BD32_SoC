@@ -305,8 +305,21 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 	    printf("CoreMark/MHz     : ");
 	    print_fixed_scaled((int32_t)((unsigned long)default_num_contexts * results[0].iterations * 100 / tt_cs), 100);
 	    printf("\n");
-	    printf("CPU Freq         : 100 MHz\n");
+	    printf("CPU Frequency    : 100 MHz\n");
 	}
+    /* HPM：分支预测率 */
+    {
+        uint32_t br_cnt  = read_csr(0xBC6);   // mhp_counter6: 条件分支总数
+        uint32_t br_mis  = read_csr(0xBC9);   // mhp_counter9: 预测失败次数
+        uint32_t br_ok   = br_cnt - br_mis;
+        printf("Total branches  : %u\n", br_cnt);
+        printf("Predict miss    : %u\n", br_mis);
+        if (br_cnt > 0) {
+            printf("Predict rate    : ");
+            print_fixed_scaled((int32_t)((unsigned long long)br_ok * 10000 / br_cnt), 100);
+            printf("%%\n");
+        }
+    }
 #endif
   // Remove error report if execution time low.
   // On Ibex a few loops suffices to get an accurate result. With this check in

@@ -60,6 +60,14 @@ module ID_EX #(
     //to Data_Hazard
     output  logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr_o,
     output  logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr_o
+
+`ifdef ENABLE_HPM
+    ,
+    input   logic   [2:0]                   inst_type_i,
+    output  logic   [2:0]                   inst_type_o,
+    input   logic                           valid_i,
+    output  logic                           valid_o
+`endif
 );
 
 always_ff @(posedge clk or negedge rst_n) begin
@@ -86,6 +94,9 @@ always_ff @(posedge clk or negedge rst_n) begin
         pop_ras_o       <= #1 1'b0;
         rd_rs1_addr_o   <= #1 'h0;
         rd_rs2_addr_o   <= #1 'h0;
+`ifdef ENABLE_HPM
+        inst_type_o     <= #1 3'd0;
+`endif
     end else if(flush) begin
         inst_addr_o     <= #1 inst_addr_i;
         inst_o          <= #1 `INST_NOP;
@@ -109,6 +120,9 @@ always_ff @(posedge clk or negedge rst_n) begin
         // pop_ras_o       <= #1 1'b0;
         // rd_rs1_addr_o   <= #1 'h0;
         // rd_rs2_addr_o   <= #1 'h0;
+`ifdef ENABLE_HPM
+        inst_type_o     <= #1 3'd0;
+`endif
     end else if (!stall) begin
         inst_addr_o     <= #1 inst_addr_i;
         inst_o          <= #1 inst_i;
@@ -132,6 +146,9 @@ always_ff @(posedge clk or negedge rst_n) begin
         pop_ras_o       <= #1 pop_ras_i;
         rd_rs1_addr_o   <= #1 rd_rs1_addr_i;
         rd_rs2_addr_o   <= #1 rd_rs2_addr_i;
+`ifdef ENABLE_HPM
+        inst_type_o     <= #1 inst_type_i;
+`endif
     end
     // else begin
     //     wr_reg_en_o     <= #1 1'b0;
@@ -139,5 +156,13 @@ always_ff @(posedge clk or negedge rst_n) begin
     //     access_csr_en_o <= #1 1'b0;
     // end
 end
+
+`ifdef ENABLE_HPM
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                    valid_o <= #1 1'b0;
+    else if(flush)                valid_o <= #1 1'b0;
+    else if(!stall)               valid_o <= #1 valid_i;
+end
+`endif
 
 endmodule
