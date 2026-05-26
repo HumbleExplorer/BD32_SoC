@@ -193,10 +193,10 @@ always_comb begin
             12'h342  : rd_csr_data = mcause;
             12'h343  : rd_csr_data = mtval;
             12'h344  : rd_csr_data = mip;
-            12'hb00  : rd_csr_data = mcounteren[0] ? mcycle[DATA_WIDTH-1:0] : 'h0;
-            12'hb80  : rd_csr_data = mcounteren[0] ? mcycle[2*DATA_WIDTH-1:DATA_WIDTH] : 'h0;
-            12'hb02  : rd_csr_data = mcounteren[2] ? minstret[DATA_WIDTH-1:0] : 'h0;
-            12'hb82  : rd_csr_data = mcounteren[2] ? minstret[2*DATA_WIDTH-1:DATA_WIDTH] : 'h0;
+            12'hb00  : rd_csr_data = mcycle[DATA_WIDTH-1:0];
+            12'hb80  : rd_csr_data = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hb02  : rd_csr_data = minstret[DATA_WIDTH-1:0];
+            12'hb82  : rd_csr_data = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
             default  : begin
                 illegal_inst_csr = 1'b1;
             end

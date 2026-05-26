@@ -66,8 +66,8 @@
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
     `ifdef DIRECT_LOAD
-        `define ITCM_FILE "custom/libc_test_itcm.mem"
-        `define DTCM_FILE "custom/libc_test_dtcm.mem"
+        `define ITCM_FILE "custom/coremark_itcm.mem"
+        `define DTCM_FILE "custom/coremark_dtcm.mem"
         `define ITCM_DIRECT_LOAD
     `else
         `define ITCM_FILE "custom/empty.uartbin"

@@ -16,6 +16,11 @@ void uart_putc(char c);
 void uart_puts(const char *s);
 void uart_puthex(uint32_t val);
 void uart_putdec(uint32_t val);
+void uart_put_fixed(int32_t val, int precision);
+
+/* printf 定点小数（需 newlib-nano）*/
+void print_fixed(int32_t val, int precision);
+void print_fixed_scaled(int32_t val, int32_t scale);
 
 /* ===================================================================
  * CLINT 接口（低层汇编 + 内联包装）

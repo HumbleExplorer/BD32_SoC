@@ -102,7 +102,7 @@ logic   [DATA_WIDTH-1:0]    result_mul_div;
 assign  mul_div_en = (opcode == `INST_TYPE_R_M) && (func7 == 7'b0000001);
 assign  mul_div_func3 = func3;
 
-assign exception_code =(illegal_inst_csr) ? 'h3 : access_illegal ? (access_wr ? 4'd7 : 4'd5) : {DATA_WIDTH-1{1'b1}};
+assign exception_code =(illegal_inst_csr) ? 'h2 : access_illegal ? (access_wr ? 4'd7 : 4'd5) : {DATA_WIDTH-1{1'b1}};
 assign exception_val = access_illegal ? access_addr : 'h0;
 `ifndef BRANCH_JUMP_DELAYED
 assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);

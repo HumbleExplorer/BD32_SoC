@@ -38,3 +38,22 @@ void uart_putdec(uint32_t val) {
     if (val >= 10) uart_putdec(val / 10);
     uart_putc('0' + (val % 10));
 }
+
+/* 打印定点小数: val = 整数部分放大 10^precision 倍 */
+/* 例: uart_put_fixed(250, 2) → "2.50" */
+void uart_put_fixed(int32_t val, int precision)
+{
+    if (val < 0) { uart_putc('-'); val = -val; }
+    int32_t divisor = 1;
+    for (int i = 0; i < precision; i++) divisor *= 10;
+    uart_putdec((uint32_t)(val / divisor));
+    if (precision > 0) {
+        uart_putc('.');
+        uint32_t frac = (uint32_t)(val % divisor);
+        uint32_t d = divisor / 10;
+        while (d > 0) {
+            uart_putc('0' + (frac / d) % 10);
+            d /= 10;
+        }
+    }
+}

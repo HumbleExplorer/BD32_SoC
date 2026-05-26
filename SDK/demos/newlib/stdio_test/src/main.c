@@ -37,6 +37,17 @@ int main(void)
     sprintf(buf, "%d + %d = %d, hex=%x, str=%s\r\n", 1, 2, 3, 0x10, "ok");
     uart_puts(buf);
 
+    /* 定点小数 */
+    printf("print_fixed: ");
+    print_fixed(250, 2);                  /* 2.50 */
+    printf(" ");
+    print_fixed(-3141, 3);                /* -3.141 */
+    printf("\r\nprint_fixed_scaled: ");
+    print_fixed_scaled(244070559, 1000000); /* 244.070559 */
+    printf(" ");
+    print_fixed_scaled(250, 100);          /* 2.5 */
+    printf("\r\n");
+
     uart_puts("PASS!\r\n");
     while (1);
     return 0;
