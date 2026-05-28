@@ -26,7 +26,7 @@ module Pipeline_Ctrl #(
     input   logic                       branch_taken,
     input   logic   [ADDR_WIDTH-1:0]    branch_target,
     input   logic                       bus_access_ready,
-    input   logic                       mul_div_ready,
+    input   logic                       oitf_stall,
     // from IF/ID/EX
     (* MAX_FANOUT = 16 *)(* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_if,
     (* MAX_FANOUT = 16 *)(* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_id,
@@ -177,7 +177,7 @@ always_comb begin
         ex_mem_flush = (sel_stage >= 2'd2);
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
-    end else if (waiting_int || ~bus_access_ready || ~mul_div_ready) begin
+    end else if (waiting_int || ~bus_access_ready || oitf_stall) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;

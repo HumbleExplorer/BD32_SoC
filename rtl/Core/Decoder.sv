@@ -18,6 +18,7 @@ module Decoder #(
     output  logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr,
     output  logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr,
     output  logic                           wr_reg_en,
+    output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr,
     //to instr execute
     output  logic   [DATA_WIDTH-1:0]        alu_op1,
     output  logic   [DATA_WIDTH-1:0]        alu_op2,
@@ -79,6 +80,7 @@ logic rs1_eq_rd;
 
 assign  opcode  = inst[6:0];
 assign  rd      = inst[11:7];
+assign  wr_reg_addr = wr_reg_en ? rd : '0;
 assign  func3   = inst[14:12];
 assign  rs1     = inst[19:15];
 assign  rs2     = inst[24:20];
@@ -102,7 +104,7 @@ always_comb begin
         `INST_TYPE_B:            inst_type = 3'd4;  // BRANCH
         `INST_TYPE_S:            inst_type = 3'd3;  // STORE
         `INST_TYPE_L:            inst_type = 3'd2;  // LOAD
-        `INST_JAL, `INST_JALR:  inst_type = 3'd5;  // JUMP
+        `INST_JAL, `INST_JALR:   inst_type = 3'd5;  // JUMP
         `INST_LUI, `INST_AUIPC:  inst_type = 3'd1;  // ALU
         default:                 inst_type = 3'd0;  // OTHER
     endcase

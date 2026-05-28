@@ -41,7 +41,14 @@ module Executer #(
     `endif
     output  logic   [DATA_WIDTH-2:0]        exception_code,
     output  logic   [DATA_WIDTH-1:0]        exception_val,
-    output  logic                           mul_div_ready,
+    // to OITF（长周期指令派发）
+    output  logic                           longpipe_valid,      // EX 阶段确认长周期指令
+    output  logic                           longpipe_is_div,     // 1=DIV  0=MUL
+    output  logic                           mul_ready,
+    output  logic                           div_ready,
+    output  logic                           mul_valid_wbck,
+    output  logic                           div_valid_wbck,
+    output  logic   [DATA_WIDTH-1:0]        result_wbck,
     // to mem
     output  logic   [ADDR_WIDTH-1:0]        access_addr,
     output  logic   [DATA_WIDTH-1:0]        wr_mem_data,
@@ -96,11 +103,11 @@ assign  access_addr = alu_op1 + imm;
 assign  rd_mem_func3 = func3;
 logic                       mul_div_en;
 logic   [2:0]               mul_div_func3;
-logic                       mul_div_valid;
-logic   [DATA_WIDTH-1:0]    result_mul_div;
 
 assign  mul_div_en = (opcode == `INST_TYPE_R_M) && (func7 == 7'b0000001);
 assign  mul_div_func3 = func3;
+assign  longpipe_valid = mul_div_en;
+assign  longpipe_is_div = func3[2];
 
 assign exception_code =(illegal_inst_csr) ? 'h2 : access_illegal ? (access_wr ? 4'd7 : 4'd5) : {DATA_WIDTH-1{1'b1}};
 assign exception_val = access_illegal ? access_addr : 'h0;
@@ -179,11 +186,7 @@ always_comb begin
                     end
                 endcase
             end
-            else if(func7 == 7'b0000001) begin//RV_M
-                if(mul_div_valid) begin
-                    wr_reg_data = result_mul_div;
-                    wr_reg_addr = rd;
-                end
+            else if(func7 == 7'b0000001) begin//RV_M → 结果走 OITF，不通过 wr_reg 路径
             end
         end
         `INST_TYPE_B: begin
@@ -315,25 +318,30 @@ always_comb begin
     endcase
 end
 
-    // =========================================================================
-    // mul_div 乘法除法单元
-    // =========================================================================
-    mul_div #(
-        .DATA_WIDTH     	(DATA_WIDTH),
-        .REG_ADDR_WIDTH 	(REG_ADDR_WIDTH)
-    ) u_mul_div (
-        .clk         	(clk            ),
-        .rst_n       	(rst_n          ),
-        .enable      	(mul_div_en     ),
-        .rd_rs1_addr 	(rd_rs1_addr    ),
-        .rd_rs2_addr 	(rd_rs2_addr    ),
-        .wr_rd_addr  	(wr_reg_addr    ),
-        .func3_i     	(mul_div_func3  ),
-        .a_i         	(alu_op1        ),
-        .b_i         	(alu_op2        ),
-        .result_o    	(result_mul_div ),
-        .data_valid  	(mul_div_valid  ),
-        .ready       	(mul_div_ready  )
-    );
+// =========================================================================
+// mul_div 乘法除法单元
+// =========================================================================
+mul_div #(
+    .DATA_WIDTH     	(DATA_WIDTH),
+    .REG_ADDR_WIDTH 	(REG_ADDR_WIDTH)
+) u_mul_div (
+    .clk         	(clk            ),
+    .rst_n       	(rst_n          ),
+    .start      	(mul_div_en     ),
+    .rd_rs1_addr 	(rd_rs1_addr    ),
+    .rd_rs2_addr 	(rd_rs2_addr    ),
+    .wr_rd_addr  	(wr_reg_addr    ),
+    .func3_i     	(mul_div_func3  ),
+    .a_i         	(alu_op1        ),
+    .b_i         	(alu_op2        ),
+    .result_o    	(result_wbck ),
+    .data_valid_o   (             ),
+    .ready_o        (             ),
+    .mul_ready_o    (mul_ready    ),
+    .div_ready_o    (div_ready    ),
+    .mul_valid_o    (mul_valid_wbck),
+    .div_valid_o    (div_valid_wbck)
+
+);
     
 endmodule

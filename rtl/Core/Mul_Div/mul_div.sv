@@ -7,16 +7,21 @@ module mul_div #(
 )(
     input   logic                       clk,
     input   logic                       rst_n,
-    input   logic                       enable,
+    input   logic                       start,
     input   logic [REG_ADDR_WIDTH-1:0]  rd_rs1_addr,
     input   logic [REG_ADDR_WIDTH-1:0]  rd_rs2_addr,
     input   logic [REG_ADDR_WIDTH-1:0]  wr_rd_addr,
     input   logic [2:0]                 func3_i,
     input   logic [DATA_WIDTH-1:0]      a_i,    // 乘数A (来自forward)
     input   logic [DATA_WIDTH-1:0]      b_i,    // 乘数B (来自forward)
-    output  logic [DATA_WIDTH-1:0]      result_o,  // 乘积结果(组合输出，送EX_MEM寄存器锁存)
-    output  logic                       data_valid,
-    output  logic                       ready   // 就绪信号:高表示运算完成，下一周期可输入新数据
+    output  logic [DATA_WIDTH-1:0]      result_o,
+    output  logic                       data_valid_o,
+    output  logic                       ready_o,
+    // OITF 独立接口
+    output  logic                       mul_ready_o,        // 乘法器空闲
+    output  logic                       div_ready_o,        // 除法器空闲
+    output  logic                       mul_valid_o,        // 乘法结果有效
+    output  logic                       div_valid_o         // 除法结果有效
 );
 
 logic                           mul_en;
@@ -36,11 +41,15 @@ logic   [2:0]                   op_func3_reg;       // 锁存上一次运算的f
 (* MAX_FANOUT = 16 *)logic                           fuse_hit;    // 融合命中标志：1=命中融合指令，0=正常独立运算
 logic   [DATA_WIDTH*2-1:0]      full_result_sel;// 选择后的64位源结果（融合/独立运算）
 
-assign mul_en = (!func3_i[2] && enable) && ~fuse_hit;// 融合命中时关闭乘法使能
-assign div_en = (func3_i[2]  && enable) && ~fuse_hit;// 融合命中时关闭除法使能
+assign mul_en = (!func3_i[2] && start) && ~fuse_hit;// 融合命中时关闭乘法使能
+assign div_en = (func3_i[2]  && start) && ~fuse_hit;// 融合命中时关闭除法使能
 assign func3_mode_i = func3_i[1:0];
-assign data_valid   = mul_valid || div_valid;
-assign ready        = data_valid || ~enable;
+assign data_valid_o  = mul_valid || div_valid;
+assign ready_o       = div_ready && mul_ready;
+assign mul_ready_o   = mul_ready;
+assign div_ready_o   = div_ready;
+assign mul_valid_o   = mul_valid;
+assign div_valid_o   = div_valid;
 
 //==========================================================================
 // 3. 融合运算核心：锁存寄存器 + 融合检测信号【少量寄存器，无额外运算开销】
@@ -50,7 +59,7 @@ always_ff @(posedge clk) begin
 end
 // 融合检测核心逻辑
 // 规则：使能+源寄存器地址相同+读写寄存器不同+是融合指令对(MULHx+MUL / DIVx+REMx)
-assign fuse_hit = enable && data_valid_reg && (rd_rs1_addr == rd_rs1_addr_reg) && (rd_rs2_addr == rd_rs2_addr_reg)
+assign fuse_hit = start && data_valid_reg && (rd_rs1_addr == rd_rs1_addr_reg) && (rd_rs2_addr == rd_rs2_addr_reg)
                     && (rd_rs1_addr != wr_rd_addr) && (rd_rs2_addr != wr_rd_addr) // 读和写的不能是一个寄存器
                     && (((op_func3_reg == `INST_MULH  && func3_i == `INST_MUL)
                     ||   (op_func3_reg == `INST_MULHU && func3_i == `INST_MUL)
@@ -82,7 +91,7 @@ multiplier #(
 )u_multiplier(
     .clk          	(clk           ),
     .rst_n        	(rst_n         ),
-    .enable       	(mul_en        ),
+    .start       	(mul_en        ),
     .func3_mode_i 	(func3_mode_i  ),
     .a_i          	(a_i           ),
     .b_i          	(b_i           ),
@@ -96,7 +105,7 @@ divider #(
 )u_divider(
     .clk          	(clk           ),
     .rst_n        	(rst_n         ),
-    .enable       	(div_en        ),
+    .start       	(div_en        ),
     .func3_mode_i 	(func3_mode_i  ),
     .dividend     	(a_i           ),
     .divisor      	(b_i           ),

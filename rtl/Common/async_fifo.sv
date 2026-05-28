@@ -5,7 +5,7 @@ Description: 异步FIFO- 适配UART 16550
 */
 
 `timescale 1ns / 1ps
-module fifo_async 
+module async_fifo 
 #(
     parameter int DEPTH  = 16,  // UART 16550标准FIFO深度
     parameter int WIDTH  = 8,    // 字节宽（UART数据位宽）

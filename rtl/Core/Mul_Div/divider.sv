@@ -4,7 +4,7 @@ module divider #(
 )(
     input   logic                    clk,            // 系统时钟
     input   logic                    rst_n,          // 异步复位，低有效
-    input   logic                    enable,         // 运算使能：高有效，触发除法运算启动
+    input   logic                    start,         // 运算使能：高有效，触发除法运算启动
     input   logic [1:0]              func3_mode_i,   // 4种运算模式选择
     input   logic [DATA_WIDTH-1:0]   dividend,       // 被除数 (补码形式，直接参与运算)
     input   logic [DATA_WIDTH-1:0]   divisor,        // 除数 (补码形式，直接参与运算)
@@ -57,7 +57,7 @@ assign div_overflow = (!is_unsigned) && (dividend == {1'b1,{DATA_WIDTH-1{1'b0}}}
 //==========================================================================
 logic [CNT_WIDTH-1:0] div_cnt;
 assign data_valid = (state == DONE);
-assign ready = (state == IDLE && ~enable) || (state == DONE);
+assign ready = (state == IDLE && ~start) || (state == DONE);
 
 logic [2*DATA_WIDTH:0] dividend_reg;  // 整合余数+商的寄存器: 高N位=余数，低N位=商
 //低k次迭代结束时[k:0]保存中间结果，[31：k+1]保存被除数中未参与计算的数据，[63:32]保存每次迭代的被减数
@@ -91,7 +91,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 div0_reg            <= #1 '0;
                 divisor_larger_reg  <= #1 '0;
                 div_overflow_reg    <= #1 '0;
-                if(enable) begin // 使能+空闲=启动运算
+                if(start) begin // 使能+空闲=启动运算
                     if(div0 || divisor_larger || div_overflow) begin
                         // 特殊场景：直接进入结束态
                         state               <= #1 DONE;

@@ -298,7 +298,7 @@ uart_tx u_uart_tx(
 
 
 // 4. 接收异步FIFO（16深度，8位宽，屏蔽悬空端口）
-fifo_async #(.DEPTH(16), .WIDTH(8)) rx_fifo_inst(
+async_fifo #(.DEPTH(16), .WIDTH(8)) rx_fifo_inst(
     .wclk               (clk_sample       ),
     .rclk               (PCLK             ),
     .rst_n              (PRESETn          ),
@@ -316,7 +316,7 @@ fifo_async #(.DEPTH(16), .WIDTH(8)) rx_fifo_inst(
 
 
 // 5. 发送异步FIFO（16深度，8位宽，屏蔽悬空端口）
-fifo_async #(.DEPTH(16), .WIDTH(8)) tx_fifo_inst (
+async_fifo #(.DEPTH(16), .WIDTH(8)) tx_fifo_inst (
     .wclk        (PCLK),
     .rclk        (clk_uart),
     .rst_n       (PRESETn),

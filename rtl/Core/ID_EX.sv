@@ -26,6 +26,7 @@ module ID_EX #(
     input   logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr_i,
     input   logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr_i,
     input   logic                           wr_reg_en_i,
+    input   logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_i,
     input   logic                           access_en_i,
     input   logic                           access_wr_i,
     input   logic                           access_csr_en_i,
@@ -48,6 +49,7 @@ module ID_EX #(
     output  logic   [ADDR_WIDTH-1:0]        jump_imm_o,
     output  logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4_o,
     output  logic                           wr_reg_en_o,
+    output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_o,
     output  logic                           access_en_o,
     output  logic                           access_wr_o,
     output  logic                           access_csr_en_o,
@@ -83,6 +85,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         jump_imm_o      <= #1 'h0;
         inst_addr_plus_4_o <= #1 'h0;
         wr_reg_en_o     <= #1 1'b0;
+        wr_reg_addr_o   <= #1 'h0;
         access_en_o     <= #1 1'b0;
         access_wr_o     <= #1 1'b0;
         access_csr_en_o <= #1 1'b0;
@@ -109,6 +112,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         // jump_imm_o      <= #1 'h0;
         // inst_addr_plus_4_o <= #1 'h0;
         wr_reg_en_o     <= #1 1'b0;
+        wr_reg_addr_o   <= #1 'h0;
         access_en_o     <= #1 1'b0;
         // access_wr_o     <= #1 1'b0;
         access_csr_en_o <= #1 1'b0;
@@ -135,6 +139,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         jump_imm_o      <= #1 jump_imm_i;
         inst_addr_plus_4_o <= #1 inst_addr_plus_4_i;
         wr_reg_en_o     <= #1 wr_reg_en_i;
+        wr_reg_addr_o   <= #1 wr_reg_addr_i;
         access_en_o     <= #1 access_en_i;
         access_wr_o     <= #1 access_wr_i;
         access_csr_en_o <= #1 access_csr_en_i;

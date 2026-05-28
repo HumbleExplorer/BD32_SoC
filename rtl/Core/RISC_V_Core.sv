@@ -55,7 +55,31 @@ logic   [1:0]               priv_mode;
 logic                       waiting_int;
 (* MAX_FANOUT = 16 *) logic                       load_use_flag;
 logic                       bus_access_ready;
-logic                       mul_div_ready;
+logic                       mul_ready;
+logic                       div_ready;
+logic                       mul_div_ready;     // = mul_ready & div_ready（给 CSR 用）
+logic                       mul_valid_wbck;
+logic                       div_valid_wbck;
+logic   [DATA_WIDTH-1:0]    result_wbck;
+
+assign  mul_div_ready = mul_ready & div_ready;
+
+// OITF 信号
+logic                               oitf_stall;
+logic                               oitf_disp_ready;
+logic   [1:0]                       oitf_disp_itag;
+logic                               oitf_retire_valid;
+logic   [REG_ADDR_WIDTH-1:0]        oitf_retire_rd_addr;
+logic   [DATA_WIDTH-1:0]            oitf_retire_rd_data;
+logic                               oitf_retire_rd_wen;
+// 乘除法器输出（直连 OITF）
+logic                               mul_div_valid;
+logic   [DATA_WIDTH-1:0]            result_mul_div;
+// ID 阶段是否 mul/div 指令
+logic                               is_muldiv_id;
+// OITF RAW 检测
+logic                               oitf_raw_hazard;
+logic   [REG_ADDR_WIDTH-1:0]        wr_reg_addr_id;
 
 logic   [DATA_WIDTH-2:0]    exception_code_if;
 logic   [DATA_WIDTH-2:0]    exception_code_id;
@@ -254,7 +278,7 @@ Pipeline_Ctrl #(
     .branch_taken           (branch_taken_ex      ),
     .branch_target          (branch_target_ex     ),
     .bus_access_ready    	(bus_access_ready     ),
-    .mul_div_ready       	(mul_div_ready        ),
+    .oitf_stall          	(oitf_stall           ),
     .inst_addr_if        	(inst_addr_if         ),
     .inst_addr_id        	(inst_addr_id         ),
     .inst_addr_ex        	(inst_addr_ex         ),
@@ -458,6 +482,7 @@ Decoder #(
     .rd_rs1_data    (rd_rs1_data),
     .rd_rs2_data    (rd_rs2_data),
     .wr_reg_en      (wr_reg_en_id),
+    .wr_reg_addr    (wr_reg_addr_id),
     .alu_op1        (alu_op1_id),
     .alu_op2        (alu_op2_id),
     .imm            (imm_id),
@@ -477,6 +502,9 @@ Decoder #(
     .inst_type      (inst_type_id)
 `endif
 );
+
+// OITF：ID 阶段识别 mul/div 指令，istruction type 由 Decoder inst_type 给出
+// oitf_stall 计算全部在 OITF 模块内部
 
 RegFile #(
     .DATA_WIDTH     (DATA_WIDTH),
@@ -516,6 +544,7 @@ ID_EX #(
     .rd_rs1_addr_i  (rd_rs1_addr),
     .rd_rs2_addr_i  (rd_rs2_addr),
     .wr_reg_en_i    (wr_reg_en_id),
+    .wr_reg_addr_i  (wr_reg_addr_id),
     .access_wr_i    (access_wr_id),
     .access_en_i    (access_en_id),
     .access_csr_en_i(access_csr_en_id),
@@ -536,6 +565,7 @@ ID_EX #(
     .inst_addr_plus_4_o(inst_addr_plus_4_ex),
     .rs2_data_o     (rs2_data_ex),
     .wr_reg_en_o    (wr_reg_en_ex),
+    .wr_reg_addr_o  (wr_reg_addr_ex),
     .access_wr_o    (access_wr_ex),
     .access_en_o    (access_en_ex),
     .access_csr_en_o(access_csr_en),
@@ -591,7 +621,11 @@ Executer #(
 `endif
     .exception_code  	(exception_code_ex  ),
     .exception_val   	(exception_val_ex   ),
-    .mul_div_ready      (mul_div_ready      ),
+    .mul_ready          (mul_ready          ),
+    .div_ready          (div_ready          ),
+    .mul_valid_wbck     (mul_valid_wbck     ),
+    .div_valid_wbck     (div_valid_wbck     ),
+    .result_wbck        (result_wbck        ),
     .access_addr        (access_addr_ex     ),
     .wr_mem_data      	(wr_mem_data_ex     ),
     .wr_mem_mask      	(wr_mem_mask_ex     ),
@@ -641,7 +675,7 @@ CSR_Reg_Access #(
     ,
     .hpm_valid          (hpm_valid          ),
     .hpm_inst_type      (hpm_inst_type      ),
-    .hpm_mispredict(hpm_mispredict)
+    .hpm_mispredict     (hpm_mispredict)
 `endif
 );
 
@@ -782,9 +816,12 @@ MEM_WB #(
 `endif
 );
 
-assign wr_reg_data = bus_rvalid ? wr_reg_data_mem : wr_reg_data_wb;
-assign wr_reg_en   = bus_rvalid ? wr_reg_en_mem   : wr_reg_en_wb;
-assign wr_reg_addr = bus_rvalid ? wr_reg_addr_mem : wr_reg_addr_wb;
+assign wr_reg_data = oitf_retire_valid ? oitf_retire_rd_data :
+                     bus_rvalid ? wr_reg_data_mem : wr_reg_data_wb;
+assign wr_reg_en   = oitf_retire_valid ? oitf_retire_rd_wen  :
+                     bus_rvalid ? wr_reg_en_mem   : wr_reg_en_wb;
+assign wr_reg_addr = oitf_retire_valid ? oitf_retire_rd_addr :
+                     bus_rvalid ? wr_reg_addr_mem : wr_reg_addr_wb;
 
 
 // bus_rvalid 经 MEM_WB 延迟一拍后给 Data_Hazard_Forward 做 bus_done
@@ -873,5 +910,42 @@ always_ff @(posedge clk) begin
     end
 end
 `endif
+
+// ==========================================================================
+// OITF（非阻塞乘除法）
+// ==========================================================================
+OITF #(
+    .OITF_DEPTH     (4),
+    .DATA_WIDTH     (DATA_WIDTH),
+    .REG_ADDR_WIDTH (REG_ADDR_WIDTH)
+) u_OITF (
+    .clk            (clk),
+    .rst_n          (rst_n),
+    // EX 阶段长周期指令派发
+    .longpipe_valid (longpipe_valid),
+    .longpipe_is_div(longpipe_is_div),
+    .disp_rd_addr   (wr_reg_addr_id),
+    .disp_rd_wen    (wr_reg_en_id),
+    // ID 阶段 RAW/WAW 检查
+    .check_is_muldiv(is_muldiv_id),
+    .check_rs1_addr (rd_rs1_addr),
+    .check_rs1_valid(|rd_rs1_addr),
+    .check_rs2_addr (rd_rs2_addr),
+    .check_rs2_valid(|rd_rs2_addr),
+    // 乘除法器状态（mul/div 独立）
+    .mul_ready      (mul_ready),
+    .div_ready      (div_ready),
+    .mul_valid      (mul_valid_wbck),
+    .div_valid      (div_valid_wbck),
+    .result_wbck    (result_wbck),
+    // 输出
+    .oitf_stall     (oitf_stall),
+    .retire_valid   (oitf_retire_valid),
+    .retire_rd_addr (oitf_retire_rd_addr),
+    .retire_rd_data (oitf_retire_rd_data),
+    .retire_rd_wen  (oitf_retire_rd_wen),
+    .wb_idle        (~wr_reg_en_wb),
+    .flush          (ex_mem_flush)
+);
 
 endmodule

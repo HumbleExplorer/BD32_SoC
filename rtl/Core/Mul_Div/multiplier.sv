@@ -8,7 +8,7 @@ module multiplier #(
 )(
     input   logic                    clk,
     input   logic                    rst_n,          // 异步复位，低有效
-    input   logic                    enable,         // 运算使能：高有效
+(*MAX_FANOUT = 32*)input   logic                    start,         // 运算使能：高有效
     input   logic [1:0]              func3_mode_i,   // 4种运算模式选择. 00:mul，01:mulh，10:mulhsu，11:mulhu
     input   logic [DATA_WIDTH-1:0]   a_i,            // 乘数A
     input   logic [DATA_WIDTH-1:0]   b_i,            // 乘数B
@@ -55,7 +55,6 @@ logic   a_sign_en;  // a_i的符号使能：1=有符号(补符号位)，0=无符
 logic   b_sign_en;  // b_i的符号使能：1=有符号(补符号位)，0=无符号(补0)
 logic   [DATA_WIDTH-1:0] a_reg;
 logic   [DATA_WIDTH-1:0] b_reg;
-(*MAX_FANOUT = 32*)logic   start;
 assign  a_sign_en = (func3_mode_i == 2'b00) || (func3_mode_i == 2'b01) || (func3_mode_i == 2'b10);
 assign  b_sign_en = (func3_mode_i == 2'b00) || (func3_mode_i == 2'b01);
 
@@ -75,8 +74,7 @@ end
 // 启动信号+就绪信号 
 //==========================================================================
 assign data_valid = (state == DONE);
-assign ready      = (state == IDLE && ~enable) || (state == DONE); // 核心要求：空闲高、运算中低、结果周期高
-assign start      = (state == IDLE && enable);
+assign ready      = (state == IDLE && ~start) || (state == DONE); // 核心要求：空闲高、运算中低、结果周期高
 
 //==========================================================================
 // 周期1：组合逻辑 : Booth4编码 + 部分积生成 
@@ -214,7 +212,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         case(state)
             // -------------------------- 空闲态 IDLE --------------------------
             IDLE: begin
-                if(enable) begin // 使能+空闲=启动运算
+                if(start) begin // 使能+空闲=启动运算
                     state <= #1 COMPRESS; // 正常场景：进入运算态
                 end
             end
