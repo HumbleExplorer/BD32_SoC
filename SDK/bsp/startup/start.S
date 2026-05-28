@@ -1,4 +1,4 @@
-/* BD32 复位 — 必须在 0x00010000，硬件复位向量固定地址 */
+/* BD32 复位蹦床 — 必须在 0x00010000，硬件复位向量固定地址 */
 .section .reset, "ax"
 .global _reset_vector
 .type _reset_vector, @function
@@ -6,7 +6,7 @@ _reset_vector:
     j _start
 .size _reset_vector, .-_reset_vector
 
-/* BD32 启动入口 */
+/* BD32 启动 — 裸金属，无 C 标准库 */
 .section .init
 .global _start
 .type _start, @function

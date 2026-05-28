@@ -1,8 +1,8 @@
 /*
- * NMSIS CLINT — BD32 核内局部中断控制器寄存器定义
+ * BD32 CLINT — BD32 核内局部中断控制器寄存器定义
  */
-#ifndef NMSIS_CLINT_H
-#define NMSIS_CLINT_H
+#ifndef CLINT_H
+#define CLINT_H
 
 #include <stdint.h>
 

@@ -4,234 +4,35 @@
 
 ---
 
-## 脚本依赖关系一览
+## 脚本一览
 
 ```
-build.py  ───────────────── 独立（推荐，替代 elf2uartbin）
-elf2uartbin.py  ─────────── 独立
-build_c.bat  ───→ elf2uartbin.py  （第 2 步调用 elf2uartbin.py 生成 .uartbin）
-bin2dat.py  ─────────────── 独立
-run_all_riscv_tests.py  ─── 独立（仅依赖外部 ModelSim）
+run_all_riscv_tests.py  ← 独立（RISC-V CPU 批量测试，仅依赖外部 ModelSim）
+core_test/              ← CPU 核级仿真
+gpio_test/              ← GPIO 模块仿真
+plic_test/              ← PLIC 中断控制器仿真
+soc_test/               ← SoC 系统级仿真
+timer_test/             ← Timer 模块仿真
+uart_test/              ← UART 模块仿真
 ```
 
-> 只有 `build_c.bat` **有依赖**（调用 `elf2uartbin.py`），其余脚本均可独立运行。
-> `build.py` 内部整合了编译 + 格式生成全流程，是其他脚本的功能超集。
+> **构建工具已迁移至 `SDK/tools/build.py`**，请使用：
+> ```bash
+> cd Working/SDK
+> python tools/build.py demos/<demo_name>
+> python tools/build.py demos/<demo_name> --newlib
+> ```
 
 ---
 
 ## 目录
 
-- [1. build.py — 统一构建工具（推荐）](#1-buildpy--统一构建工具推荐)
-- [2. elf2uartbin.py — UART 下载二进制生成器](#2-elf2uartbinpy--uart-下载二进制生成器)
-- [3. build_c.bat — C 程序编译脚本（Windows）](#3-build_cbat--c-程序编译脚本windows)
-- [4. bin2dat.py — 二进制 → Dat 格式转换](#4-bin2datpy--二进制--dat-格式转换)
-- [5. run_all_riscv_tests.py — RISC-V CPU 批量测试](#5-run_all_riscv_testspy--risc-v-cpu-批量测试)
+- [1. run_all_riscv_tests.py — RISC-V CPU 批量测试](#1-run_all_riscv_testspy--risc-v-cpu-批量测试)
 - [附录：测试子目录说明](#附录测试子目录说明)
 
 ---
 
-## 1. build.py — 统一构建工具（推荐）
-
-**路径：** `script/build.py`
-
-这是最推荐使用的核心构建脚本。它将编译、链接、生成多种下载格式整合为一步，是 `elf2uartbin.py` 的超集替代。
-
-### 基本用法
-
-```bash
-# 汇编程序 → 生成所有格式
-python build.py myprog.s
-
-# C 程序 → 生成所有格式（自动查找 lib/link.ld 和 lib/start.s）
-python build.py main.c
-```
-
-### 指定输出格式
-
-```bash
-# 仅生成指定格式（逗号分隔）
-python build.py main.c --formats elf,dump,mem
-
-# 可用格式：all, dump, uartbin, mem, dat, hex
-```
-
-### 指定输出路径
-
-```bash
-python build.py main.c --output-dir ../test_data/custom --output-name demo
-```
-
-### C 编译时手动指定链接脚本和启动代码
-
-```bash
-python build.py main.c --ld ../lib/link.ld --start ../lib/start.s -I ../src
-```
-
-### 从已有 ELF 生成其他格式
-
-```bash
-python build.py program.elf --formats uartbin,mem,dump
-```
-
-### 参数说明
-
-| 参数 | 缩写 | 说明 |
-|------|------|------|
-| `input` | — | 输入文件（.s / .c / .elf） |
-| `--output-dir` | `-o` | 输出目录（默认：与输入文件同目录） |
-| `--output-name` | `-n` | 输出文件名前缀（默认：输入文件名） |
-| `--ld` | — | 链接脚本路径 |
-| `--start` | — | 启动代码路径（C 程序必需） |
-| `-I` | — | 头文件搜索路径（可重复使用） |
-| `--formats` | — | 输出格式，逗号分隔。默认全部 |
-| `--asm` | — | 强制汇编模式 |
-| `--c` | — | 强制 C 模式 |
-| `--verbose` | `-v` | 详细输出 |
-| `--keep-elf` | — | 保留中间 ELF（默认清理） |
-
-### 输出格式对照
-
-| 格式 | 扩展名 | 用途 |
-|------|--------|------|
-| `dump` | `.dump` | 反汇编文本，调试用 |
-| `uartbin` | `.uartbin` | **UART 下载二进制（含帧头），上板用** |
-| `mem` | `_itcm.mem` / `_dtcm.mem` | hex 文本格式，仿真 `$readmemh` 加载 |
-| `dat` | `.dat` | 裸 hex 文本，riscv-tests 风格 |
-| `hex` | `.hex` | Intel HEX 格式 |
-| `elf` | `.elf` | ELF 可执行文件（`--keep-elf` 保留） |
-
-### 示例输出
-
-```bash
-$ python build.py ../test_data/asm/add.s --formats uartbin,mem --verbose
-
-[BUILD] Assembling: add.s
-  $ riscv64-unknown-elf-as -march=rv32im -mabi=ilp32 -o ...\add.o add.s
-  $ riscv64-unknown-elf-ld -melf32lriscv -o ...\add.elf ...\add.o
-  -> ...\add.elf
-
-[GEN] Generating output formats: uartbin, mem
-  [OK]  UART 下载二进制（含帧头） -> add.uartbin
-  [OK]  hex 文本格式（$readmemh 兼容） -> add_itcm.mem, add_dtcm.mem
-
-[DONE] Output directory: D:\Desktop\OpenClaw_Workspace\test_data\asm
-       Formats generated: uartbin, mem
-
-  提示：上板下载时直接发送 add.uartbin
-```
-
----
-
-## 2. elf2uartbin.py — UART 下载二进制生成器
-
-**路径：** `script/elf2uartbin.py`
-
-将 ELF 文件打包为带帧头的 `.uartbin` 格式，可直接通过串口发送到 FPGA 板。
-
-### 格式说明
-
-二进制布局（全部小端字节序）：
-```
-[0x00] START_FRAME  (4B) = 0xBBAABBAA
-[0x04] ITCM_COUNT   (4B) = ITCM 数据字数
-[0x08] ITCM 数据          = ITCM_COUNT × 4B
-[...]  DTCM_COUNT   (4B) = DTCM 数据字数
-[...]  DTCM 数据          = DTCM_COUNT × 4B
-```
-
-### 用法
-
-```bash
-# 从 ELF 生成
-python elf2uartbin.py program.elf program.uartbin
-
-# 从汇编源码一步到位
-python elf2uartbin.py program.s program.uartbin --as
-
-# 从 C 源码一步到位
-python elf2uartbin.py main.c program.uartbin --c --start ../lib/start.s --ld ../lib/link.ld
-
-# 指定头文件路径
-python elf2uartbin.py main.c output.uartbin --c --start ../lib/start.s --ld ../lib/link.ld -I ../src
-```
-
-### 参数
-
-| 参数 | 说明 |
-|------|------|
-| `--c` | C 模式（需要 `--start` 和 `--ld`） |
-| `--start <file>` | 启动代码路径 |
-| `--ld <file>` | 链接脚本路径 |
-| `-I <dir>` | 头文件搜索路径 |
-
-### 注意
-
-- 输入 `.s`（汇编）或 `.elf`（已有 ELF）时无需 `--start`/`--ld`
-- 未指定参数时自动从 `../lib/` 查找 `link.ld` 和 `start.s`
-- **推荐直接使用 `build.py` 替代本脚本**（功能更全）
-
----
-
-## 3. build_c.bat — C 程序编译脚本（Windows）
-
-**路径：** `script/build_c.bat`
-
-Windows Batch 脚本，一键编译 C 程序并生成 `.uartbin` 和 `.dump`。
-
-### 用法
-
-直接双击或命令行运行：
-```cmd
-build_c.bat
-```
-
-### 配置说明（编辑脚本中的变量）
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `SRC_DIR` | C 源码目录 | `..\src` |
-| `LIB_DIR` | 库文件目录 | `..\lib` |
-| `OUT_DIR` | 输出目录 | `..\test_data\custom` |
-| `PROG` | 程序名（不包含扩展名） | `minimal` |
-
-### 工作流程
-
-1. 编译 `%SRC_DIR%\main.c` + `%LIB_DIR%\start.s` + `%LIB_DIR%\tinyprintf.c`
-2. 调用 `elf2uartbin.py` 生成 `.uartbin`
-3. 反汇编生成 `.dump`
-
-### 注意
-
-- 仅适用于 Windows 环境
-- 硬编码了 `minimal` 程序名，修改其他程序需编辑 `PROG` 变量
-- 输出文件位于 `../test_data/custom/`
-
----
-
-## 4. bin2dat.py — 二进制 → Dat 格式转换
-
-**路径：** `script/bin2dat.py`
-
-将任意二进制文件转换为 `$readmemh` 兼容的 `.dat` 文本格式（每行一个 32 位 hex 字）。
-
-### 用法
-
-```bash
-# 直接转换，输出文件名自动替换扩展名
-python bin2dat.py input.bin
-
-# 指定输出文件名
-python bin2dat.py input.bin output.dat
-```
-
-### 注意事项
-
-- 自动补齐到 4 字节对齐（末尾补 0）
-- 小端字节序转换
-
----
-
-## 5. run_all_riscv_tests.py — RISC-V CPU 批量测试
+## 1. run_all_riscv_tests.py — RISC-V CPU 批量测试
 
 **路径：** `script/run_all_riscv_tests.py`
 

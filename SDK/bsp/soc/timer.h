@@ -1,8 +1,8 @@
 /*
- * NMSIS Timer — BD32 APB Timer 寄存器定义
+ * BD32 Timer — BD32 APB Timer 寄存器定义
  */
-#ifndef NMSIS_TIMER_H
-#define NMSIS_TIMER_H
+#ifndef TIMER_H
+#define TIMER_H
 
 #include <stdint.h>
 

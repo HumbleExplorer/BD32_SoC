@@ -1,8 +1,8 @@
 /*
- * NMSIS GPIO — BD32 GPIO 寄存器定义
+ * BD32 GPIO — BD32 GPIO 寄存器定义
  */
-#ifndef NMSIS_GPIO_H
-#define NMSIS_GPIO_H
+#ifndef GPIO_H
+#define GPIO_H
 
 #include <stdint.h>
 

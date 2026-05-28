@@ -1,9 +1,9 @@
 /*
- * NMSIS Core — BD32 处理器核心抽象
+ * BD32 Core — BD32 处理器核心抽象
  * CSR 操作宏 + 异常/中断定义，不依赖任何外设
  */
-#ifndef NMSIS_CORE_H
-#define NMSIS_CORE_H
+#ifndef CORE_H
+#define CORE_H
 
 #include <stdint.h>
 
@@ -84,4 +84,4 @@ static inline void core_start_interrupts(void) {
     write_csr(mstatus, MSTATUS_MPP_M | MSTATUS_MPIE | MSTATUS_MIE);
 }
 
-#endif /* NMSIS_CORE_H */
+#endif /* CORE_H */

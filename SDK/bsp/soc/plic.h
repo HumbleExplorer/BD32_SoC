@@ -1,8 +1,8 @@
 /*
- * NMSIS PLIC — BD32 平台级中断控制器寄存器定义
+ * BD32 PLIC — BD32 平台级中断控制器寄存器定义
  */
-#ifndef NMSIS_PLIC_H
-#define NMSIS_PLIC_H
+#ifndef PLIC_H
+#define PLIC_H
 
 #include <stdint.h>
 

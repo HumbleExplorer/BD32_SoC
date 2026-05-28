@@ -5,8 +5,8 @@
 #ifndef BSP_H
 #define BSP_H
 
-#include "../NMSIS/nmsis_soc.h"
-#include "bd32_board.h"
+#include "soc/soc.h"
+#include "board/bd32_board.h"
 
 /* ===================================================================
  * UART 驱动

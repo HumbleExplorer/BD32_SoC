@@ -1,8 +1,8 @@
 /*
- * NMSIS UART — BD32 UART16550 寄存器定义
+ * BD32 UART — BD32 UART16550 寄存器定义
  */
-#ifndef NMSIS_UART_H
-#define NMSIS_UART_H
+#ifndef UART_H
+#define UART_H
 
 #include <stdint.h>
 
