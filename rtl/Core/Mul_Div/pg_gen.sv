@@ -1,4 +1,5 @@
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module pg_gen(
     input a,
     input b,

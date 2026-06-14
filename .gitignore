@@ -1,3 +1,4 @@
+.gitgitignore
 BD32_SoC/
 ip_repo/
 **/work/
@@ -6,6 +7,7 @@ ip_repo/
 **/*.vstf
 **/*.wlf
 **/wlft*
+**/isa/*
 .history/
 archive/
 **/~$*
@@ -13,3 +15,4 @@ archive/
 *.xlsx
 **/tools/*
 **/build/*
+.workbuddy/

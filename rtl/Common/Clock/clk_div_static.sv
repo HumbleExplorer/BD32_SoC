@@ -1,5 +1,6 @@
 // 分频系数参数化，不能动态调整，支持任意整数
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module clk_div_static #(
     parameter DIV_NUM = 10,
     localparam CNT_WIDTH = $clog2(DIV_NUM)

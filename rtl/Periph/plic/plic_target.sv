@@ -1,4 +1,5 @@
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // =============================================================================
 // PLIC Target - 单目标 Claim/Complete 状态机
 // 管理一个目标(hart)的 claim/complete 握手，输出 EIP 中断线

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 BD32 RISC-V CPU 批量测试运行脚本
-遍历 test_data/ 下所有 rv32*.dat，通过 ModelSim core_test 跑仿真，输出 PASS/FAIL 汇总。
+遍历 test_data/riscv-tests 下所有 rv32*.dat，通过 ModelSim core_test 跑仿真，输出 PASS/FAIL 汇总。
 
 DTCM 数据说明：
   tb_core_top.sv 中已设置 .DTCM_FILE(ITCM_FILE)，即 DTCM 加载与 ITCM 相同的 .dat 文件。
@@ -50,7 +50,7 @@ VSIM_PATH = r"D:\modeltech64_2020.4\win64"
 # 工作目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CORE_TEST_DIR = os.path.join(BASE_DIR, "core_test")
-TEST_DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "test_data"))
+TEST_DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "test_data/riscv-tests"))
 
 # 仿真运行时长（微秒）& 超时（秒）
 SIM_TIME_US = 50

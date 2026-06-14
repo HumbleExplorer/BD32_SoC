@@ -9,6 +9,7 @@ module divider #(
     input   logic [DATA_WIDTH-1:0]   dividend,       // 被除数 (补码形式，直接参与运算)
     input   logic [DATA_WIDTH-1:0]   divisor,        // 除数 (补码形式，直接参与运算)
     output  logic [DATA_WIDTH*2-1:0] quot_rem_o,     // 商+余数组合输出：高N位=余数，低N位=商
+    output  logic [1:0]              func3_mode_o,   // 锁存的运算模式（DIV/REM 选择）
     output  logic                    data_valid,     // 结果有效信号: 高有效，结果出时=低
     output  logic                    ready           // 就绪信号: 空闲=高,运算中=低,结果出的周期=高
 );
@@ -35,6 +36,7 @@ localparam DONE_CNT   = DATA_WIDTH;              // 固定运算周期 = 位宽�
 //==========================================================================
 // 3. 特殊场景判定 (RISC-V标准，无修改，极简逻辑)
 // 除零/除数>被除数/除法溢出，三种场景直接输出结果，无需迭代运算
+// 除以零的商所有位都设置为 1，除以零的余数等于被除数。有符号除法溢出仅在最小负整数除以 -1 时发生。有符号除法溢出的商等于被除数，余数为零。无符号除法溢出不会发生。
 //==========================================================================
 logic [DATA_WIDTH-1:0] dividend_abs;
 logic [DATA_WIDTH-1:0] divisor_abs;
@@ -66,7 +68,8 @@ logic [DATA_WIDTH-1:0] temp_dividend; // 被除数绝对值
 logic [DATA_WIDTH-1:0] temp_divisor;  // 除数绝对值
 logic [DATA_WIDTH:0] div_temp;      // 减法临时结果，33位防溢出
 logic dividend_sign_reg;
-logic result_sign_reg;
+logic qt_sign_reg;
+logic [1:0] func3_mode_latched;     // 锁存 start 时的 func3_mode_i
 
 // 核心减法逻辑：余数 - 除数
 assign div_temp = {1'b0,dividend_reg[2*DATA_WIDTH-1:DATA_WIDTH]} - {1'b0,divisor_reg};
@@ -78,11 +81,12 @@ always_ff @(posedge clk or negedge rst_n) begin
         div_cnt             <= #1 '0;
         dividend_reg        <= #1 '0;
         divisor_reg         <= #1 '0;
-        result_sign_reg     <= #1 '0;
+        qt_sign_reg     <= #1 '0;
         div0_reg            <= #1 '0;
         divisor_larger_reg  <= #1 '0;
         div_overflow_reg    <= #1 '0;
         dividend_sign_reg   <= #1 '0;
+        func3_mode_latched  <= #1 '0;
     end else begin
         case(state)
             // -------------------------- 空闲态 --------------------------
@@ -100,14 +104,16 @@ always_ff @(posedge clk or negedge rst_n) begin
                         div_overflow_reg    <= #1 div_overflow;
                         dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1]<= #1 dividend;
                         divisor_reg         <= #1 divisor;
+                        func3_mode_latched  <= #1 func3_mode_i;
                     end else begin
                         // 初始化：先取绝对值，有符号运算预处理
                         state                        <= #1 CALCULATE;
                         dividend_reg[2*DATA_WIDTH:0] <= #1 '0;
                         dividend_reg[DATA_WIDTH:1]   <= #1 temp_dividend;
                         divisor_reg                  <= #1 temp_divisor;
-                        result_sign_reg              <= #1 dividend[DATA_WIDTH-1] ^ divisor[DATA_WIDTH-1];
+                        qt_sign_reg                  <= #1 (dividend[DATA_WIDTH-1] ^ divisor[DATA_WIDTH-1]) && !is_unsigned;
                         dividend_sign_reg            <= #1 dividend[DATA_WIDTH-1];
+                        func3_mode_latched           <= #1 func3_mode_i;
                     end
                 end
             end
@@ -138,7 +144,6 @@ always_ff @(posedge clk or negedge rst_n) begin
     end
 end
 
-
 //==========================================================================
 // 5. 最终结果修正 (极简逻辑，仅2处，严格遵循RISC-V标准)
 // ① 特殊场景结果赋值 ② 有符号取余：余数符号必须与被除数一致 (唯一的符号修正)
@@ -149,10 +154,7 @@ logic [DATA_WIDTH-1:0] final_rem;
 always_comb begin
     // 场景1：除零，保留你的原逻辑
     if(div0_reg) begin
-        if (is_unsigned)
-            final_qt  = {1'b1, {DATA_WIDTH-1{1'b0}}};
-        else
-            final_qt  = {DATA_WIDTH{1'b1}};
+        final_qt  = {DATA_WIDTH{1'b1}};
         final_rem = dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1];
     // 场景2：除法溢出，保留你的原逻辑
     end else if(div_overflow_reg) begin
@@ -162,24 +164,23 @@ always_comb begin
     end else if(divisor_larger_reg) begin
         final_qt  = {DATA_WIDTH{1'b0}};
         final_rem = dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1];
-    end else if(!is_unsigned) begin // 32次迭代完成：符号修正（仅对有符号运算）；向0取整，余数和被除数同号
+    end else if (func3_mode_latched[0])begin // 无符号运算
+        final_qt  = dividend_reg[DATA_WIDTH-1:0];
+        final_rem = dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1];
+    end else begin // 有符号运算
+        // 32次迭代完成：符号修正（仅对有符号运算）；向0取整，余数和被除数同号
         // 修正商的符号：被除数和除数符号异或 → 商取负
-        if(result_sign_reg) begin
+        if(qt_sign_reg) begin
             final_qt = ~dividend_reg[DATA_WIDTH-1:0] + 1'b1;
         end else begin
             final_qt = dividend_reg[DATA_WIDTH-1:0];
         end
         // 修正余数的符号：余数符号必须和被除数一致，RISC-V标准
-        if(dividend_sign_reg ^ dividend_reg[2*DATA_WIDTH]) begin
+        if(dividend_sign_reg) begin
             final_rem = ~dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1] + 1'b1;
         end else begin
             final_rem = dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1];
         end
-
-    end else begin
-        // 默认逻辑：从整合寄存器中拆分 余数+商
-        final_rem = dividend_reg[2*DATA_WIDTH:DATA_WIDTH+1];
-        final_qt  = dividend_reg[DATA_WIDTH-1:0];
     end
 end
 
@@ -188,5 +189,6 @@ end
 // 运算完成(finish)时输出结果，其余周期输出0；高N位=余数，低N位=商
 //==========================================================================
 assign quot_rem_o = (state == DONE) ? {final_rem, final_qt} : {DATA_WIDTH*2{1'b0}};
+assign func3_mode_o = (state == DONE) ? func3_mode_latched : '0;
 
 endmodule

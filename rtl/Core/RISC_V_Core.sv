@@ -1,6 +1,7 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module RISC_V_Core #(
     parameter ITCM_FILE = `ITCM_FILE,
     parameter DTCM_FILE = `DTCM_FILE,
@@ -60,26 +61,18 @@ logic                       div_ready;
 logic                       mul_div_ready;     // = mul_ready & div_ready（给 CSR 用）
 logic                       mul_valid_wbck;
 logic                       div_valid_wbck;
-logic   [DATA_WIDTH-1:0]    result_wbck;
-
+logic   [DATA_WIDTH-1:0]    mul_result_wbck;
+logic   [DATA_WIDTH-1:0]    div_result_wbck;
 assign  mul_div_ready = mul_ready & div_ready;
 
 // OITF 信号
 logic                               oitf_stall;
-logic                               oitf_disp_ready;
-logic   [1:0]                       oitf_disp_itag;
 logic                               oitf_retire_valid;
 logic   [REG_ADDR_WIDTH-1:0]        oitf_retire_rd_addr;
 logic   [DATA_WIDTH-1:0]            oitf_retire_rd_data;
 logic                               oitf_retire_rd_wen;
-// 乘除法器输出（直连 OITF）
-logic                               mul_div_valid;
-logic   [DATA_WIDTH-1:0]            result_mul_div;
-// ID 阶段是否 mul/div 指令
-logic                               is_muldiv_id;
-// OITF RAW 检测
-logic                               oitf_raw_hazard;
-logic   [REG_ADDR_WIDTH-1:0]        wr_reg_addr_id;
+logic                               lp_valid;
+logic                               lp_is_div;
 
 logic   [DATA_WIDTH-2:0]    exception_code_if;
 logic   [DATA_WIDTH-2:0]    exception_code_id;
@@ -110,17 +103,17 @@ logic   [DATA_WIDTH-1:0]    alu_op1_from_id_ex;
 logic   [DATA_WIDTH-1:0]    alu_op2_from_id_ex;
 logic   [DATA_WIDTH-1:0]    alu_op1_forward;
 logic   [DATA_WIDTH-1:0]    alu_op2_forward;
-logic   [DATA_WIDTH-1:0]    wr_mem_data_temp;
-logic   [DATA_WIDTH-1:0]    rs2_data_ex;
+logic   [DATA_WIDTH-1:0]    access_wdata_temp;
+logic   [DATA_WIDTH-1:0]    reg_rs2_rdata_ex;
 
 //RegFile
-logic                       wr_reg_en;
-logic   [REG_ADDR_WIDTH-1:0]rd_rs1_addr;
-logic   [REG_ADDR_WIDTH-1:0]rd_rs2_addr;
-logic   [DATA_WIDTH-1:0]    rd_rs1_data;
-logic   [DATA_WIDTH-1:0]    rd_rs2_data;
-logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr;
-logic   [DATA_WIDTH-1:0]    wr_reg_data;
+logic                       reg_rd_wen;
+logic   [REG_ADDR_WIDTH-1:0]reg_rs1_raddr;
+logic   [REG_ADDR_WIDTH-1:0]reg_rs2_raddr;
+logic   [DATA_WIDTH-1:0]    reg_rs1_rdata;
+logic   [DATA_WIDTH-1:0]    reg_rs2_rdata;
+logic   [REG_ADDR_WIDTH-1:0]reg_rd_waddr;
+logic   [DATA_WIDTH-1:0]    reg_rd_wdata;
 
 // IF
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    pc;
@@ -140,8 +133,7 @@ logic   [DATA_WIDTH-1:0]    alu_op2_id;
 logic   [DATA_WIDTH-1:0]    imm_id;
 logic                       access_en_id;
 logic                       access_wr_id;
-logic                       wr_reg_en_id;
-logic                       access_csr_en_id;
+logic                       csr_en_id;
 logic   [CSR_ADDR_WIDTH-1:0]csr_addr_id;
 logic                       is_fence_i_id;
 logic   [1:0]               branch_inst_type_id;// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
@@ -164,15 +156,15 @@ logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_ex;
 logic                       access_en_ex;
 logic                       access_wr_ex;
 logic   [ADDR_WIDTH-1:0]    access_addr_ex;
-logic   [2:0]               rd_mem_func3_ex;
-logic   [DATA_WIDTH-1:0]    wr_mem_data_ex;
-logic   [ALIGN_BYTES-1:0]   wr_mem_mask_ex;
-logic                       wr_reg_en_ex;
-logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_ex;
-logic   [DATA_WIDTH-1:0]    wr_reg_data_ex;
+logic   [2:0]               access_func3_ex;
+logic   [DATA_WIDTH-1:0]    access_wdata_ex;
+logic   [ALIGN_BYTES-1:0]   access_wmask_ex;
+logic                       reg_rd_wen_ex;
+logic   [REG_ADDR_WIDTH-1:0]reg_rd_waddr_ex;
+logic   [DATA_WIDTH-1:0]    reg_rd_wdata_ex;
 
-logic   [REG_ADDR_WIDTH-1:0]rd_rs1_addr_ex;
-logic   [REG_ADDR_WIDTH-1:0]rd_rs2_addr_ex;
+logic   [REG_ADDR_WIDTH-1:0]reg_rs1_raddr_ex;
+logic   [REG_ADDR_WIDTH-1:0]reg_rs2_raddr_ex;
 logic                       wfi_req;
 logic                       mret_req;
 
@@ -189,20 +181,20 @@ logic                       pop_ras_ex;
 
 
 //CSR
-logic                       access_csr_en;
+logic                       csr_en;
 logic   [CSR_ADDR_WIDTH-1:0]csr_addr;
-logic   [DATA_WIDTH-1:0]    rd_csr_data;
-logic   [DATA_WIDTH-1:0]    wr_csr_data;
+logic   [DATA_WIDTH-1:0]    csr_rdata;
+logic   [DATA_WIDTH-1:0]    csr_wdata;
 logic                       illegal_inst_csr;
 
 // MEM
 logic   [ADDR_WIDTH-1:0]    inst_addr_mem;
 logic   [DATA_WIDTH-1:0]    inst_mem;
-logic                       wr_reg_en_mem;
-logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_mem;
-logic   [DATA_WIDTH-1:0]    wr_reg_data_mem;
+logic                       reg_rd_wen_mem;
+logic   [REG_ADDR_WIDTH-1:0]reg_rd_waddr_mem;
+logic   [DATA_WIDTH-1:0]    reg_rd_wdata_mem;
 logic   [DATA_WIDTH-1:0]    func3_expanded_data;
-logic   [DATA_WIDTH-1:0]    wr_reg_selected_data_mem;   // MUX2 output: load data or ALU result
+logic   [DATA_WIDTH-1:0]    reg_rd_wdata_selected_mem;   // MUX2 output: load data or ALU result
 logic                       access_en_mem;                  // EX/MEM delayed, used by Data_Hazard_Forward
 logic                       access_wr_mem;                  // EX/MEM delayed, used by Data_Hazard_Forward
 `ifdef BRANCH_JUMP_DELAYED
@@ -215,24 +207,24 @@ logic                       branch_predict_success_mem;
 logic                       push_ras_mem;
 logic                       pop_ras_mem;
 `endif
-logic   [DATA_WIDTH-1:0]    rd_dtcm_data;
+logic   [DATA_WIDTH-1:0]    dtcm_rdata;
 logic                       dtcm_sel;
 logic                       bus_sel;
 logic                       dtcm_rvalid;
 logic                       bus_rvalid;
 logic                       bus_rvalid_r1;
 logic                       bus_ready_r;
-// MEM/WB bypass for bus loads (wr_reg_en/addr from EX stage, bypassing EX/MEM)
-logic                       wr_reg_selected_en_mem;
-logic   [REG_ADDR_WIDTH-1:0]wr_reg_selected_addr_mem;
+// MEM/WB bypass for bus loads (reg_rd_wen/addr from EX stage, bypassing EX/MEM)
+logic                       reg_rd_wen_selected_mem;
+logic   [REG_ADDR_WIDTH-1:0]reg_rd_waddr_selected_mem;
 
 
 // WB
 logic   [ADDR_WIDTH-1:0]    inst_addr_wb;
 logic   [DATA_WIDTH-1:0]    inst_wb;
-logic                       wr_reg_en_wb;
-logic   [REG_ADDR_WIDTH-1:0]wr_reg_addr_wb;
-logic   [DATA_WIDTH-1:0]    wr_reg_data_wb;
+logic                       reg_rd_wen_wb;
+logic   [REG_ADDR_WIDTH-1:0]reg_rd_waddr_wb;
+logic   [DATA_WIDTH-1:0]    reg_rd_wdata_wb;
 
 
 `ifdef ENABLE_HPM
@@ -279,6 +271,7 @@ Pipeline_Ctrl #(
     .branch_target          (branch_target_ex     ),
     .bus_access_ready    	(bus_access_ready     ),
     .oitf_stall          	(oitf_stall           ),
+    .reg_rd_wen_wb           (reg_rd_wen_wb         ),
     .inst_addr_if        	(inst_addr_if         ),
     .inst_addr_id        	(inst_addr_id         ),
     .inst_addr_ex        	(inst_addr_ex         ),
@@ -315,32 +308,35 @@ Data_Hazard_Forward #(
     .clk                    (clk),
     .access_en_id       	(access_en_id       ),
     .access_wr_id       	(access_wr_id       ),
-    .rd_rs1_addr_id     	(rd_rs1_addr        ),
-    .rd_rs2_addr_id     	(rd_rs2_addr        ),
-    .wr_reg_en_ex       	(wr_reg_en_ex       ),
-    .rd_rs1_addr_ex     	(rd_rs1_addr_ex     ),
-    .rd_rs2_addr_ex     	(rd_rs2_addr_ex     ),
-    .wr_reg_addr_ex     	(wr_reg_addr_ex     ),
+    .reg_rs1_raddr_id     	(reg_rs1_raddr      ),
+    .reg_rs2_raddr_id     	(reg_rs2_raddr      ),
+    .reg_rd_wen_ex       	(reg_rd_wen_ex      ),
+    .reg_rs1_raddr_ex     	(reg_rs1_raddr_ex   ),
+    .reg_rs2_raddr_ex     	(reg_rs2_raddr_ex   ),
+    .reg_rd_waddr_ex     	(reg_rd_waddr_ex    ),
     .access_en_ex       	(access_en_ex       ),
     .access_wr_ex       	(access_wr_ex       ),
     .access_en_mem      	(access_en_mem      ),
     .access_wr_mem      	(access_wr_mem      ),
-    .wr_reg_en_mem      	(wr_reg_en_mem      ),
-    .wr_reg_addr_mem    	(wr_reg_addr_mem    ),
-    .wr_reg_en_wb       	(wr_reg_en_wb       ),
-    .wr_reg_addr_wb     	(wr_reg_addr_wb     ),
+    .reg_rd_wen_mem      	(reg_rd_wen_mem     ),
+    .reg_rd_waddr_mem    	(reg_rd_waddr_mem   ),
+    .reg_rd_wen_wb       	(reg_rd_wen      ),
+    .reg_rd_waddr_wb     	(reg_rd_waddr    ),
+    .lp_retire_valid        (oitf_retire_valid  ),
+    .lp_retire_waddr        (oitf_retire_rd_addr),
+    .lp_retire_wdata        (oitf_retire_rd_data),
     .alu_op1_from_id_ex 	(alu_op1_from_id_ex ),
     .alu_op2_from_id_ex 	(alu_op2_from_id_ex ),
-    .rd_rs2_data_ex     	(rs2_data_ex        ),
-    .wr_reg_data_mem    	(wr_reg_data_mem    ),
-    .wr_reg_data_wb     	(wr_reg_data_wb     ),
+    .reg_rs2_rdata_ex    	(reg_rs2_rdata_ex   ),
+    .reg_rd_wdata_mem    	(reg_rd_wdata_mem   ),
+    .reg_rd_wdata_wb     	(reg_rd_wdata_wb    ),
     .bus_sel                (bus_sel            ),
     .bus_rvalid_r1          (bus_rvalid_r1      ),
     .bus_access_ready       (bus_access_ready   ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
     .alu_op2_o          	(alu_op2_forward    ),
-    .wr_mem_data_temp   	(wr_mem_data_temp   )
+    .access_wdata_temp   	(access_wdata_temp  )
 );
 
 Dynamic_Branch_Predictor #(
@@ -360,7 +356,7 @@ Dynamic_Branch_Predictor #(
     .branch_pc       (inst_addr_mem  ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
     // 其他更新信号从 EX_MEM 寄存器输出取
     .branch_taken    (branch_taken_mem    ),
-    .branch_target   (branch_target_mem   ),  
+    .branch_target   (branch_target_mem   ),
     .branch_req      (branch_req_mem      ),
     .branch_predict_success(branch_predict_success_mem),
     .branch_inst_type(branch_inst_type_mem),
@@ -370,7 +366,7 @@ Dynamic_Branch_Predictor #(
     .is_fence_i      (is_fence_i_ex  ),
     .branch_pc       (inst_addr_ex  ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
     .branch_taken    (branch_taken_ex   ),
-    .branch_target   (branch_target_ex  ),  
+    .branch_target   (branch_target_ex  ),
     .branch_req      (branch_req_ex     ),
     .branch_predict_success(branch_predict_success_ex),
     .branch_inst_type(branch_inst_type_ex),
@@ -466,7 +462,7 @@ IF_ID #(
     ,
     .valid_o            (if_id_valid)
 `endif
-);  
+);
 
 Decoder #(
     .ADDR_WIDTH     (ADDR_WIDTH),
@@ -476,19 +472,17 @@ Decoder #(
 )u_Decoder(
     .inst_addr      (inst_addr_id),
     .inst           (inst_id),
-    .rd_rs1_addr    (rd_rs1_addr),
-    .rd_rs2_addr    (rd_rs2_addr),
+    .reg_rs1_raddr  (reg_rs1_raddr),
+    .reg_rs2_raddr  (reg_rs2_raddr),
     .priv_mode      (priv_mode),
-    .rd_rs1_data    (rd_rs1_data),
-    .rd_rs2_data    (rd_rs2_data),
-    .wr_reg_en      (wr_reg_en_id),
-    .wr_reg_addr    (wr_reg_addr_id),
+    .reg_rs1_rdata  (reg_rs1_rdata),
+    .reg_rs2_rdata  (reg_rs2_rdata),
     .alu_op1        (alu_op1_id),
     .alu_op2        (alu_op2_id),
     .imm            (imm_id),
     .access_wr      (access_wr_id),
     .access_en      (access_en_id),
-    .access_csr_en  (access_csr_en_id),
+    .csr_en         (csr_en_id),
     .csr_addr       (csr_addr_id),
     .is_fence_i     (is_fence_i_id),
     .branch_inst_type(branch_inst_type_id),
@@ -510,23 +504,29 @@ RegFile #(
     .DATA_WIDTH     (DATA_WIDTH),
     .REG_ADDR_WIDTH (REG_ADDR_WIDTH),
     .REGFILE_NUM    (REGFILE_NUM)
-)u_RegFile( 
+)u_RegFile(
     .clk            (clk),
     .rst_n          (rst_n),
-    .rd_rs1_addr    (rd_rs1_addr),
-    .rd_rs2_addr    (rd_rs2_addr),
-    .rd_rs1_data    (rd_rs1_data),
-    .rd_rs2_data    (rd_rs2_data),
-    .wr_reg_en      (wr_reg_en),
-    .wr_reg_addr    (wr_reg_addr),
-    .wr_reg_data    (wr_reg_data)
+    //读端口
+    .reg_rs1_raddr  (reg_rs1_raddr),
+    .reg_rs2_raddr  (reg_rs2_raddr),
+    .reg_rs1_rdata  (reg_rs1_rdata),
+    .reg_rs2_rdata  (reg_rs2_rdata),
+    //写端口1：正常 WB 路径
+    .reg_rd_wen     (reg_rd_wen),
+    .reg_rd_waddr   (reg_rd_waddr),
+    .reg_rd_wdata   (reg_rd_wdata),
+    //写端口2：OITF 退休路径
+    .reg_rd_wen2    (oitf_retire_valid && oitf_retire_rd_wen),
+    .reg_rd_waddr2  (oitf_retire_rd_addr),
+    .reg_rd_wdata2  (oitf_retire_rd_data)
 );
 
 ID_EX #(
     .ADDR_WIDTH     (ADDR_WIDTH),
     .DATA_WIDTH     (DATA_WIDTH),
     .CSR_ADDR_WIDTH (CSR_ADDR_WIDTH)
-)u_ID_EX( 
+)u_ID_EX(
     .clk            (clk),
     .rst_n          (rst_n),
     .stall          (id_ex_stall),
@@ -538,16 +538,14 @@ ID_EX #(
     .alu_op1_i      (alu_op1_id),
     .alu_op2_i      (alu_op2_id),
     .imm_i          (imm_id),
-    .rs2_data_i     (rd_rs2_data),
+    .reg_rs2_rdata_i(reg_rs2_rdata),
     .jump_imm_i     (jump_imm_id),
     .inst_addr_plus_4_i(inst_addr_plus_4_id),
-    .rd_rs1_addr_i  (rd_rs1_addr),
-    .rd_rs2_addr_i  (rd_rs2_addr),
-    .wr_reg_en_i    (wr_reg_en_id),
-    .wr_reg_addr_i  (wr_reg_addr_id),
+    .reg_rs1_raddr_i(reg_rs1_raddr),
+    .reg_rs2_raddr_i(reg_rs2_raddr),
     .access_wr_i    (access_wr_id),
     .access_en_i    (access_en_id),
-    .access_csr_en_i(access_csr_en_id),
+    .csr_en_i       (csr_en_id),
     .csr_addr_i     (csr_addr_id),
     .is_fence_i_i     (is_fence_i_id),
     .branch_inst_type_i(branch_inst_type_id),
@@ -563,20 +561,18 @@ ID_EX #(
     .imm_o          (imm_ex),
     .jump_imm_o     (jump_imm_ex),
     .inst_addr_plus_4_o(inst_addr_plus_4_ex),
-    .rs2_data_o     (rs2_data_ex),
-    .wr_reg_en_o    (wr_reg_en_ex),
-    .wr_reg_addr_o  (wr_reg_addr_ex),
+    .reg_rs2_rdata_o(reg_rs2_rdata_ex),
     .access_wr_o    (access_wr_ex),
     .access_en_o    (access_en_ex),
-    .access_csr_en_o(access_csr_en),
+    .csr_en_o       (csr_en),
     .csr_addr_o     (csr_addr),
     .is_fence_i_o   (is_fence_i_ex),
     .branch_inst_type_o(branch_inst_type_ex),
     .branch_req_o   (branch_req_ex),
     .push_ras_o     (push_ras_ex),
     .pop_ras_o      (pop_ras_ex),
-    .rd_rs1_addr_o  (rd_rs1_addr_ex),
-    .rd_rs2_addr_o  (rd_rs2_addr_ex)
+    .reg_rs1_raddr_o(reg_rs1_raddr_ex),
+    .reg_rs2_raddr_o(reg_rs2_raddr_ex)
 `ifdef ENABLE_HPM
     ,
     .inst_type_i    (inst_type_id),
@@ -604,35 +600,39 @@ Executer #(
 `ifndef BRANCH_JUMP_DELAYED
     .is_fence_i         (is_fence_i_ex      ),
 `endif
-    .rd_csr_data      	(rd_csr_data        ),
+    .csr_rdata        	(csr_rdata          ),
     .illegal_inst_csr   (illegal_inst_csr   ),
-    .access_wr        	(access_wr_ex       ),
-    .access_illegal     (access_illegal     ),
+    .access_en          (access_en_ex       ),
+    .access_wr         	(access_wr_ex       ),
     .alu_op1          	(alu_op1_forward    ),
     .alu_op2          	(alu_op2_forward    ),
-    .rd_rs1_addr        (rd_rs1_addr_ex     ),
-    .rd_rs2_addr        (rd_rs2_addr_ex     ),
+    .reg_rs1_raddr      (reg_rs1_raddr_ex   ),
+    .reg_rs2_raddr      (reg_rs2_raddr_ex   ),
     .jump_imm         	(jump_imm_ex        ),
     .inst_addr_plus_4   (inst_addr_plus_4_ex),
-    .wr_mem_data_temp 	(wr_mem_data_temp   ),
+    .access_wdata_temp 	(access_wdata_temp  ),
 `ifndef BRANCH_JUMP_DELAYED
     .branch_jump_en     (branch_jump_en_ex  ),
     .branch_jump_addr   (branch_jump_addr_ex),
 `endif
     .exception_code  	(exception_code_ex  ),
     .exception_val   	(exception_val_ex   ),
+    .lp_valid           (lp_valid           ),
+    .lp_is_div          (lp_is_div          ),
     .mul_ready          (mul_ready          ),
     .div_ready          (div_ready          ),
     .mul_valid_wbck     (mul_valid_wbck     ),
     .div_valid_wbck     (div_valid_wbck     ),
-    .result_wbck        (result_wbck        ),
+    .mul_result_wbck    (mul_result_wbck    ),
+    .div_result_wbck    (div_result_wbck    ),
     .access_addr        (access_addr_ex     ),
-    .wr_mem_data      	(wr_mem_data_ex     ),
-    .wr_mem_mask      	(wr_mem_mask_ex     ),
-    .rd_mem_func3     	(rd_mem_func3_ex    ),
-    .wr_reg_addr      	(wr_reg_addr_ex     ),
-    .wr_reg_data      	(wr_reg_data_ex     ),
-    .wr_csr_data      	(wr_csr_data        ),
+    .access_wdata      	(access_wdata_ex    ),
+    .access_wmask      	(access_wmask_ex    ),
+    .access_func3     	(access_func3_ex    ),
+    .reg_rd_wen       	(reg_rd_wen_ex      ),
+    .reg_rd_waddr     	(reg_rd_waddr_ex    ),
+    .reg_rd_wdata      	(reg_rd_wdata_ex    ),
+    .csr_wdata        	(csr_wdata          ),
     .wfi_req            (wfi_req            ),
     .mret_req           (mret_req           ),
     .branch_taken       (branch_taken_ex    ),
@@ -649,10 +649,10 @@ CSR_Reg_Access #(
 )u_CSR_Reg_Access(
     .clk            	(clk                ),
     .rst_n          	(rst_n              ),
-    .access_csr_en      (access_csr_en      ),
+    .csr_en              (csr_en             ),
     .csr_addr       	(csr_addr           ),
-    .wr_csr_data    	(wr_csr_data        ),
-    .rd_csr_data    	(rd_csr_data        ),
+    .csr_wdata    	    (csr_wdata          ),
+    .csr_rdata    	    (csr_rdata          ),
     .exception_inst_addr(exception_inst_addr),
     .next_inst_addr 	(next_inst_addr     ),
     .bus_access_ready   (bus_access_ready   ),
@@ -690,9 +690,10 @@ EX_MEM #(
     .flush          (ex_mem_flush),
     .inst_addr_i    (inst_addr_ex),
     .inst_i         (inst_ex),
-    .wr_reg_en_i    (wr_reg_en_ex),
-    .wr_reg_addr_i  (wr_reg_addr_ex),
-    .wr_reg_data_i  (wr_reg_data_ex),
+    .reg_rd_wen_i   (reg_rd_wen_ex),
+    .reg_rd_waddr_i (reg_rd_waddr_ex),
+    .reg_rd_wdata_i (reg_rd_wdata_ex),
+    .lp_valid_i     (lp_valid),
     .access_en_i    (access_en_ex),
     .access_wr_i    (access_wr_ex),
     .bus_sel        (bus_sel),
@@ -722,9 +723,9 @@ EX_MEM #(
     .inst_o         (inst_mem),
     .access_en_o    (access_en_mem),
     .access_wr_o    (access_wr_mem),
-    .wr_reg_en_o    (wr_reg_en_mem),
-    .wr_reg_addr_o  (wr_reg_addr_mem),
-    .wr_reg_data_o  (wr_reg_data_mem)
+    .reg_rd_wen_o   (reg_rd_wen_mem),
+    .reg_rd_waddr_o (reg_rd_waddr_mem),
+    .reg_rd_wdata_o (reg_rd_wdata_mem)
 `ifdef ENABLE_HPM
     ,
     .inst_type_i    (inst_type_ex),
@@ -744,12 +745,11 @@ Mem_Access #(
     .access_en                  (access_en_ex),
     .access_wr                  (access_wr_ex),
     .bus_tran_done              (bus_tran_done),
-    .rd_dtcm_data               (rd_dtcm_data),
+    .dtcm_rdata                 (dtcm_rdata),
     .rd_bus_data                (bus_rdata),
-    .rd_mem_func3               (rd_mem_func3_ex),
+    .access_func3               (access_func3_ex),
     .dtcm_sel                   (dtcm_sel),
     .bus_sel                    (bus_sel),
-    .access_illegal             (access_illegal),
     .bus_access_ready           (bus_access_ready),
     .func3_expanded_data        (func3_expanded_data),
     .dtcm_rvalid                (dtcm_rvalid),
@@ -772,21 +772,21 @@ DTCM #(
     `else
     .wr_en      (access_wr_ex && dtcm_sel && ~ex_mem_stall),
     `endif
-    .wr_data    (wr_mem_data_ex),
-    .wr_mask    (wr_mem_mask_ex),
+    .wr_data    (access_wdata_ex),
+    .wr_mask    (access_wmask_ex),
     .dtcm_download_en (dtcm_download_en   ),
     .dtcm_download_addr(dtcm_download_addr),
     .dtcm_download_data(dtcm_download_data),
-    .rd_data    (rd_dtcm_data)
+    .rd_data    (dtcm_rdata)
 );
 
 // MUX2: load data only for LOAD instructions, ALU result for everything else
 // bus_rvalid 只对 load 指令选择 func3_expanded_data，非 load 指令（如 lui）固定传 ALU 结果
-assign wr_reg_selected_data_mem = (dtcm_rvalid || bus_rvalid) ? func3_expanded_data : wr_reg_data_mem;
+assign reg_rd_wdata_selected_mem = (dtcm_rvalid || bus_rvalid) ? func3_expanded_data : reg_rd_wdata_mem;
 
-// MEM/WB wr_reg_en/wr_reg_addr bypass: bus loads skip EX/MEM, DTCM/ALU go through EX/MEM
-assign wr_reg_selected_en_mem   = bus_rvalid ? wr_reg_en_ex   : wr_reg_en_mem;
-assign wr_reg_selected_addr_mem = bus_rvalid ? wr_reg_addr_ex : wr_reg_addr_mem;
+// MEM/WB reg_rd_wen/reg_rd_waddr bypass: bus loads skip EX/MEM, DTCM/ALU go through EX/MEM
+assign reg_rd_wen_selected_mem   = bus_rvalid ? reg_rd_wen_ex   : reg_rd_wen_mem;
+assign reg_rd_waddr_selected_mem = bus_rvalid ? reg_rd_waddr_ex : reg_rd_waddr_mem;
 
 MEM_WB #(
     .ADDR_WIDTH     (ADDR_WIDTH),
@@ -799,14 +799,14 @@ MEM_WB #(
     .flush          (mem_wb_flush),
     .inst_addr_i    (inst_addr_mem),
     .inst_i         (inst_mem),
-    .wr_reg_en_i    (wr_reg_selected_en_mem),
-    .wr_reg_addr_i  (wr_reg_selected_addr_mem),
-    .wr_reg_data_i  (wr_reg_selected_data_mem),
+    .reg_rd_wen_i   (reg_rd_wen_selected_mem),
+    .reg_rd_waddr_i (reg_rd_waddr_selected_mem),
+    .reg_rd_wdata_i (reg_rd_wdata_selected_mem),
     .inst_o         (inst_wb),
     .inst_addr_o    (inst_addr_wb),
-    .wr_reg_en_o    (wr_reg_en_wb),
-    .wr_reg_addr_o  (wr_reg_addr_wb),
-    .wr_reg_data_o  (wr_reg_data_wb)
+    .reg_rd_wen_o   (reg_rd_wen_wb),
+    .reg_rd_waddr_o (reg_rd_waddr_wb),
+    .reg_rd_wdata_o (reg_rd_wdata_wb)
 `ifdef ENABLE_HPM
     ,
     .inst_type_i    (inst_type_mem),
@@ -816,12 +816,47 @@ MEM_WB #(
 `endif
 );
 
-assign wr_reg_data = oitf_retire_valid ? oitf_retire_rd_data :
-                     bus_rvalid ? wr_reg_data_mem : wr_reg_data_wb;
-assign wr_reg_en   = oitf_retire_valid ? oitf_retire_rd_wen  :
-                     bus_rvalid ? wr_reg_en_mem   : wr_reg_en_wb;
-assign wr_reg_addr = oitf_retire_valid ? oitf_retire_rd_addr :
-                     bus_rvalid ? wr_reg_addr_mem : wr_reg_addr_wb;
+// ==========================================================================
+// OITF（非阻塞乘除法）
+// ==========================================================================
+OITF #(
+    .OITF_DEPTH     (4),
+    .DATA_WIDTH     (DATA_WIDTH),
+    .REG_ADDR_WIDTH (REG_ADDR_WIDTH),
+    .NUM_LP_UNITS   (2)
+) u_OITF (
+    .clk            (clk),
+    .rst_n          (rst_n),
+    // EX 阶段长周期指令派发
+    .lp_valid       (lp_valid),
+    .lp_unit_id     (lp_is_div),
+    .disp_rd_addr   (reg_rd_waddr_ex),
+    .disp_rd_wen    (lp_valid),
+    // RAW 检查（EX 阶段）
+    .reg_rs1_raddr_ex(reg_rs1_raddr_ex),
+    .ex_rs1_valid   (|reg_rs1_raddr_ex),
+    .reg_rs2_raddr_ex(reg_rs2_raddr_ex),
+    .ex_rs2_valid   (|reg_rs2_raddr_ex),
+    // WAW 检查（EX 阶段）
+    .reg_rd_waddr_ex(reg_rd_waddr_ex),
+    .reg_rd_wen_ex  (reg_rd_wen_ex),
+    // 通用长周期单元状态数组
+    .unit_ready     ({div_ready      ,mul_ready         }),
+    .unit_wbck_valid({div_valid_wbck ,mul_valid_wbck    }),
+    .result_wbck    ({div_result_wbck,mul_result_wbck   }),
+    // 输出
+    .oitf_stall     (oitf_stall),
+    .retire_valid   (oitf_retire_valid),
+    .retire_rd_addr (oitf_retire_rd_addr),
+    .retire_rd_data (oitf_retire_rd_data),
+    .retire_rd_wen  (oitf_retire_rd_wen),
+    .flush          (ex_mem_flush)
+);
+
+// Port1 写端口：正常 WB 路径（bus_rvalid 直通否则走 MEM_WB）
+assign reg_rd_wdata = bus_rvalid ? reg_rd_wdata_mem : reg_rd_wdata_wb;
+assign reg_rd_wen   = bus_rvalid ? reg_rd_wen_mem   : reg_rd_wen_wb;
+assign reg_rd_waddr = bus_rvalid ? reg_rd_waddr_mem : reg_rd_waddr_wb;
 
 
 // bus_rvalid 经 MEM_WB 延迟一拍后给 Data_Hazard_Forward 做 bus_done
@@ -830,11 +865,11 @@ always_ff @(posedge clk) begin
     bus_rvalid_r1 <= #1 bus_rvalid;
 end
 
-assign bus_transfer   = (bus_ready_r && ~bus_access_ready) && ~ex_mem_flush;
+assign bus_transfer   = (bus_ready_r && ~bus_access_ready) && ~ex_mem_flush && ~ex_mem_stall;
 assign bus_access_write  = access_wr_ex;
-assign bus_access_wdata  = wr_mem_data_ex;
+assign bus_access_wdata  = access_wdata_ex;
 assign bus_access_addr  = access_addr_ex;
-assign bus_access_wstrb  = wr_mem_mask_ex;
+assign bus_access_wstrb  = access_wmask_ex;
 
 
 // ============================================================
@@ -911,41 +946,6 @@ always_ff @(posedge clk) begin
 end
 `endif
 
-// ==========================================================================
-// OITF（非阻塞乘除法）
-// ==========================================================================
-OITF #(
-    .OITF_DEPTH     (4),
-    .DATA_WIDTH     (DATA_WIDTH),
-    .REG_ADDR_WIDTH (REG_ADDR_WIDTH)
-) u_OITF (
-    .clk            (clk),
-    .rst_n          (rst_n),
-    // EX 阶段长周期指令派发
-    .longpipe_valid (longpipe_valid),
-    .longpipe_is_div(longpipe_is_div),
-    .disp_rd_addr   (wr_reg_addr_id),
-    .disp_rd_wen    (wr_reg_en_id),
-    // ID 阶段 RAW/WAW 检查
-    .check_is_muldiv(is_muldiv_id),
-    .check_rs1_addr (rd_rs1_addr),
-    .check_rs1_valid(|rd_rs1_addr),
-    .check_rs2_addr (rd_rs2_addr),
-    .check_rs2_valid(|rd_rs2_addr),
-    // 乘除法器状态（mul/div 独立）
-    .mul_ready      (mul_ready),
-    .div_ready      (div_ready),
-    .mul_valid      (mul_valid_wbck),
-    .div_valid      (div_valid_wbck),
-    .result_wbck    (result_wbck),
-    // 输出
-    .oitf_stall     (oitf_stall),
-    .retire_valid   (oitf_retire_valid),
-    .retire_rd_addr (oitf_retire_rd_addr),
-    .retire_rd_data (oitf_retire_rd_data),
-    .retire_rd_wen  (oitf_retire_rd_wen),
-    .wb_idle        (~wr_reg_en_wb),
-    .flush          (ex_mem_flush)
-);
+
 
 endmodule

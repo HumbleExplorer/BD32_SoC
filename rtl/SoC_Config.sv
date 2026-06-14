@@ -27,6 +27,9 @@
 // 注释下行则关闭 HPM，流水线不携带 valid 位：
 `define ENABLE_HPM
 
+// 取消注释下行启用 3 级流水线乘法器（默认状态机，4 拍一结果）
+`define MULT_PIPELINE
+
 
 // 访存地址快速加法：用 12 位加法+高位条件调整代替 32 位 CARRY4×8 链，
 // 减少 mem_addr 关键路径的时序压力。启用后可改善 EX 阶段时序。
@@ -72,16 +75,21 @@
     `endif
 `else
     // `define DEBUG
-    `define PATH "../../test_data/"
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
     `ifdef DIRECT_LOAD
-        `define ITCM_FILE "custom/coremark_itcm.mem"
-        `define DTCM_FILE "custom/coremark_dtcm.mem"
+        `ifdef CORE_TEST
+            `define PATH "../../test_data/riscv-tests/"
+        `else
+            `define PATH "../../test_data/custom/"
+        `endif
+        `define ITCM_FILE "coremark_itcm.mem"
+        `define DTCM_FILE "coremark_dtcm.mem"
         `define ITCM_DIRECT_LOAD
     `else
-        `define ITCM_FILE "custom/empty.uartbin"
-        `define DTCM_FILE "custom/empty.uartbin"
+        `define PATH "../../test_data/custom/"
+        `define ITCM_FILE "empty.uartbin"
+        `define DTCM_FILE "empty.uartbin"
     `endif
     `define TCM_Reg_or_BRAM "Reg"
 `endif

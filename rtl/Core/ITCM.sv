@@ -1,6 +1,7 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // ITCM - 指令紧耦合存储器（同步读）
 // CPU 运行程序存放于此，UART 下载写入，取指同步读
 // 地址区域：0x0001_0000 ~ 0x0001_FFFF（由 ITCM_DEPTH 决定）

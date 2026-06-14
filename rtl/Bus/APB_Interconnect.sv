@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 
 module APB_Interconnect #(
     parameter PADDR_WIDTH = `ADDR_WIDTH,

@@ -1,61 +1,56 @@
 
-generated/rv32ui-p-jal:     file format elf32-littleriscv
+D:\Desktop\OpenClaw_Workspace\Working\test_data\riscv-tests\rv32ui-p-jal:     file format elf32-littleriscv
 
 
 Disassembly of section .text.init:
 
-00000000 <_start>:
-   0:	00000d13          	li	s10,0
-   4:	00000d93          	li	s11,0
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
 
-00000008 <test_2>:
-   8:	00200193          	li	gp,2
-   c:	00000093          	li	ra,0
-  10:	0100026f          	jal	tp,20 <target_2>
+00010008 <test_2>:
+   10008:	00200193          	li	gp,2
+   1000c:	00000093          	li	ra,0
+   10010:	0100026f          	jal	tp,10020 <target_2>
 
-00000014 <linkaddr_2>:
-  14:	00000013          	nop
-  18:	00000013          	nop
-  1c:	0400006f          	j	5c <fail>
+00010014 <linkaddr_2>:
+   10014:	00000013          	nop
+   10018:	00000013          	nop
+   1001c:	0400006f          	j	1005c <fail>
 
-00000020 <target_2>:
-  20:	00000117          	auipc	sp,0x0
-  24:	ff410113          	addi	sp,sp,-12 # 14 <linkaddr_2>
-  28:	02411a63          	bne	sp,tp,5c <fail>
+00010020 <target_2>:
+   10020:	00000117          	auipc	sp,0x0
+   10024:	ff410113          	addi	sp,sp,-12 # 10014 <linkaddr_2>
+   10028:	02411a63          	bne	sp,tp,1005c <fail>
 
-0000002c <test_3>:
-  2c:	00100093          	li	ra,1
-  30:	0140006f          	j	44 <test_3+0x18>
-  34:	00108093          	addi	ra,ra,1
-  38:	00108093          	addi	ra,ra,1
-  3c:	00108093          	addi	ra,ra,1
-  40:	00108093          	addi	ra,ra,1
-  44:	00108093          	addi	ra,ra,1
-  48:	00108093          	addi	ra,ra,1
-  4c:	00300e93          	li	t4,3
-  50:	00300193          	li	gp,3
-  54:	01d09463          	bne	ra,t4,5c <fail>
-  58:	00301863          	bne	zero,gp,68 <pass>
+0001002c <test_3>:
+   1002c:	00300193          	li	gp,3
+   10030:	00100093          	li	ra,1
+   10034:	0140006f          	j	10048 <test_3+0x1c>
+   10038:	00108093          	addi	ra,ra,1
+   1003c:	00108093          	addi	ra,ra,1
+   10040:	00108093          	addi	ra,ra,1
+   10044:	00108093          	addi	ra,ra,1
+   10048:	00108093          	addi	ra,ra,1
+   1004c:	00108093          	addi	ra,ra,1
+   10050:	00300393          	li	t2,3
+   10054:	00709463          	bne	ra,t2,1005c <fail>
+   10058:	00301863          	bne	zero,gp,10068 <pass>
 
-0000005c <fail>:
-  5c:	00100d13          	li	s10,1
-  60:	00000d93          	li	s11,0
+0001005c <fail>:
+   1005c:	00100d13          	li	s10,1
+   10060:	00000d93          	li	s11,0
 
-00000064 <loop_fail>:
-  64:	0000006f          	j	64 <loop_fail>
+00010064 <loop_fail>:
+   10064:	0000006f          	j	10064 <loop_fail>
 
-00000068 <pass>:
-  68:	00100d13          	li	s10,1
-  6c:	00100d93          	li	s11,1
+00010068 <pass>:
+   10068:	00100d13          	li	s10,1
+   1006c:	00100d93          	li	s11,1
 
-00000070 <loop_pass>:
-  70:	0000006f          	j	70 <loop_pass>
-	...
-
-Disassembly of section .tohost:
-
-000000c0 <tohost>:
-	...
-
-00000100 <fromhost>:
-	...
+00010070 <loop_pass>:
+   10070:	0000006f          	j	10070 <loop_pass>
+   10074:	00000013          	nop
+   10078:	00000013          	nop
+   1007c:	00000013          	nop
+   10080:	00000013          	nop

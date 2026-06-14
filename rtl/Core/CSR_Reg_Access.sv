@@ -1,6 +1,7 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module CSR_Reg_Access #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -8,10 +9,10 @@ module CSR_Reg_Access #(
 )(
     input   logic                           clk,
     input   logic                           rst_n,
-    input   logic                           access_csr_en,
+    input   logic                           csr_en,
     input   logic   [CSR_ADDR_WIDTH-1:0]    csr_addr,
-    input   logic   [DATA_WIDTH-1:0]        wr_csr_data,
-    output  logic   [DATA_WIDTH-1:0]        rd_csr_data,
+    input   logic   [DATA_WIDTH-1:0]        csr_wdata,
+    output  logic   [DATA_WIDTH-1:0]        csr_rdata,
 // from ctrl
     input   logic   [ADDR_WIDTH-1:0]        exception_inst_addr,
     input   logic   [ADDR_WIDTH-1:0]        next_inst_addr,//IF/ID或者jump_addr
@@ -118,59 +119,6 @@ generate
     end
 endgenerate
 
-// // ALU 运算计数器（mhp_counter3, bit 3）
-// always_ff @(posedge clk or negedge rst_n) begin
-//     if(!rst_n)                              mhpmcounter[0] <= #1 'h0;
-//     else if(mcounterclr[3])                 mhpmcounter[0] <= #1 'h0;
-//     else if(mcountinhibit[3])               mhpmcounter[0] <= #1 mhpmcounter[0];
-//     else if(hpm_valid && mcounteren[3] && hpm_inst_type == 3'd1)
-//                                             mhpmcounter[0] <= #1 mhpmcounter[0] + 'h1;
-// end
-
-// // Load 计数器（mhp_counter4, bit 4）
-// always_ff @(posedge clk or negedge rst_n) begin
-//     if(!rst_n)                              mhpmcounter[1] <= #1 'h0;
-//     else if(mcounterclr[4])                 mhpmcounter[1] <= #1 'h0;
-//     else if(mcountinhibit[4])               mhpmcounter[1] <= #1 mhpmcounter[1];
-//     else if(hpm_valid && mcounteren[4] && hpm_inst_type == 3'd2)
-//                                             mhpmcounter[1] <= #1 mhpmcounter[1] + 'h1;
-// end
-
-// // Store 计数器（mhp_counter5, bit 5）
-// always_ff @(posedge clk or negedge rst_n) begin
-//     if(!rst_n)                              mhpmcounter[2] <= #1 'h0;
-//     else if(mcounterclr[5])                 mhpmcounter[2] <= #1 'h0;
-//     else if(mcountinhibit[5])               mhpmcounter[2] <= #1 mhpmcounter[2];
-//     else if(hpm_valid && mcounteren[5] && hpm_inst_type == 3'd3)
-//                                             mhpmcounter[2] <= #1 mhpmcounter[2] + 'h1;
-// end
-
-// // 条件分支计数器（mhp_counter6, bit 6）
-// always_ff @(posedge clk or negedge rst_n) begin
-//     if(!rst_n)                              mhpmcounter[3] <= #1 'h0;
-//     else if(mcounterclr[6])                 mhpmcounter[3] <= #1 'h0;
-//     else if(mcountinhibit[6])               mhpmcounter[3] <= #1 mhpmcounter[3];
-//     else if(hpm_valid && mcounteren[6] && hpm_inst_type == 3'd4)
-//                                             mhpmcounter[3] <= #1 mhpmcounter[3] + 'h1;
-// end
-
-// // 跳转计数器（mhp_counter7, bit 7）
-// always_ff @(posedge clk or negedge rst_n) begin
-//     if(!rst_n)                              mhpmcounter[4] <= #1 'h0;
-//     else if(mcounterclr[7])                 mhpmcounter[4] <= #1 'h0;
-//     else if(mcountinhibit[7])               mhpmcounter[4] <= #1 mhpmcounter[4];
-//     else if(hpm_valid && mcounteren[7] && hpm_inst_type == 3'd5)
-//                                             mhpmcounter[4] <= #1 mhpmcounter[4] + 'h1;
-// end
-
-// // 乘除计数器（mhp_counter8, bit 8）
-// always_ff @(posedge clk or negedge rst_n) begin
-//     if(!rst_n)                              mhpmcounter[5] <= #1 'h0;
-//     else if(mcounterclr[8])                 mhpmcounter[5] <= #1 'h0;
-//     else if(mcountinhibit[8])               mhpmcounter[5] <= #1 mhpmcounter[5];
-//     else if(hpm_valid && mcounteren[8] && hpm_inst_type == 3'd6)
-//                                             mhpmcounter[5] <= #1 mhpmcounter[5] + 'h1;
-// end
 
 // 预测成功计数器（mhp_counter9, bit 9）
 always_ff @(posedge clk or negedge rst_n) begin
@@ -278,20 +226,20 @@ always_ff @(posedge clk or negedge rst_n) begin
             mepc        <= #1 next_inst_addr;
             mstatus[7]  <= #1 mstatus[3];
             mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus
-        end else if(access_csr_en) begin
+        end else if(csr_en) begin
             case(csr_addr)
-                12'h300  : mstatus          <= #1 {mstatus[31:8],wr_csr_data[7],mstatus[6:4],wr_csr_data[3],mstatus[2:0]};//特权模式保持M模式，写MIE和MPIE
-                12'h304  : mie              <= #1 {mie[31:12],wr_csr_data[11],mie[10:8],wr_csr_data[7],mie[6:4],wr_csr_data[3],mie[2:0]};
-                12'h305  : mtvec            <= #1 wr_csr_data;
-                12'h306  : mcounteren       <= #1 wr_csr_data;
-                12'h320  : mcountinhibit    <= #1 wr_csr_data;
-                12'h341  : mepc             <= #1 wr_csr_data;
-                // 12'h342  : mcause           <= #1 wr_csr_data;
-                // 12'h343  : mtval            <= #1 wr_csr_data;
-                // 12'h344  : mip              <= #1 wr_csr_data;
+                12'h300  : mstatus          <= #1 {mstatus[31:8],csr_wdata[7],mstatus[6:4],csr_wdata[3],mstatus[2:0]};//特权模式保持M模式，写MIE和MPIE
+                12'h304  : mie              <= #1 {mie[31:12],csr_wdata[11],mie[10:8],csr_wdata[7],mie[6:4],csr_wdata[3],mie[2:0]};
+                12'h305  : mtvec            <= #1 csr_wdata;
+                12'h306  : mcounteren       <= #1 csr_wdata;
+                12'h320  : mcountinhibit    <= #1 csr_wdata;
+                12'h341  : mepc             <= #1 csr_wdata;
+                // 12'h342  : mcause           <= #1 csr_wdata;
+                // 12'h343  : mtval            <= #1 csr_wdata;
+                // 12'h344  : mip              <= #1 csr_wdata;
                 //自定义寄存器
                 12'hbc0  : begin
-                    mcounterclr <= #1 wr_csr_data;
+                    mcounterclr <= #1 csr_wdata;
                 end
                 default  : ;
             endcase
@@ -300,40 +248,40 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 always_comb begin
-    rd_csr_data = 'h0;
+    csr_rdata = 'h0;
     illegal_inst_csr = 1'b0;
-    if (access_csr_en) begin
+    if (csr_en) begin
         case(csr_addr)
-            12'h300  : rd_csr_data = mstatus;
-            12'h304  : rd_csr_data = mie;
-            12'h305  : rd_csr_data = mtvec;
-            12'h306  : rd_csr_data = mcounteren;
-            12'h320  : rd_csr_data = mcountinhibit;
-            12'h341  : rd_csr_data = mepc;
-            12'h342  : rd_csr_data = mcause;
-            12'h343  : rd_csr_data = mtval;
-            12'h344  : rd_csr_data = mip;
-            12'hb00  : rd_csr_data = mcycle[DATA_WIDTH-1:0];
-            12'hb80  : rd_csr_data = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hb02  : rd_csr_data = minstret[DATA_WIDTH-1:0];
-            12'hb82  : rd_csr_data = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
+            12'h300  : csr_rdata = mstatus;
+            12'h304  : csr_rdata = mie;
+            12'h305  : csr_rdata = mtvec;
+            12'h306  : csr_rdata = mcounteren;
+            12'h320  : csr_rdata = mcountinhibit;
+            12'h341  : csr_rdata = mepc;
+            12'h342  : csr_rdata = mcause;
+            12'h343  : csr_rdata = mtval;
+            12'h344  : csr_rdata = mip;
+            12'hb00  : csr_rdata = mcycle[DATA_WIDTH-1:0];
+            12'hb80  : csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hb02  : csr_rdata = minstret[DATA_WIDTH-1:0];
+            12'hb82  : csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
 `ifdef ENABLE_HPM
             // hpm_counter3-9 / 3h-9h (CSR 0xBC3-0xBC9 / 0xC43-0xC49)
-            12'hbc3  : rd_csr_data = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
-            12'hbc4  : rd_csr_data = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
-            12'hbc5  : rd_csr_data = mhpmcounter[2][DATA_WIDTH-1:0];  // STORE
-            12'hbc6  : rd_csr_data = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
-            12'hbc7  : rd_csr_data = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
-            12'hbc8  : rd_csr_data = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
-            12'hbc9  : rd_csr_data = mhpmcounter[6][DATA_WIDTH-1:0];  // 预测成功
+            12'hbc3  : csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
+            12'hbc4  : csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
+            12'hbc5  : csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];  // STORE
+            12'hbc6  : csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
+            12'hbc7  : csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
+            12'hbc8  : csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
+            12'hbc9  : csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];  // 预测成功
             // hpm_counter3h-9h (高32位)
-            12'hc43  : rd_csr_data = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc44  : rd_csr_data = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc45  : rd_csr_data = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc46  : rd_csr_data = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc47  : rd_csr_data = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc48  : rd_csr_data = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc49  : rd_csr_data = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc43  : csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc44  : csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc45  : csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc46  : csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc47  : csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc48  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hc49  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
 `endif
             default  : begin
                 illegal_inst_csr = 1'b1;

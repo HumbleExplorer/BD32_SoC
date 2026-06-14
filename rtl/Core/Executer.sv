@@ -1,13 +1,15 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module Executer #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
     parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES,
-    parameter ALIGN_WIDTH = `ALIGN_WIDTH
+    parameter ALIGN_WIDTH = `ALIGN_WIDTH,
+    localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
 )(
     input   logic                           clk,
     input   logic                           rst_n,
@@ -20,20 +22,19 @@ module Executer #(
     `ifndef BRANCH_JUMP_DELAYED
     input   logic                           is_fence_i,
     `endif
+    input   logic                           access_en,
     input   logic                           access_wr,
     // from CSR
-    input   logic   [DATA_WIDTH-1:0]        rd_csr_data,
+    input   logic   [DATA_WIDTH-1:0]        csr_rdata,
     input   logic                           illegal_inst_csr,
-    // from MEM
-    input   logic                           access_illegal,
     // from data_hazard (register values + addresses)
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op1,
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op2,
-    input   logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr,
-    input   logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr,
+    input   logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr,
+    input   logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr,
     input   logic   [ADDR_WIDTH-1:0]        jump_imm,       // 预计算分支目标
     input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4,// 预计算 PC+4
-    input   logic   [DATA_WIDTH-1:0]        wr_mem_data_temp,
+    input   logic   [DATA_WIDTH-1:0]        access_wdata_temp,
     // to ctrl
     `ifndef BRANCH_JUMP_DELAYED
     output  logic                           branch_jump_en,//实际上是否跳转
@@ -42,23 +43,25 @@ module Executer #(
     output  logic   [DATA_WIDTH-2:0]        exception_code,
     output  logic   [DATA_WIDTH-1:0]        exception_val,
     // to OITF（长周期指令派发）
-    output  logic                           longpipe_valid,      // EX 阶段确认长周期指令
-    output  logic                           longpipe_is_div,     // 1=DIV  0=MUL
+    output  logic                           lp_valid,           // EX 阶段确认长周期指令
+    output  logic                           lp_is_div,          // 1=DIV  0=MUL
     output  logic                           mul_ready,
     output  logic                           div_ready,
     output  logic                           mul_valid_wbck,
     output  logic                           div_valid_wbck,
-    output  logic   [DATA_WIDTH-1:0]        result_wbck,
+    output  logic   [DATA_WIDTH-1:0]        mul_result_wbck,
+    output  logic   [DATA_WIDTH-1:0]        div_result_wbck,
     // to mem
     output  logic   [ADDR_WIDTH-1:0]        access_addr,
-    output  logic   [DATA_WIDTH-1:0]        wr_mem_data,
-    output  logic   [ALIGN_BYTES-1:0]       wr_mem_mask,
-    output  logic   [2:0]                   rd_mem_func3,
-    // to wb
-    output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr,
-    output  logic   [DATA_WIDTH-1:0]        wr_reg_data,
+    output  logic   [DATA_WIDTH-1:0]        access_wdata,
+    output  logic   [ALIGN_BYTES-1:0]       access_wmask,
+    output  logic   [2:0]                   access_func3,
+    // to wb（写寄存器信息）
+    output  logic                           reg_rd_wen,
+    output  logic   [REG_ADDR_WIDTH-1:0]    reg_rd_waddr,
+    output  logic   [DATA_WIDTH-1:0]        reg_rd_wdata,
     // to csr
-    output  logic   [DATA_WIDTH-1:0]        wr_csr_data,
+    output  logic   [DATA_WIDTH-1:0]        csr_wdata,
     output  logic                           wfi_req,
     output  logic                           mret_req,
     // to IF
@@ -82,9 +85,6 @@ logic                       less_unsigned;
 logic   [DATA_WIDTH-1:0]    sr_shift;
 logic   [DATA_WIDTH-1:0]    sr_shift_mask;
 
-// logic                       access_addr_misalign;
-// 支持非对齐访存
-
 assign  opcode          =   inst[6:0];
 assign  rd              =   inst[11:7];
 assign  func3           =   inst[14:12];
@@ -99,18 +99,20 @@ assign  sr_shift        =   alu_op1 >> alu_op2[4:0];
 assign  sr_shift_mask   =   {DATA_WIDTH{1'b1}} >> alu_op2[4:0];
 
 assign  access_addr = alu_op1 + imm;
-// assign  access_addr_misalign = |access_addr[ALIGN_WIDTH-1:0];
-assign  rd_mem_func3 = func3;
+assign  access_func3 = func3;
 logic                       mul_div_en;
 logic   [2:0]               mul_div_func3;
 
 assign  mul_div_en = (opcode == `INST_TYPE_R_M) && (func7 == 7'b0000001);
 assign  mul_div_func3 = func3;
-assign  longpipe_valid = mul_div_en;
-assign  longpipe_is_div = func3[2];
+assign  lp_valid = mul_div_en;
+assign  lp_is_div = func3[2];
 
-assign exception_code =(illegal_inst_csr) ? 'h2 : access_illegal ? (access_wr ? 4'd7 : 4'd5) : {DATA_WIDTH-1{1'b1}};
-assign exception_val = access_illegal ? access_addr : 'h0;
+logic  access_illegal;
+logic  access_addr_misalign;
+assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG): 1'b0;
+assign exception_code =(illegal_inst_csr) ? 4'd2 : access_illegal ? (access_wr ? 4'd7 : 4'd5) : access_addr_misalign ? (access_wr ? 4'd6 : 4'd4) : {DATA_WIDTH-1{1'b1}};
+assign exception_val = (access_illegal || access_addr_misalign) ? access_addr : illegal_inst_csr ? inst : 'h0;
 `ifndef BRANCH_JUMP_DELAYED
 assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);
 assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
@@ -132,67 +134,72 @@ end
 `endif
 
 always_comb begin
-    wr_reg_addr     = 5'h0;
-    wr_reg_data     = 'h0;
-    wr_mem_data     = 'h0;
-    wr_mem_mask     = 4'b0000;
-    wr_csr_data     = 'h0;
-    wfi_req         = 1'b0;
-    mret_req        = 1'b0;
-    branch_taken    = 1'b0;
-    branch_target   = 'h0;
+    reg_rd_wen        = 1'b0;
+    reg_rd_waddr      = 5'h0;
+    reg_rd_wdata      = 'h0;
+    access_wdata      = 'h0;
+    access_wmask      = 4'b0000;
+    access_addr_misalign = 1'b0;
+    csr_wdata         = 'h0;
+    wfi_req           = 1'b0;
+    mret_req          = 1'b0;
+    branch_taken      = 1'b0;
+    branch_target     = 'h0;
     case(opcode)
         `INST_TYPE_I:begin
-            wr_reg_addr     = rd;
+            reg_rd_wen        = 1'b1;
+            reg_rd_waddr      = rd;
             case(func3)
-                `INST_ADDI  : wr_reg_data   = alu_op1 + alu_op2;
-                `INST_SLTI  : wr_reg_data   = less_signed ? 32'h1 : 32'h0;
-                `INST_SLTIU : wr_reg_data   = less_unsigned ? 32'h1 : 32'h0;
-                `INST_XORI  : wr_reg_data   = alu_op1 ^ alu_op2;
-                `INST_ORI   : wr_reg_data   = alu_op1 | alu_op2;
-                `INST_ANDI  : wr_reg_data   = alu_op1 & alu_op2;
-                `INST_SLLI  : wr_reg_data   = alu_op1 << alu_op2[4:0];
+                `INST_ADDI  : reg_rd_wdata   = alu_op1 + alu_op2;
+                `INST_SLTI  : reg_rd_wdata   = less_signed ? 32'h1 : 32'h0;
+                `INST_SLTIU : reg_rd_wdata   = less_unsigned ? 32'h1 : 32'h0;
+                `INST_XORI  : reg_rd_wdata   = alu_op1 ^ alu_op2;
+                `INST_ORI   : reg_rd_wdata   = alu_op1 | alu_op2;
+                `INST_ANDI  : reg_rd_wdata   = alu_op1 & alu_op2;
+                `INST_SLLI  : reg_rd_wdata   = alu_op1 << alu_op2[4:0];
                 `INST_SRI:begin
                     if(func7 == 7'b0100000)//SRAI
-                        // wr_reg_data = (sr_shift & sr_shift_mask) | ({DATA_WIDTH{alu_op1[DATA_WIDTH-1]}} & (~sr_shift_mask));
-                        wr_reg_data = $signed(alu_op1) >>> alu_op2[4:0];
+                        // reg_rd_wdata = (sr_shift & sr_shift_mask) | ({DATA_WIDTH{alu_op1[DATA_WIDTH-1]}} & (~sr_shift_mask));
+                        reg_rd_wdata = $signed(alu_op1) >>> alu_op2[4:0];
                     else//SRLI
-                        wr_reg_data = alu_op1 >> alu_op2[4:0];
+                        reg_rd_wdata = alu_op1 >> alu_op2[4:0];
                 end
             endcase
         end
         `INST_TYPE_R_M:begin
             if ((func7 == 7'b0000000) || (func7 == 7'b0100000)) begin
-                wr_reg_addr = rd;
+                reg_rd_wen        = 1'b1;
+                reg_rd_waddr      = rd;
                 case(func3)
                     `INST_ADD_SUB:begin
                         if(func7 == 7'b000_0000)//ADD
-                            wr_reg_data = alu_op1 + alu_op2;
+                            reg_rd_wdata = alu_op1 + alu_op2;
                         else//SUB
-                            wr_reg_data = alu_op1 - alu_op2;
-                    end 
-                    `INST_SLL: wr_reg_data = alu_op1 << alu_op2[4:0];
-                    `INST_SLT: wr_reg_data = less_signed ? 32'h1 : 32'h0;
-                    `INST_SLTU:wr_reg_data = less_unsigned ? 32'h1 : 32'h0;
-                    `INST_XOR: wr_reg_data = alu_op1 ^ alu_op2;
-                    `INST_OR: wr_reg_data  = alu_op1 | alu_op2;
-                    `INST_AND:wr_reg_data  = alu_op1 & alu_op2;
+                            reg_rd_wdata = alu_op1 - alu_op2;
+                    end
+                    `INST_SLL: reg_rd_wdata = alu_op1 << alu_op2[4:0];
+                    `INST_SLT: reg_rd_wdata = less_signed ? 32'h1 : 32'h0;
+                    `INST_SLTU:reg_rd_wdata = less_unsigned ? 32'h1 : 32'h0;
+                    `INST_XOR: reg_rd_wdata = alu_op1 ^ alu_op2;
+                    `INST_OR: reg_rd_wdata  = alu_op1 | alu_op2;
+                    `INST_AND:reg_rd_wdata  = alu_op1 & alu_op2;
                     `INST_SR:begin
                         if(func7 == 7'b0100000)//SRAI
-                            // wr_reg_data = (sr_shift & sr_shift_mask) | ({DATA_WIDTH{alu_op1[DATA_WIDTH-1]}} & (~sr_shift_mask));
-                            wr_reg_data = $signed(alu_op1) >>> alu_op2[4:0];
+                            // reg_rd_wdata = (sr_shift & sr_shift_mask) | ({DATA_WIDTH{alu_op1[DATA_WIDTH-1]}} & (~sr_shift_mask));
+                            reg_rd_wdata = $signed(alu_op1) >>> alu_op2[4:0];
                         else//SRLI
-                            wr_reg_data = alu_op1 >> alu_op2[4:0];
+                            reg_rd_wdata = alu_op1 >> alu_op2[4:0];
                     end
                 endcase
             end
-            else if(func7 == 7'b0000001) begin//RV_M → 结果走 OITF，不通过 wr_reg 路径
+            else if(func7 == 7'b0000001) begin//RV_M → 结果走 OITF，但 reg_rd_wen/waddr 仍输出
+                reg_rd_wen        = 1'b1;
+                reg_rd_waddr      = rd;
             end
         end
         `INST_TYPE_B: begin
-            wr_reg_addr     = 5'h0;
-            wr_reg_data     = 'h0;
-            wr_mem_data     = 'h0;
+            reg_rd_wdata      = 'h0;
+            access_wdata      = 'h0;
             case(func3)
                 `INST_BEQ: branch_taken     = equal;
                 `INST_BNE: branch_taken     = ~equal;
@@ -209,74 +216,87 @@ always_comb begin
                 `INST_SB:begin
                     case (access_addr[1:0])
                         2'b00: begin
-                            wr_mem_data = {24'h0,wr_mem_data_temp[7:0]};
-                            wr_mem_mask = 4'b0001;
+                            access_wdata = {24'h0,access_wdata_temp[7:0]};
+                            access_wmask = 4'b0001;
                         end
                         2'b01: begin
-                            wr_mem_data = {16'h0,wr_mem_data_temp[7:0],8'h0};
-                            wr_mem_mask = 4'b0010;
+                            access_wdata = {16'h0,access_wdata_temp[7:0],8'h0};
+                            access_wmask = 4'b0010;
                         end
                         2'b10: begin
-                            wr_mem_data = {8'h0,wr_mem_data_temp[7:0],16'h0};
-                            wr_mem_mask = 4'b0100;
+                            access_wdata = {8'h0,access_wdata_temp[7:0],16'h0};
+                            access_wmask = 4'b0100;
                         end
                         2'b11: begin
-                            wr_mem_data = {wr_mem_data_temp[7:0],24'h0};
-                            wr_mem_mask = 4'b1000;
+                            access_wdata = {access_wdata_temp[7:0],24'h0};
+                            access_wmask = 4'b1000;
                         end
                         default: begin
-                            wr_mem_data = {24'h0,wr_mem_data_temp[7:0]};
-                            wr_mem_mask = 4'b0001;
+                            access_wdata = {24'h0,access_wdata_temp[7:0]};
+                            access_wmask = 4'b0001;
                         end
                     endcase
                 end
                 `INST_SH: begin
+                    access_addr_misalign = access_addr[0];
                     case (access_addr[1])
                         1'b0: begin
-                            wr_mem_data = {16'h0,wr_mem_data_temp[15:0]};
-                            wr_mem_mask = 4'b0011;
+                            access_wdata = {16'h0,access_wdata_temp[15:0]};
+                            access_wmask = 4'b0011;
                         end
                         1'b1: begin
-                            wr_mem_data = {wr_mem_data_temp[15:0],16'h0};
-                            wr_mem_mask = 4'b1100;
+                            access_wdata = {access_wdata_temp[15:0],16'h0};
+                            access_wmask = 4'b1100;
                         end
                         default: begin
-                            wr_mem_data = {16'h0,wr_mem_data_temp[15:0]};
-                            wr_mem_mask = 4'b0011;
+                            access_wdata = {16'h0,access_wdata_temp[15:0]};
+                            access_wmask = 4'b0011;
                         end
                     endcase
                 end
                 `INST_SW: begin
-                    wr_mem_data = wr_mem_data_temp;
-                    wr_mem_mask = 4'b1111;
+                    access_addr_misalign = |access_addr[ALIGN_WIDTH-1:0];
+                    access_wdata = access_wdata_temp;
+                    access_wmask = 4'b1111;
                 end
             endcase
         end
         `INST_TYPE_L: begin
-            wr_reg_addr = rd;
+            reg_rd_wen        = 1'b1;
+            reg_rd_waddr      = rd;
+            case(func3)
+                `INST_LH, `INST_LHU: 
+                    access_addr_misalign = access_addr[0];
+                `INST_LW: 
+                    access_addr_misalign = |access_addr[ALIGN_WIDTH-1:0];
+            endcase
         end
         `INST_SYSTEM: begin
-            wr_reg_addr = rd;
-            wr_reg_data = rd_csr_data;
+            reg_rd_wen        = 1'b1;
+            reg_rd_waddr      = rd;
+            reg_rd_wdata = csr_rdata;
             case (func3)
-                `INST_CSRRW: wr_csr_data = alu_op1;
-                `INST_CSRRS: wr_csr_data = rd_csr_data | alu_op1;
-                `INST_CSRRC: wr_csr_data = rd_csr_data & (~alu_op1);
-                `INST_CSRRWI:wr_csr_data = {27'h0,zimm};
-                `INST_CSRRSI:wr_csr_data = rd_csr_data | {27'h0,zimm};
-                `INST_CSRRCI:wr_csr_data = rd_csr_data & {~{27'h0,zimm}};
-                `INST_PRIV:
+                `INST_CSRRW: csr_wdata = alu_op1;
+                `INST_CSRRS: csr_wdata = csr_rdata | alu_op1;
+                `INST_CSRRC: csr_wdata = csr_rdata & (~alu_op1);
+                `INST_CSRRWI:csr_wdata = {27'h0,zimm};
+                `INST_CSRRSI:csr_wdata = csr_rdata | {27'h0,zimm};
+                `INST_CSRRCI:csr_wdata = csr_rdata & {~{27'h0,zimm}};
+                `INST_PRIV: begin
+                    reg_rd_wen    = 1'b0;   // MRET/WFI 不写寄存器
+                    reg_rd_waddr  = 5'h0;
                     case(func12)
                         // `INST_EBREAK: ebreak_req = 1'b1;
                         // `INST_ECALL :  ecall_req = 1'b1;
                         `INST_MRET: mret_req = 1'b1;
                         `INST_WFI:  wfi_req =  1'b1;
                     endcase
+                end
             endcase
         end
         /*
         link为x1或x5
-        
+
         对于JAL指令, rd = link时push
         对于JALR指令:
             rd  |  rs1  | rs1 = rd |   RAS操作
@@ -288,24 +308,28 @@ always_comb begin
             link  | link  |     1    |    push
         */
         `INST_JAL:begin
-            wr_reg_addr     = rd;
-            wr_reg_data     = inst_addr_plus_4;
-            branch_taken    = 1'b1;
-            branch_target   = jump_imm;
+            reg_rd_wen        = 1'b1;
+            reg_rd_waddr      = rd;
+            reg_rd_wdata      = inst_addr_plus_4;
+            branch_taken      = 1'b1;
+            branch_target     = jump_imm;
         end
         `INST_JALR:begin
-            wr_reg_addr     = rd;
-            wr_reg_data     = inst_addr_plus_4;
-            branch_taken    = 1'b1;
-            branch_target   = alu_op1 + imm;
+            reg_rd_wen        = 1'b1;
+            reg_rd_waddr      = rd;
+            reg_rd_wdata      = inst_addr_plus_4;
+            branch_taken      = 1'b1;
+            branch_target     = alu_op1 + imm;
         end
         `INST_LUI:begin
-            wr_reg_addr     = rd;
-            wr_reg_data     = alu_op2;
+            reg_rd_wen        = 1'b1;
+            reg_rd_waddr      = rd;
+            reg_rd_wdata      = alu_op2;
         end
         `INST_AUIPC:begin
-            wr_reg_addr     = rd;
-            wr_reg_data     = alu_op1 + alu_op2;
+            reg_rd_wen        = 1'b1;
+            reg_rd_waddr      = rd;
+            reg_rd_wdata      = alu_op1 + alu_op2;
         end
         `INST_FENCE:begin
             if(func3) begin//FENCE.I 冲刷
@@ -328,20 +352,19 @@ mul_div #(
     .clk         	(clk            ),
     .rst_n       	(rst_n          ),
     .start      	(mul_div_en     ),
-    .rd_rs1_addr 	(rd_rs1_addr    ),
-    .rd_rs2_addr 	(rd_rs2_addr    ),
-    .wr_rd_addr  	(wr_reg_addr    ),
+    .reg_rs1_raddr 	(reg_rs1_raddr    ),
+    .reg_rs2_raddr 	(reg_rs2_raddr    ),
+    .reg_rd_waddr   (rd              ),
     .func3_i     	(mul_div_func3  ),
     .a_i         	(alu_op1        ),
     .b_i         	(alu_op2        ),
-    .result_o    	(result_wbck ),
-    .data_valid_o   (             ),
-    .ready_o        (             ),
+    .mul_result_o   (mul_result_wbck),
+    .div_result_o   (div_result_wbck),
     .mul_ready_o    (mul_ready    ),
     .div_ready_o    (div_ready    ),
     .mul_valid_o    (mul_valid_wbck),
     .div_valid_o    (div_valid_wbck)
 
 );
-    
+
 endmodule

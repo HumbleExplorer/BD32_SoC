@@ -1,5 +1,6 @@
 `include "../../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module apb_uart #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -74,8 +75,8 @@ logic[7:0]     lsr;            // 线状态寄存器（只读）
 logic[7:0]     msr;            // 调制解调器状态（只读）
 
 // 子模块接口信号（统一信号名+位宽）
-(* mark_debug = "true" *)logic          clk_sample;     // 16倍波特率时钟
-(* mark_debug = "true" *)logic          clk_uart;       // 1倍波特率时钟
+logic          clk_sample;     // 16倍波特率时钟
+logic          clk_uart;       // 1倍波特率时钟
 logic[7:0]     rx_data_out;    // 接收数据
 logic          rx_data_valid;  // 接收数据就绪（与uart_rx的rx_data_ready对接）
 logic[3:0]     rx_err;         // 接收错误 {BI[3], FE[2], PE[1], OE[0]} 16550标准位序

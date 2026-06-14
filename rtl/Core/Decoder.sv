@@ -1,6 +1,7 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module Decoder #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -10,22 +11,20 @@ module Decoder #(
     input   logic   [ADDR_WIDTH-1:0]        inst_addr,
     input   logic   [DATA_WIDTH-1:0]        inst,
     //from register
-    input   logic   [DATA_WIDTH-1:0]        rd_rs1_data,
-    input   logic   [DATA_WIDTH-1:0]        rd_rs2_data,
+    input   logic   [DATA_WIDTH-1:0]        reg_rs1_rdata,
+    input   logic   [DATA_WIDTH-1:0]        reg_rs2_rdata,
 
     input   logic   [1:0]                   priv_mode,
     //to register
-    output  logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr,
-    output  logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr,
-    output  logic                           wr_reg_en,
-    output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr,
+    output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr,
+    output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr,
     //to instr execute
     output  logic   [DATA_WIDTH-1:0]        alu_op1,
     output  logic   [DATA_WIDTH-1:0]        alu_op2,
     output  logic   [DATA_WIDTH-1:0]        imm,
     output  logic                           access_en,
     output  logic                           access_wr,
-    output  logic                           access_csr_en,
+    output  logic                           csr_en,
     output  logic   [CSR_ADDR_WIDTH-1:0]    csr_addr,
     output  logic                           is_fence_i,
     output  logic   [1:0]                   branch_inst_type,// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
@@ -80,7 +79,6 @@ logic rs1_eq_rd;
 
 assign  opcode  = inst[6:0];
 assign  rd      = inst[11:7];
-assign  wr_reg_addr = wr_reg_en ? rd : '0;
 assign  func3   = inst[14:12];
 assign  rs1     = inst[19:15];
 assign  rs2     = inst[24:20];
@@ -93,7 +91,7 @@ assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
 assign  rs1_eq_rd = (inst[19:15] == rd);
 
 assign  exception_code = invalid_inst ? 'h2 : ecall_req ? ((priv_mode == 2'b00) ? 'h8 : 'h11): ebreak_req ? 'h3 : {(DATA_WIDTH-1){1'b1}};
-assign  exception_val  = 'h0;
+assign  exception_val  = invalid_inst ? inst : 'h0;
 
 `ifdef ENABLE_HPM
 always_comb begin
@@ -128,14 +126,13 @@ always_comb begin
     endcase
 end
 always_comb    begin
-    rd_rs1_addr = 0;
-    rd_rs2_addr = 0;
+    reg_rs1_raddr   = 0;
+    reg_rs2_raddr   = 0;
     alu_op1     = 'h0;
     alu_op2     = 'h0;
-    wr_reg_en   = 1'b0;
     access_en   = 1'b0;
     access_wr   = 1'b0;
-    access_csr_en   = 1'b0;
+    csr_en      = 1'b0;
     csr_addr    = 'h0;
     invalid_inst = 1'b0;
     ecall_req       = 1'b0;
@@ -149,13 +146,13 @@ always_comb    begin
         `INST_TYPE_I:begin
             case(func3)
                 `INST_ADDI,`INST_SLTI, `INST_SLTIU, `INST_XORI, `INST_ORI, `INST_ANDI, `INST_SLLI, `INST_SRI:begin
-                    wr_reg_en       = 1'b1;
+
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
-                    access_csr_en   = 1'b0;
-                    rd_rs1_addr     = rs1;
-                    rd_rs2_addr     = 5'h0;
-                    alu_op1         = rd_rs1_data;
+                    csr_en          = 1'b0;
+                    reg_rs1_raddr   = rs1;
+                    reg_rs2_raddr   = 5'h0;
+                    alu_op1         = reg_rs1_rdata;
                     alu_op2         = imm;
                 end
                 default: begin
@@ -167,14 +164,14 @@ always_comb    begin
             case(func3)
                 `INST_ADD_SUB,`INST_SLL,`INST_SLT,`INST_SLTU,`INST_XOR,`INST_SR,`INST_OR,`INST_AND,
                 `INST_MUL,`INST_MULHU,`INST_MULH,`INST_MULHSU,`INST_DIV,`INST_DIVU,`INST_REM,`INST_REMU:begin
-                    wr_reg_en       = 1'b1;
+
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
-                    access_csr_en   = 1'b0;
-                    rd_rs1_addr     = rs1;
-                    rd_rs2_addr     = rs2;
-                    alu_op1         = rd_rs1_data;
-                    alu_op2         = rd_rs2_data;
+                    csr_en          = 1'b0;
+                    reg_rs1_raddr   = rs1;
+                    reg_rs2_raddr   = rs2;
+                    alu_op1         = reg_rs1_rdata;
+                    alu_op2         = reg_rs2_rdata;
                 end
                 default: begin
                     invalid_inst = 1'b1;
@@ -184,14 +181,14 @@ always_comb    begin
         `INST_TYPE_B:begin
             case(func3)
                 `INST_BEQ,`INST_BNE,`INST_BLT,`INST_BGE,`INST_BLTU,`INST_BGEU:begin
-                    wr_reg_en       = 1'b0;
+        
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
-                    access_csr_en   = 1'b0;
-                    rd_rs1_addr     = rs1;
-                    rd_rs2_addr     = rs2;
-                    alu_op1         = rd_rs1_data;
-                    alu_op2         = rd_rs2_data;
+                    csr_en          = 1'b0;
+                    reg_rs1_raddr   = rs1;
+                    reg_rs2_raddr   = rs2;
+                    alu_op1         = reg_rs1_rdata;
+                    alu_op2         = reg_rs2_rdata;
                     branch_inst_type= 2'b01;
                     branch_req      = 1'b1;
                 end
@@ -203,13 +200,13 @@ always_comb    begin
         `INST_TYPE_S:begin
             case(func3)
                 `INST_SB, `INST_SW, `INST_SH:begin
-                    wr_reg_en       = 1'b0;
+        
                     access_en       = 1'b1;
                     access_wr       = 1'b1;
-                    access_csr_en   = 1'b0;
-                    rd_rs1_addr     = rs1;
-                    rd_rs2_addr     = rs2;
-                    alu_op1         = rd_rs1_data;
+                    csr_en          = 1'b0;
+                    reg_rs1_raddr   = rs1;
+                    reg_rs2_raddr   = rs2;
+                    alu_op1         = reg_rs1_rdata;
                     alu_op2         = imm;
                 end
                 default: begin
@@ -220,13 +217,13 @@ always_comb    begin
         `INST_TYPE_L:begin
             case(func3)
                 `INST_LB, `INST_LH, `INST_LW, `INST_LBU, `INST_LHU:begin
-                    wr_reg_en       = 1'b1;
+
                     access_en       = 1'b1;
                     access_wr       = 1'b0;
-                    access_csr_en   = 1'b0;
-                    rd_rs1_addr     = rs1;
-                    rd_rs2_addr     = 'h0;
-                    alu_op1         = rd_rs1_data;
+                    csr_en          = 1'b0;
+                    reg_rs1_raddr   = rs1;
+                    reg_rs2_raddr   = 'h0;
+                    alu_op1         = reg_rs1_rdata;
                     alu_op2         = imm;
                 end
                 default: begin
@@ -239,24 +236,24 @@ always_comb    begin
             case(func3)
                 `INST_CSRRW, `INST_CSRRS, `INST_CSRRC:begin
                     csr_addr        = zimm;
-                    wr_reg_en       = 1'b1;
+
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
-                    access_csr_en   = 1'b1;
-                    rd_rs1_addr     = rs1;
-                    rd_rs2_addr     = 'h0;
-                    alu_op1         = rd_rs1_data;
+                    csr_en          = 1'b1;
+                    reg_rs1_raddr   = rs1;
+                    reg_rs2_raddr   = 'h0;
+                    alu_op1         = reg_rs1_rdata;
                     alu_op2         = 'h0;
                 end
                 `INST_CSRRWI, `INST_CSRRSI, `INST_CSRRCI:begin
                     csr_addr        = zimm;
-                    wr_reg_en       = 1'b1;
+
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
-                    access_csr_en   = 1'b1;
-                    rd_rs1_addr     = 'h0;
-                    rd_rs2_addr     = 'h0;
-                    alu_op1         = rd_rs1_data;
+                    csr_en          = 1'b1;
+                    reg_rs1_raddr   = 'h0;
+                    reg_rs2_raddr   = 'h0;
+                    alu_op1         = reg_rs1_rdata;
                     alu_op2         = 'h0;
                 end
                 `INST_PRIV: begin
@@ -275,12 +272,12 @@ always_comb    begin
             endcase
         end
         `INST_JAL:begin
-            wr_reg_en       = 1'b1;
+
             access_en       = 1'b0;
             access_wr       = 1'b0;
-            access_csr_en   = 1'b0;
-            rd_rs1_addr     = 5'h0;
-            rd_rs2_addr     = 5'h0;
+            csr_en          = 1'b0;
+            reg_rs1_raddr   = 5'h0;
+            reg_rs2_raddr   = 5'h0;
             alu_op1         = inst_addr;
             alu_op2         = imm;
             branch_inst_type= 2'b10;
@@ -288,13 +285,13 @@ always_comb    begin
             push_ras        = rd_link;//push or none
         end
         `INST_JALR:begin
-            wr_reg_en       = 1'b1;
+
             access_en       = 1'b0;
             access_wr       = 1'b0;
-            access_csr_en   = 1'b0;
-            rd_rs1_addr     = rs1;
-            rd_rs2_addr     = 5'h0;
-            alu_op1         = rd_rs1_data;
+            csr_en          = 1'b0;
+            reg_rs1_raddr   = rs1;
+            reg_rs2_raddr   = 5'h0;
+            alu_op1         = reg_rs1_rdata;
             alu_op2         = imm;
             branch_inst_type= 2'b11;
             branch_req      = 1'b1;
@@ -302,43 +299,43 @@ always_comb    begin
             pop_ras         = rs1_link && ((rd_link && ~rs1_eq_rd) || ~rd_link);
         end
         `INST_LUI:begin
-            wr_reg_en       = 1'b1;
+
             access_en       = 1'b0;
             access_wr       = 1'b0;
-            access_csr_en   = 1'b0;
-            rd_rs1_addr     = 5'h0;
-            rd_rs2_addr     = 5'h0;
+            csr_en          = 1'b0;
+            reg_rs1_raddr   = 5'h0;
+            reg_rs2_raddr   = 5'h0;
             alu_op1         = 32'h0;
             alu_op2         = imm;
         end
         `INST_AUIPC:begin
-            wr_reg_en       = 1'b1;
+
             access_en       = 1'b0;
             access_wr       = 1'b0;
-            access_csr_en   = 1'b0;
-            rd_rs1_addr     = 5'h0;
-            rd_rs2_addr     = 5'h0;
+            csr_en          = 1'b0;
+            reg_rs1_raddr   = 5'h0;
+            reg_rs2_raddr   = 5'h0;
             alu_op1         = inst_addr;
             alu_op2         = imm;
         end
         `INST_FENCE: begin
-            wr_reg_en       = 1'b0;
+
             access_en       = 1'b0;
             access_wr       = 1'b0;
-            access_csr_en   = 1'b0;
-            rd_rs1_addr     = 5'h0;
-            rd_rs2_addr     = 5'h0;
+            csr_en          = 1'b0;
+            reg_rs1_raddr   = 5'h0;
+            reg_rs2_raddr   = 5'h0;
             alu_op1         = inst_addr;
             alu_op2         = 32'h4;
             is_fence_i      = func3[0];
         end
         `INST_NOP_OP: begin
-            wr_reg_en       = 1'b0;
+
             access_en       = 1'b0;
             access_wr       = 1'b0;
-            access_csr_en   = 1'b0;
-            rd_rs1_addr     = 5'h0;
-            rd_rs2_addr     = 5'h0;
+            csr_en          = 1'b0;
+            reg_rs1_raddr   = 5'h0;
+            reg_rs2_raddr   = 5'h0;
             alu_op1         = 32'h0;
             alu_op2         = 32'h0;
         end

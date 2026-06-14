@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 
 module AXI_APB_Bridge #(
     parameter ADDR_WIDTH  = `ADDR_WIDTH,

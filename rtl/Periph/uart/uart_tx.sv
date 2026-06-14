@@ -1,4 +1,5 @@
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module uart_tx (
     input  logic          clk_uart,   // 1倍波特率发送时钟
     input  logic          rst_n,      // 异步复位（低有效）

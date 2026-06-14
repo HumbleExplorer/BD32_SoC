@@ -46,7 +46,8 @@
 
 `include "../SoC_Config.sv"
 
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module Dynamic_Branch_Predictor #(
     parameter ADDR_WIDTH = `ADDR_WIDTH, // 地址宽度
     parameter DATA_WIDTH = `DATA_WIDTH,  // 数据宽度
@@ -262,7 +263,15 @@ logic                      btb_update_pop_ras_latched;
 logic                      btb_update_push_ras_latched;
 
 always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || is_fence_i) begin
+    if (!rst_n) begin
+        btb_update_en_latched       <= #1 1'b0;
+        btb_update_idx_latched      <= #1 '0;
+        btb_update_tag_latched      <= #1 '0;
+        btb_update_target_latched   <= #1 '0;
+        btb_update_type_latched     <= #1 '0;
+        btb_update_pop_ras_latched  <= #1 1'b0;
+        btb_update_push_ras_latched <= #1 1'b0;
+    end else if (is_fence_i) begin
         btb_update_en_latched       <= #1 1'b0;
         btb_update_idx_latched      <= #1 '0;
         btb_update_tag_latched      <= #1 '0;
@@ -290,7 +299,7 @@ end
 // ========================================================================
 
 always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || is_fence_i) begin//fence.i后不再使用旧的跳转属性
+    if (!rst_n) begin//fence.i后不再使用旧的跳转属性
         // 复位: 清空所有BTB表项（valid必须复位；tag/target/PHT综合跳过，减复位树）
         for (int i = 0; i < BTB_ENTRIES; i++) begin
             btb_valid_array[i]      <= #1 1'b0;
@@ -327,7 +336,12 @@ end
 
 
 always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || is_fence_i) begin
+    if (!rst_n) begin
+        ghr_pht_update_en_latched <= #1 1'b0;
+        ghr_update_value_latched  <= #1 '0;
+        pht_update_idx_latched    <= #1 '0;
+        pht_update_taken_latched  <= #1 '0;
+    end else if (is_fence_i) begin
         ghr_pht_update_en_latched <= #1 1'b0;
         ghr_update_value_latched  <= #1 '0;
         pht_update_idx_latched    <= #1 '0;
@@ -361,7 +375,13 @@ logic [RAS_ADDR_WIDTH:0]   ras_update_ptr_latched;    // latch时刻的 real_ras
 logic [RAS_DATA_WIDTH-1:0] ras_update_data_latched;   // push数据 (branch_pc截断+1)
 
 always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || is_fence_i) begin
+    if (!rst_n) begin
+        ras_update_en_latched   <= #1 1'b0;
+        ras_push_latched        <= #1 1'b0;
+        ras_pop_latched         <= #1 1'b0;
+        ras_update_ptr_latched  <= #1 '0;
+        ras_update_data_latched <= #1 '0;
+    end else if (is_fence_i) begin
         ras_update_en_latched   <= #1 1'b0;
         ras_push_latched        <= #1 1'b0;
         ras_pop_latched         <= #1 1'b0;
@@ -412,7 +432,11 @@ logic spec_outcome_mispred_latched;  // 是否为预测错误
 logic spec_outcome_taken_latched;    // 预测方向 (correct prediction 时有效)
 
 always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || is_fence_i) begin
+    if (!rst_n) begin
+        spec_outcome_en_latched      <= #1 1'b0;
+        spec_outcome_mispred_latched <= #1 1'b0;
+        spec_outcome_taken_latched   <= #1 1'b0;
+    end else if (is_fence_i) begin
         spec_outcome_en_latched      <= #1 1'b0;
         spec_outcome_mispred_latched <= #1 1'b0;
         spec_outcome_taken_latched   <= #1 1'b0;

@@ -1,12 +1,13 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module EX_MEM #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH,
     localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH
- )( 
+ )(
     input   logic                           clk,
     input   logic                           rst_n,
     input   logic                           stall,
@@ -14,9 +15,10 @@ module EX_MEM #(
     // from execute
     input   logic   [ADDR_WIDTH-1:0]        inst_addr_i,
     input   logic   [DATA_WIDTH-1:0]        inst_i,
-    input   logic                           wr_reg_en_i,
-    input   logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_i,
-    input   logic   [DATA_WIDTH-1:0]        wr_reg_data_i,
+    input   logic                           reg_rd_wen_i,
+    input   logic   [REG_ADDR_WIDTH-1:0]    reg_rd_waddr_i,
+    input   logic   [DATA_WIDTH-1:0]        reg_rd_wdata_i,
+    input   logic                           lp_valid_i,        // 长指令门控：MUL/DIV 不写 ALU 路径
     input   logic                           access_en_i,
     input   logic                           access_wr_i,
     input   logic                           bus_sel,
@@ -59,9 +61,9 @@ module EX_MEM #(
     output  logic                           access_en_o,
     output  logic                           access_wr_o,
     // to wb
-    output  logic                           wr_reg_en_o,
-    output  logic   [REG_ADDR_WIDTH-1:0]    wr_reg_addr_o,
-    output  logic   [DATA_WIDTH-1:0]        wr_reg_data_o
+    output  logic                           reg_rd_wen_o,
+    output  logic   [REG_ADDR_WIDTH-1:0]    reg_rd_waddr_o,
+    output  logic   [DATA_WIDTH-1:0]        reg_rd_wdata_o
 
 `ifdef ENABLE_HPM
     ,
@@ -104,9 +106,9 @@ always_ff @(posedge clk or negedge rst_n) begin
         inst_o          <= #1 `INST_NOP;
         access_en_o     <= #1 1'b0;
         access_wr_o     <= #1 1'b0;
-        wr_reg_en_o     <= #1 1'b0;
-        wr_reg_addr_o   <= #1 'h0;
-        wr_reg_data_o   <= #1 'h0;
+        reg_rd_wen_o    <= #1 1'b0;
+        reg_rd_waddr_o  <= #1 'h0;
+        reg_rd_wdata_o  <= #1 'h0;
 `ifdef ENABLE_HPM
         inst_type_o     <= #1 3'd0;
 `endif
@@ -128,9 +130,9 @@ always_ff @(posedge clk or negedge rst_n) begin
             inst_o          <= #1 `INST_NOP;
             access_en_o     <= #1 1'b0;
             access_wr_o     <= #1 1'b0;
-            wr_reg_en_o     <= #1 1'b0;
-            wr_reg_addr_o   <= #1 'h0;
-            wr_reg_data_o   <= #1 'h0;
+            reg_rd_wen_o    <= #1 1'b0;
+            reg_rd_waddr_o  <= #1 'h0;
+            reg_rd_wdata_o  <= #1 'h0;
 `ifdef ENABLE_HPM
             inst_type_o     <= #1 3'd0;
 `endif
@@ -146,7 +148,14 @@ always_ff @(posedge clk or negedge rst_n) begin
             push_ras_o             <= #1 1'b0;
             pop_ras_o              <= #1 1'b0;
         `endif
-        end else begin
+        end else if(!stall) begin
+            inst_addr_o     <= #1 inst_addr_i;
+            inst_o          <= #1 inst_i;
+            access_en_o     <= #1 access_en_i;
+            access_wr_o     <= #1 access_wr_i;
+            reg_rd_wen_o    <= #1 (bus_sel | lp_valid_i) ? 1'b0 : reg_rd_wen_i;
+            reg_rd_waddr_o  <= #1 reg_rd_waddr_i;
+            reg_rd_wdata_o  <= #1 reg_rd_wdata_i;
         `ifdef BRANCH_JUMP_DELAYED
             predict_taken_r        <= #1 predict_taken_i;
             predict_target_r       <= #1 predict_target_i;
@@ -159,18 +168,9 @@ always_ff @(posedge clk or negedge rst_n) begin
             pop_ras_o              <= #1 pop_ras_i;
             is_fence_i_o           <= #1 is_fence_i_i;
         `endif
-            if(!stall) begin
-                inst_addr_o     <= #1 inst_addr_i;
-                inst_o          <= #1 inst_i;
-                access_en_o     <= #1 access_en_i;
-                access_wr_o     <= #1 access_wr_i;
-                wr_reg_en_o     <= #1 bus_sel ? 1'b0 : wr_reg_en_i;
-                wr_reg_addr_o   <= #1 wr_reg_addr_i;
-                wr_reg_data_o   <= #1 wr_reg_data_i;
 `ifdef ENABLE_HPM
-                inst_type_o     <= #1 inst_type_i;
+            inst_type_o     <= #1 inst_type_i;
 `endif
-            end
         end
     end
 end

@@ -1,6 +1,7 @@
 `include "SoC_Config.sv"
 `include "RV32_Inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // =============================================================================
 // SoC_top - AXI 总线架构顶层
 // =============================================================================
@@ -31,15 +32,15 @@ module SoC_top #(
     localparam APB_NUM_SLAVES = `APB_NUM_SLAVES
 )(
     // System
-    (* mark_debug = "true" *)input   logic   sys_clk,
-    (* mark_debug = "true" *)input   logic   sys_rst_n,
+    input   logic   sys_clk,
+    input   logic   sys_rst_n,
     // UART
-    (* mark_debug = "true" *)input   logic   uart_rx,
-    (* mark_debug = "true" *)output  logic   uart_tx,
+    input   logic   uart_rx,
+    output  logic   uart_tx,
     // GPIO
-    (* mark_debug = "true" *)inout  [GPIO_NUM-1:0]  gpio_io,
+    inout  [GPIO_NUM-1:0]  gpio_io,
     // Timer
-    (* mark_debug = "true" *)inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0] timer_channel_io
+    inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0] timer_channel_io
 );
 
 logic clk_soc;

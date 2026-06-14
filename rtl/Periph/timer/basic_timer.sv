@@ -18,7 +18,8 @@
  * 日期：2026/03/31
  */
 `include "../../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 
 module basic_timer #(
     parameter TIMER_WIDTH = 16  // 定时器位宽 (16或32)

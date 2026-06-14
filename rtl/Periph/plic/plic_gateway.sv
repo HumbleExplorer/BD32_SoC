@@ -1,4 +1,5 @@
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // =============================================================================
 // PLIC Gateway - 单中断源 Gateway
 // 支持电平触发(LEVEL)与边沿触发(EDGE)两种模式，通过参数 TRIGGER_MODE 选择

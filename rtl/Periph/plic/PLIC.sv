@@ -1,5 +1,6 @@
 `include "../../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // =============================================================================
 // PLIC (Platform-Level Interrupt Controller)
 // RISC-V PLIC Spec v1.10 兼容

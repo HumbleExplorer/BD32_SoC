@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module APB_Master #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -17,15 +18,15 @@ module APB_Master #(
     output  logic   [DATA_WIDTH-1:0]    o_rdata,
     output  logic                       o_tran_done,
     // connect APB Slave
-    (* mark_debug = "true" *)output  logic   [ADDR_WIDTH-1:0]    o_PADDR,// 地址总线
-    (* mark_debug = "true" *)output  logic                       o_PSEL,// 选择信号
-    (* mark_debug = "true" *)output  logic                       o_PENABLE,// 使能信号
-    (* mark_debug = "true" *)output  logic                       o_PWRITE,// 写信号
-    (* mark_debug = "true" *)output  logic   [ALIGN_BYTES-1:0]   o_PSTRB, // 写使能信号
-    (* mark_debug = "true" *)output  logic   [DATA_WIDTH-1:0]    o_PWDATA,// 写数据总线
-    (* mark_debug = "true" *)input   logic   [DATA_WIDTH-1:0]    i_PRDATA,// 读数据总线
-    (* mark_debug = "true" *)input   logic                       i_PREADY,// 准备就绪信号
-    (* mark_debug = "true" *)input   logic                       i_PSLVERR// 错误信号
+    output  logic   [ADDR_WIDTH-1:0]    o_PADDR,// 地址总线
+    output  logic                       o_PSEL,// 选择信号
+    output  logic                       o_PENABLE,// 使能信号
+    output  logic                       o_PWRITE,// 写信号
+    output  logic   [ALIGN_BYTES-1:0]   o_PSTRB, // 写使能信号
+    output  logic   [DATA_WIDTH-1:0]    o_PWDATA,// 写数据总线
+    input   logic   [DATA_WIDTH-1:0]    i_PRDATA,// 读数据总线
+    input   logic                       i_PREADY,// 准备就绪信号
+    input   logic                       i_PSLVERR// 错误信号
 );
 
 

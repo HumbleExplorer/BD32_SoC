@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 
 // =============================================================================
 // AXI_Lite_Master - AXI4-Lite 主设备（全寄存器版）

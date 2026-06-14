@@ -1,6 +1,7 @@
 `include "../SoC_Config.sv"
 `include "../RV32_Inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module CLINT #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,

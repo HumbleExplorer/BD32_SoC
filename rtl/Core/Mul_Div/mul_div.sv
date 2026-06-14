@@ -1,6 +1,7 @@
 `include "./../../SoC_Config.sv"
 `include "../../RV32_Inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module mul_div #(
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter REG_ADDR_WIDTH = `REG_ADDR_WIDTH
@@ -8,133 +9,184 @@ module mul_div #(
     input   logic                       clk,
     input   logic                       rst_n,
     input   logic                       start,
-    input   logic [REG_ADDR_WIDTH-1:0]  rd_rs1_addr,
-    input   logic [REG_ADDR_WIDTH-1:0]  rd_rs2_addr,
-    input   logic [REG_ADDR_WIDTH-1:0]  wr_rd_addr,
+    input   logic [REG_ADDR_WIDTH-1:0]  reg_rs1_raddr,
+    input   logic [REG_ADDR_WIDTH-1:0]  reg_rs2_raddr,
+    input   logic [REG_ADDR_WIDTH-1:0]  reg_rd_waddr,
     input   logic [2:0]                 func3_i,
-    input   logic [DATA_WIDTH-1:0]      a_i,    // 乘数A (来自forward)
-    input   logic [DATA_WIDTH-1:0]      b_i,    // 乘数B (来自forward)
-    output  logic [DATA_WIDTH-1:0]      result_o,
-    output  logic                       data_valid_o,
-    output  logic                       ready_o,
-    // OITF 独立接口
-    output  logic                       mul_ready_o,        // 乘法器空闲
-    output  logic                       div_ready_o,        // 除法器空闲
-    output  logic                       mul_valid_o,        // 乘法结果有效
-    output  logic                       div_valid_o         // 除法结果有效
+    input   logic [DATA_WIDTH-1:0]      a_i,
+    input   logic [DATA_WIDTH-1:0]      b_i,
+    // OITF 独立 MUL/DIV 结果
+    output  logic [DATA_WIDTH-1:0]      mul_result_o,
+    output  logic [DATA_WIDTH-1:0]      div_result_o,
+    output  logic                       mul_ready_o,
+    output  logic                       div_ready_o,
+    output  logic                       mul_valid_o,
+    output  logic                       div_valid_o
 );
 
-logic                           mul_en;
-logic                           div_en;
-logic                           mul_ready;
-logic                           div_ready;
-logic                           mul_valid;
-logic                           div_valid;
+// ==========================================================================
+// 内部信号
+// ==========================================================================
+logic                           mul_en, div_en;
+logic                           mul_ready, div_ready;
+logic                           mul_valid, div_valid;
 logic   [1:0]                   func3_mode_i;
+logic   [1:0]                   mul_func3_mode;     // 乘法器锁存 func3_mode
+logic   [1:0]                   div_func3_mode;     // 除法器锁存 func3_mode
 logic   [DATA_WIDTH*2-1:0]      mul_o;
 logic   [DATA_WIDTH*2-1:0]      quot_rem_o;
-logic                           data_valid_reg;    // 使能信号锁存
-logic   [REG_ADDR_WIDTH-1:0]    rd_rs1_addr_reg;    // 锁存上一次运算的操作数a_i
-logic   [REG_ADDR_WIDTH-1:0]    rd_rs2_addr_reg;    // 锁存上一次运算的操作数b_i
-logic   [DATA_WIDTH*2-1:0]      full_result_reg;    // 锁存上一次运算的完整64位结果
-logic   [2:0]                   op_func3_reg;       // 锁存上一次运算的func3_i指令编码
-(* MAX_FANOUT = 16 *)logic                           fuse_hit;    // 融合命中标志：1=命中融合指令，0=正常独立运算
-logic   [DATA_WIDTH*2-1:0]      full_result_sel;// 选择后的64位源结果（融合/独立运算）
+logic                           data_valid;
 
-assign mul_en = (!func3_i[2] && start) && ~fuse_hit;// 融合命中时关闭乘法使能
-assign div_en = (func3_i[2]  && start) && ~fuse_hit;// 融合命中时关闭除法使能
-assign func3_mode_i = func3_i[1:0];
-assign data_valid_o  = mul_valid || div_valid;
-assign ready_o       = div_ready && mul_ready;
+// DIV 融合（流水线乘法器不需要融合）
+logic                           data_valid_reg;
+logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr_reg;
+logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr_reg;
+`ifndef MULT_PIPELINE
+logic   [DATA_WIDTH-1:0]        mul_fuse_result_reg;
+logic                           mul_fuse_hit;
+`endif
+logic   [DATA_WIDTH-1:0]        div_fuse_result_reg;
+logic                           div_fuse_hit;
+logic   [2:0]                   op_func3_reg;
+logic                           fuse_hit;
+logic   [DATA_WIDTH*2-1:0]      mul_full_result;
+logic   [DATA_WIDTH*2-1:0]      div_full_result;
+
+assign func3_mode_i  = func3_i[1:0];
+assign data_valid    = mul_valid || div_valid;
 assign mul_ready_o   = mul_ready;
 assign div_ready_o   = div_ready;
-assign mul_valid_o   = mul_valid;
-assign div_valid_o   = div_valid;
 
-//==========================================================================
-// 3. 融合运算核心：锁存寄存器 + 融合检测信号【少量寄存器，无额外运算开销】
-//==========================================================================
+
+// MUL/DIV 使能（融合命中时关闭对应单元）
+`ifdef MULT_PIPELINE
+assign mul_en       = (!func3_i[2] && start);           // 流水线，不需要融合
+assign mul_valid_o  = mul_valid;
+assign fuse_hit     = div_fuse_hit;
+`else
+assign mul_en       = (!func3_i[2] && start) && ~mul_fuse_hit; // 状态机，融合节省周期
+assign mul_valid_o  = mul_valid || mul_fuse_hit;
+assign fuse_hit     = mul_fuse_hit || div_fuse_hit;
+
+`endif
+assign div_en       = (func3_i[2]  && start) && ~div_fuse_hit;
+assign div_valid_o  = div_valid;
+// ==========================================================================
+// 融合检测
+// ==========================================================================
 always_ff @(posedge clk) begin
     data_valid_reg <= #1 data_valid;
 end
-// 融合检测核心逻辑
-// 规则：使能+源寄存器地址相同+读写寄存器不同+是融合指令对(MULHx+MUL / DIVx+REMx)
-assign fuse_hit = start && data_valid_reg && (rd_rs1_addr == rd_rs1_addr_reg) && (rd_rs2_addr == rd_rs2_addr_reg)
-                    && (rd_rs1_addr != wr_rd_addr) && (rd_rs2_addr != wr_rd_addr) // 读和写的不能是一个寄存器
-                    && (((op_func3_reg == `INST_MULH  && func3_i == `INST_MUL)
-                    ||   (op_func3_reg == `INST_MULHU && func3_i == `INST_MUL)
-                    ||   (op_func3_reg == `INST_MULHSU&& func3_i == `INST_MUL)) // 乘法融合对
-                    ||  ((op_func3_reg == `INST_DIV   && func3_i == `INST_REM)
-                    ||   (op_func3_reg == `INST_DIVU  && func3_i == `INST_REMU))  // 除法融合对
-                    );
+`ifndef MULT_PIPELINE
+assign mul_fuse_hit = start && data_valid_reg
+                && (reg_rs1_raddr == reg_rs1_raddr_reg)
+                && (reg_rs2_raddr == reg_rs2_raddr_reg)
+                && (reg_rs1_raddr != reg_rd_waddr)
+                && (reg_rs2_raddr != reg_rd_waddr)
+                && ((op_func3_reg == `INST_MULH   && func3_i == `INST_MUL)
+                ||  (op_func3_reg == `INST_MULHU  && func3_i == `INST_MUL)
+                ||  (op_func3_reg == `INST_MULHSU && func3_i == `INST_MUL));
+`endif
+assign div_fuse_hit = start && data_valid_reg
+                && (reg_rs1_raddr == reg_rs1_raddr_reg)
+                && (reg_rs2_raddr == reg_rs2_raddr_reg)
+                && (reg_rs1_raddr != reg_rd_waddr)
+                && (reg_rs2_raddr != reg_rd_waddr)
+                && ((op_func3_reg == `INST_DIV    && func3_i == `INST_REM)
+                ||  (op_func3_reg == `INST_DIVU   && func3_i == `INST_REMU));
 
-//==========================================================================
-// 5. 融合结果锁存时序逻辑【异步复位，仅在运算完成时锁存，无冗余】
-//==========================================================================
+// 融合结果锁存
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        rd_rs1_addr_reg <= #1 '0;
-        rd_rs2_addr_reg <= #1 '0;
-        full_result_reg <= #1 '0;
+        reg_rs1_raddr_reg <= #1 '0;
+        reg_rs2_raddr_reg <= #1 '0;
+`ifndef MULT_PIPELINE
+        mul_fuse_result_reg <= #1 '0;
+`endif
+        div_fuse_result_reg <= #1 '0;
         op_func3_reg    <= #1 '0;
-    end else if(data_valid && !fuse_hit) begin
-        // 仅在【独立运算完成】时，锁存操作数+完整结果+指令类型
-        rd_rs1_addr_reg <= #1 rd_rs1_addr;
-        rd_rs2_addr_reg <= #1 rd_rs2_addr;
+    end else if(data_valid) begin
+        reg_rs1_raddr_reg <= #1 reg_rs1_raddr;
+        reg_rs2_raddr_reg <= #1 reg_rs2_raddr;
         op_func3_reg    <= #1 func3_i;
-        full_result_reg <= #1 func3_i[2] ? quot_rem_o : mul_o; // bit2=1:除法结果，0:乘法结果
+`ifndef MULT_PIPELINE
+        mul_fuse_result_reg <= #1 mul_o[DATA_WIDTH-1:0];
+`endif
+        div_fuse_result_reg <= #1 quot_rem_o[DATA_WIDTH*2-1:DATA_WIDTH];
     end
 end
 
+// ==========================================================================
+// 乘法器实例化
+// ==========================================================================
 multiplier #(
-    .DATA_WIDTH 	(DATA_WIDTH)
-)u_multiplier(
-    .clk          	(clk           ),
-    .rst_n        	(rst_n         ),
-    .start       	(mul_en        ),
-    .func3_mode_i 	(func3_mode_i  ),
-    .a_i          	(a_i           ),
-    .b_i          	(b_i           ),
-    .mul_o        	(mul_o         ),
-    .data_valid   	(mul_valid     ),
-    .ready        	(mul_ready     )
+    .DATA_WIDTH     (DATA_WIDTH),
+`ifdef MULT_PIPELINE
+    .PIPELINE       (1) // 流水线模式
+`else
+    .PIPELINE       (0) // 状态机模式
+`endif
+) u_multiplier (
+    .clk            (clk),
+    .rst_n          (rst_n),
+    .start          (mul_en),
+    .func3_mode_i   (func3_mode_i),
+    .a_i            (a_i),
+    .b_i            (b_i),
+    .mul_o          (mul_o),
+    .func3_mode_o   (mul_func3_mode),
+    .data_valid     (mul_valid),
+    .ready          (mul_ready)
 );
 
+// ==========================================================================
+// 除法器实例化
+// ==========================================================================
 divider #(
-    .DATA_WIDTH 	(DATA_WIDTH)
-)u_divider(
-    .clk          	(clk           ),
-    .rst_n        	(rst_n         ),
-    .start       	(div_en        ),
-    .func3_mode_i 	(func3_mode_i  ),
-    .dividend     	(a_i           ),
-    .divisor      	(b_i           ),
-    .quot_rem_o   	(quot_rem_o    ),
-    .data_valid   	(div_valid     ),
-    .ready        	(div_ready     )
+    .DATA_WIDTH     (DATA_WIDTH)
+) u_divider (
+    .clk            (clk),
+    .rst_n          (rst_n),
+    .start          (div_en),
+    .func3_mode_i   (func3_mode_i),
+    .dividend       (a_i),
+    .divisor        (b_i),
+    .quot_rem_o     (quot_rem_o),
+    .func3_mode_o   (div_func3_mode),
+    .data_valid     (div_valid),
+    .ready          (div_ready)
 );
 
-//==========================================================================
-// 第一步：64位源结果选择 → 融合结果 或 独立运算结果
-//==========================================================================
-assign full_result_sel = fuse_hit ? full_result_reg : (func3_i[2] ? quot_rem_o : mul_o);
+// ==========================================================================
+// 64位源结果选择（融合优先）
+// ==========================================================================
+`ifdef MULT_PIPELINE
+assign mul_full_result = mul_o;
+`else
+assign mul_full_result = mul_fuse_hit ? {{DATA_WIDTH{1'b0}},mul_fuse_result_reg} : mul_o;//fuse不需要管低32位
+`endif
+assign div_full_result = div_fuse_hit ? {div_fuse_result_reg,{DATA_WIDTH{1'b0}}} : quot_rem_o;//fuse不需要管低32位
 
-//==========================================================================
-// 第二步：核心32位结果截取逻辑
-// 乘法类：MUL→低32位，MULH/MULHU/MULHSU→高32位
-// 除法类：DIV/DIVU→低32位(商)，REM/REMU→高32位(余数)
-//==========================================================================
+// ==========================================================================
+// 32位结果截取（使用锁存的 func3_sel）
+// ==========================================================================
 always_comb begin
-    case(func3_i)
-        `INST_MUL:     result_o = full_result_sel[DATA_WIDTH-1:0];      // MUL  - 乘积低32位
-        `INST_MULH:    result_o = full_result_sel[2*DATA_WIDTH-1:DATA_WIDTH];//MULH-乘积高32位
-        `INST_MULHU:   result_o = full_result_sel[2*DATA_WIDTH-1:DATA_WIDTH];//MULHU-乘积高32位
-        `INST_MULHSU:  result_o = full_result_sel[2*DATA_WIDTH-1:DATA_WIDTH];//MULHSU-乘积高32位
-        `INST_DIV:     result_o = full_result_sel[DATA_WIDTH-1:0];      // DIV  - 商(低32位)
-        `INST_DIVU:    result_o = full_result_sel[DATA_WIDTH-1:0];      // DIVU - 商(低32位)
-        `INST_REM:     result_o = full_result_sel[2*DATA_WIDTH-1:DATA_WIDTH];//REM  - 余数(高32位)
-        `INST_REMU:    result_o = full_result_sel[2*DATA_WIDTH-1:DATA_WIDTH];//REMU - 余数(高32位)
-        default:       result_o = '0;
+    case(mul_func3_mode)
+        2'b00:  mul_result_o = mul_full_result[DATA_WIDTH-1:0];             // MUL
+        2'b01:  mul_result_o = mul_full_result[2*DATA_WIDTH-1:DATA_WIDTH];  // MULH
+        2'b10:  mul_result_o = mul_full_result[2*DATA_WIDTH-1:DATA_WIDTH];  // MULHU
+        2'b11:  mul_result_o = mul_full_result[2*DATA_WIDTH-1:DATA_WIDTH];  // MULHSU
+        default: mul_result_o = '0;
+    endcase
+end
+
+always_comb begin
+    case(div_func3_mode)
+        2'b00:  div_result_o = div_full_result[DATA_WIDTH-1:0];             // DIV
+        2'b01:  div_result_o = div_full_result[DATA_WIDTH-1:0];             // DIVU
+        2'b10:  div_result_o = div_full_result[2*DATA_WIDTH-1:DATA_WIDTH];  // REM
+        2'b11:  div_result_o = div_full_result[2*DATA_WIDTH-1:DATA_WIDTH];  // REMU
+        default: div_result_o = '0;
     endcase
 end
 

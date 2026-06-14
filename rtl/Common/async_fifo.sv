@@ -4,7 +4,8 @@ Description: 异步FIFO- 适配UART 16550
 后面可以尝试用vivado ip核进行替换。
 */
 
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module async_fifo 
 #(
     parameter int DEPTH  = 16,  // UART 16550标准FIFO深度

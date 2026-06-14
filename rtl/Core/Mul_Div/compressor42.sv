@@ -1,5 +1,6 @@
 
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module compressor42 #(
     parameter DATA_WIDTH = 32
 )(

@@ -1,5 +1,6 @@
 // 分频系数作为输入信号，可动态调整，支持任意整数。
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module clk_div_dynamic #(
     parameter DIV_WIDTH = 16
 )(

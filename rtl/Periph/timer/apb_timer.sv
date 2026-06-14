@@ -28,7 +28,8 @@
  * 日期：2026/03/31
  */
 `include "../../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 
 module apb_timer #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
@@ -112,13 +113,13 @@ module apb_timer #(
     logic                       timer_dir_sel; // 计数方向 (0=递增, 1=递减)
 
     // TIMx_PSC
-    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_prescaler; // 预分频系数
+    logic [TIMER_WIDTH-1:0]     timer_prescaler; // 预分频系数
 
     // TIMx_ARR
-    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_arr;    // 自动重载值
+    logic [TIMER_WIDTH-1:0]     timer_arr;    // 自动重载值
 
     // TIMx_CNT
-    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_cnt;    // 当前计数值
+    logic [TIMER_WIDTH-1:0]     timer_cnt;    // 当前计数值
 
     // TIMx_IER
     logic                       timer_int_en;         // 定时器中断使能
@@ -139,7 +140,7 @@ module apb_timer #(
     logic [CHANNEL_NUM*2-1:0]   timer_trigger_mode;    // 各通道触发边沿
 
     // TIMx_CCR1-4
-    (* mark_debug = "true" *)logic [TIMER_WIDTH-1:0]     timer_ccr_cmp [CHANNEL_NUM];   // APB 写比较值
+    logic [TIMER_WIDTH-1:0]     timer_ccr_cmp [CHANNEL_NUM];   // APB 写比较值
     logic [TIMER_WIDTH-1:0]     timer_ccr_cap [CHANNEL_NUM];   // 硬件捕获值
 
     // 内部信号

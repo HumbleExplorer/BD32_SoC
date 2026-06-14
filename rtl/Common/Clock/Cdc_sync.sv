@@ -2,7 +2,8 @@
 // 功能：将 async_sig 同步到 dst_clk 时钟域（慢到快）
 // 说明：这是一个标准 IP，不要随意修改内部逻辑
 // 用于同步简单的电平信号（比如复位信号、状态标志）。
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module Cdc_Sync #(
     parameter WIDTH = 1,      // 信号位宽，通常为1
     parameter RESET_VAL = 0,   // 复位后的默认值

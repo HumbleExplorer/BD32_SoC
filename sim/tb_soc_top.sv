@@ -1,4 +1,5 @@
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module tb_soc_top;
 `include "./../rtl/SoC_Config.sv"
 

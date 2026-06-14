@@ -1,4 +1,5 @@
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module cla_4bit (
     input   [3:0]   op1,
     input   [3:0]   op2,

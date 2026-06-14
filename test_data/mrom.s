@@ -1,4 +1,4 @@
-# MROM Bootloader — 清晰 LED 诊断
+# MROM Bootloader
 #
 # LED 诊断:
 #   全灭              → 未启动 / 挂死

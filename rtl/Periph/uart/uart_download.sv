@@ -2,7 +2,8 @@
 // 串口一键下载模块（计数协议版，无帧冲突风险）
 // 协议：  START_FRAME → ITCM_COUNT → ITCM数据 → DTCM_COUNT → DTCM数据
 // 不再使用 END_FRAME / DTCM_MARKER，彻底避免数据内容与帧标记冲突
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module uart_download #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,

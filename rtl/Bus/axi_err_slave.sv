@@ -1,5 +1,6 @@
 `include "./../SoC_Config.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // =============================================================================
 // axi_err_slave - AXI4 Error/Default Slave
 // =============================================================================

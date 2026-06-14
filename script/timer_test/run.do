@@ -1,7 +1,7 @@
 if [file exists "work"] {vdel -all}
 vlib work
 vmap work work
-vlog -f filelist.f
+vlog +define+TIMER_SIM -f filelist.f
 vsim -voptargs=+acc tb_apb_timer
 set NoQuitOnFinish 1
 onbreak {resume}

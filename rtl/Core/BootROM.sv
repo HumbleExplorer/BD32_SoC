@@ -1,6 +1,7 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // BootROM - 只读启动存储器（同步读）
 // CPU 上电后从此处取指，执行 bootloader 后跳转到 ITCM
 // 地址区域：0x0000_0000 ~ 0x0000_0FFF（1K×4B = 4KB）

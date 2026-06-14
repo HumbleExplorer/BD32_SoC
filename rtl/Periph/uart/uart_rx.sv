@@ -1,4 +1,5 @@
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 module uart_rx (
     input  logic          clk_sample, // 16倍波特率采样时钟
     input  logic          rst_n,      // 异步复位（低有效）

@@ -1,6 +1,7 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
-`timescale 1ns / 1ps
+timeunit 1ns;
+timeprecision 1ps;
 // =============================================================================
 // Pipeline_Ctrl - 流水线控制（4级流水线精简版）
 // =============================================================================
@@ -27,11 +28,12 @@ module Pipeline_Ctrl #(
     input   logic   [ADDR_WIDTH-1:0]    branch_target,
     input   logic                       bus_access_ready,
     input   logic                       oitf_stall,
+    input   logic                       reg_rd_wen_wb,      // WB 阶段写寄存器
     // from IF/ID/EX
-    (* MAX_FANOUT = 16 *)(* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_if,
-    (* MAX_FANOUT = 16 *)(* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_id,
-    (* MAX_FANOUT = 16 *)(* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_ex,
-    (* MAX_FANOUT = 16 *)(* mark_debug = "true" *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_mem,
+    (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_if,
+    (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_id,
+    (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_ex,
+    (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_mem,
     input   logic   [DATA_WIDTH-2:0]    exception_code_if,
     input   logic   [DATA_WIDTH-2:0]    exception_code_id,
     input   logic   [DATA_WIDTH-2:0]    exception_code_ex,
@@ -151,6 +153,9 @@ end
 assign next_inst_addr = branch_jump_en ? branch_jump_addr : branch_taken ? branch_target : branch_jump_en_r ? inst_addr_if : inst_addr_id;
 assign exception_trap = ~(exception_code_if[DATA_WIDTH-2] && exception_code_id[DATA_WIDTH-2] && exception_code_ex[DATA_WIDTH-2]);
 
+logic   main_stall;
+assign  main_stall = waiting_int || ~bus_access_ready || oitf_stall;
+
 always_comb begin
     pc_stall        = 1'b0;
     ctrl_jump_en    = 1'b0;
@@ -177,17 +182,19 @@ always_comb begin
         ex_mem_flush = (sel_stage >= 2'd2);
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
-    end else if (waiting_int || ~bus_access_ready || oitf_stall) begin
+    end else if (main_stall) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
-        mem_wb_stall    = 1'b1;
+        mem_wb_stall    = bus_access_ready;
     end else if (load_use_flag) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_flush     = 1'b1;
     end
 end
+
+
 
 endmodule
