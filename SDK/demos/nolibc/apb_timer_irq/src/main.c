@@ -20,7 +20,7 @@ void ext_irq_handler(void)
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     uart_puts("\r\nBD32 APB Timer IRQ - LED toggles every 0.5s\r\n");
 
     /* 配置 LED0 为推挽输出 */

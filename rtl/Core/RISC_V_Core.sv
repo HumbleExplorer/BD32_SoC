@@ -342,10 +342,7 @@ Data_Hazard_Forward #(
 Dynamic_Branch_Predictor #(
     .ADDR_WIDTH     (ADDR_WIDTH ),
     .DATA_WIDTH     (DATA_WIDTH ),
-    .ALIGN_WIDTH    (ALIGN_WIDTH),
-    .BTB_ENTRIES    (256),
-    .PHT_ENTRIES    (128),
-    .RAS_DEPTH      (8)
+    .ALIGN_WIDTH    (ALIGN_WIDTH)
 )u_Dynamic_Branch_Predictor(
     .clk             (clk            ),
     .rst_n           (rst_n          ),
@@ -865,86 +862,11 @@ always_ff @(posedge clk) begin
     bus_rvalid_r1 <= #1 bus_rvalid;
 end
 
-assign bus_transfer   = (bus_ready_r && ~bus_access_ready) && ~ex_mem_flush && ~ex_mem_stall;
+assign bus_transfer   = (bus_ready_r && ~bus_access_ready) && ~ex_mem_flush && ~(waiting_int || oitf_stall);
 assign bus_access_write  = access_wr_ex;
 assign bus_access_wdata  = access_wdata_ex;
 assign bus_access_addr  = access_addr_ex;
 assign bus_access_wstrb  = access_wmask_ex;
-
-
-// ============================================================
-// 诊断监控：追踪 PC 跳转和异常事件
-// ============================================================
-`ifdef DEBUG  // 仅在仿真时启用
-logic [31:0] debug_cycle_cnt;
-logic        debug_prev_ctrl_jump_en;
-logic        debug_prev_trap_jump;
-
-always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-        debug_cycle_cnt <= 0;
-        debug_prev_ctrl_jump_en <= 0;
-        debug_prev_trap_jump <= 0;
-    end else begin
-        debug_cycle_cnt <= debug_cycle_cnt + 1;
-        debug_prev_ctrl_jump_en <= ctrl_jump_en;
-        debug_prev_trap_jump <= trap_jump;
-    end
-end
-
-// 捕捉 ctrl_jump_en 上升沿：打印跳转详情
-always_ff @(posedge clk) begin
-    if (ctrl_jump_en && ~debug_prev_ctrl_jump_en && rst_n) begin
-        $display("[%0t] JUMP: PC=0x%08h → target=0x%08h | trap=%b branch=%b | pc_if=0x%08h pc_id=0x%08h pc_ex=0x%08h",
-                 $time, inst_addr_if, ctrl_jump_addr, trap_jump, branch_jump_en_mem,
-                 inst_addr_if, inst_addr_id, inst_addr_ex);
-    end
-end
-
-// 捕捉 trap_jump 上升沿：打印异常/中断详情
-always_ff @(posedge clk) begin
-    if (trap_jump && ~debug_prev_trap_jump && rst_n) begin
-        $display("[%0t] TRAP: trap_addr=0x%08h | exc_code=0x%04h exc_trap=%b | mepc=0x%08h",
-                 $time, trap_jump_addr, exception_code, exception_trap,
-                 inst_addr_id);
-    end
-end
-
-// 当 PC 跳回 ITCM 低地址（疑似重启）时打印
-logic [31:0] debug_last_itcm_pc;
-always_ff @(posedge clk) begin
-    if (!rst_n)
-        debug_last_itcm_pc <= 0;
-    else if (itcm_sel)
-        debug_last_itcm_pc <= inst_addr_if;
-end
-
-// 检测 PC 突然跳回 ITCM 起始区域（0x00010000~0x000100FF）
-// 排除正常的上电启动（前1000周期）
-always_ff @(posedge clk) begin
-    if (rst_n && debug_cycle_cnt > 1000 &&
-        itcm_sel && inst_addr_if >= 32'h00010000 && inst_addr_if <= 32'h000100FF &&
-        (debug_last_itcm_pc > 32'h00010100 || debug_last_itcm_pc == 0)) begin
-        $display("[%0t] *** RESTART DETECTED: pc=0x%08h last_itcm_pc=0x%08h cycle=%0d",
-                 $time, inst_addr_if, debug_last_itcm_pc, debug_cycle_cnt);
-    end
-end
-
-// 每隔 ~50ms 打印一次周期计数和当前 PC（可选，观察长时间运行状态）
-logic [31:0] debug_heartbeat_cnt;
-always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n)
-        debug_heartbeat_cnt <= 0;
-    else
-        debug_heartbeat_cnt <= debug_heartbeat_cnt + 1;
-end
-always_ff @(posedge clk) begin
-    if (rst_n && (debug_heartbeat_cnt % 5000000 == 0) && debug_heartbeat_cnt > 0) begin
-        $display("[%0t] HB: pc=0x%08h cycle=%0d trap_jump=%b exc_code=0x%04h",
-                 $time, inst_addr_if, debug_cycle_cnt, trap_jump, exception_code);
-    end
-end
-`endif
 
 
 

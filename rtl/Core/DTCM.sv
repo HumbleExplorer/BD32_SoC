@@ -10,8 +10,8 @@ module DTCM #(
     parameter ALIGN_WIDTH   = `ALIGN_WIDTH,
     parameter ALIGN_BYTES   = `ALIGN_BYTES,
     localparam DTCM_SIZE_WIDTH = $clog2(DTCM_DEPTH) + ALIGN_WIDTH,
-    localparam PATH = `PATH,
-    localparam FULL_PATH = {PATH,DTCM_FILE}
+    localparam TEST_PATH = `TEST_PATH,
+    localparam FULL_PATH = {TEST_PATH,DTCM_FILE}
 )( 
     input   logic                       clk,
     input   logic                       rst_n,

@@ -59,7 +59,7 @@ assign div_overflow = (!is_unsigned) && (dividend == {1'b1,{DATA_WIDTH-1{1'b0}}}
 //==========================================================================
 logic [CNT_WIDTH-1:0] div_cnt;
 assign data_valid = (state == DONE);
-assign ready = (state == IDLE && ~start) || (state == DONE);
+assign ready = (state == IDLE) || (state == DONE);
 
 logic [2*DATA_WIDTH:0] dividend_reg;  // 整合余数+商的寄存器: 高N位=余数，低N位=商
 //低k次迭代结束时[k:0]保存中间结果，[31：k+1]保存被除数中未参与计算的数据，[63:32]保存每次迭代的被减数
@@ -90,11 +90,12 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else begin
         case(state)
             // -------------------------- 空闲态 --------------------------
-            IDLE: begin
+            IDLE,DONE: begin
                 div_cnt             <= #1 '0;
                 div0_reg            <= #1 '0;
                 divisor_larger_reg  <= #1 '0;
                 div_overflow_reg    <= #1 '0;
+                state               <= #1 IDLE;
                 if(start) begin // 使能+空闲=启动运算
                     if(div0 || divisor_larger || div_overflow) begin
                         // 特殊场景：直接进入结束态
@@ -133,12 +134,6 @@ always_ff @(posedge clk or negedge rst_n) begin
                     div_cnt <= #1 '0;
                     state   <= #1 DONE; // 进入结束态
                 end
-            end
-            // -------------------------- 结束态：DivEnd --------------------------
-            DONE: begin
-                // 结果输出完成后，回到空闲态，等待下一次运算
-                state <= #1 IDLE;
-
             end
         endcase
     end

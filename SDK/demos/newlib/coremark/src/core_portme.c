@@ -50,6 +50,6 @@ secs_ret time_in_secs(CORE_TICKS ticks) {
 
 void portable_init(core_portable *p, int *argc, char *argv[]) {
     (void)p; (void)argc; (void)argv;
-    uart_init();
+    uart_init(115200);
     uart_puts("CoreMark running...\r\n");
 }

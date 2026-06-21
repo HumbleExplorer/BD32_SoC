@@ -41,6 +41,10 @@ li t3, 0x03
 sw t3, 0x0C(ra)          # LCR = 8N1, DLAB=0
 sw zero, 0x08(ra)        # FCR reset
 
+# NCO FCW 初始化（115200 baud @ 100MHz）
+li t3, 0x04B76893
+sw t3, 0x24(ra)          # FCW = 0x04B76893
+
 # 使能下载
 li t3, 0x01
 sw t3, 0x1C(ra)          # DBG_EN = 1

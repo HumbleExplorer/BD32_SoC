@@ -154,7 +154,6 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 assign data_valid = (state == DONE);
-assign ready      = (state == IDLE && ~start) || (state == DONE);
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin

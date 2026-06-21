@@ -74,7 +74,7 @@ oitf_entry_t    oitf_nxt    [OITF_DEPTH-1:0];
 
 // FIFO 指针
 logic   [ITAG_WIDTH-1:0]    wr_ptr;
-logic   [ITAG_WIDTH-1:0]    rd_ptr;
+(* MAX_FANOUT = 16 *)logic   [ITAG_WIDTH-1:0]    rd_ptr;
 logic   [ITAG_WIDTH-1:0]    wr_ptr_nxt;
 logic   [ITAG_WIDTH-1:0]    rd_ptr_nxt;
 logic   [ITAG_WIDTH:0]      cnt;
@@ -176,13 +176,12 @@ generate
 endgenerate
 
 // --- 流水线停顿条件 ---
-assign  oitf_stall = (lp_valid & full)
+assign  oitf_stall = (lp_valid & (full | (lp_unit_id == 1 && ~unit_ready)))//长指令入队时，如果 FIFO 已满或当前长周期单元未就绪，则停顿
                    | raw_hazard // RAW 依赖
                    | (reg_rd_wen_ex & waw_hit);//WAW 依赖
 
 // --- 退休输出（双写端口，OITF 退休走 Port2，无需与 WB 互斥）---
-assign  retire_valid    = oitf_cur[rd_ptr].vld
-                        & oitf_cur[rd_ptr].ready;
+assign  retire_valid    = retire_fire;
 assign  retire_rd_addr  = oitf_cur[rd_ptr].rd_addr;
 assign  retire_rd_data  = oitf_cur[rd_ptr].result;
 assign  retire_rd_wen   = oitf_cur[rd_ptr].rd_wen;

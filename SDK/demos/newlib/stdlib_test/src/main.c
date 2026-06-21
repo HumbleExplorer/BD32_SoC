@@ -5,7 +5,7 @@
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     printf("\r\n=== stdlib test ===\r\n");
 
     printf("atoi(123)=%d\r\n", atoi("123"));

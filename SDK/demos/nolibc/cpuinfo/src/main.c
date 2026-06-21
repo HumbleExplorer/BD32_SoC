@@ -14,7 +14,7 @@ static void print_csr(const char *name, uint32_t val)
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     uart_puts("\r\nBD32 CPU Info\r\n");
 
     print_csr("mstatus", read_csr(mstatus));

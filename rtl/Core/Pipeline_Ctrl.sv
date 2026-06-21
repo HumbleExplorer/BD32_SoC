@@ -187,7 +187,7 @@ always_comb begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
-        mem_wb_stall    = bus_access_ready;
+        mem_wb_stall    = ~bus_access_ready;
     end else if (load_use_flag) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;

@@ -12,8 +12,8 @@ module BootROM #(
     parameter   DATA_WIDTH   = `DATA_WIDTH,
     parameter   ALIGN_WIDTH  = `ALIGN_WIDTH,
     localparam  MROM_SIZE_WIDTH = $clog2(MROM_DEPTH) + ALIGN_WIDTH,
-    localparam  PATH         = `PATH,
-    localparam  MROM_FULL_PATH = {PATH, `MROM_FILE}
+    localparam  BOOT_PATH       = `BOOT_PATH,
+    localparam  MROM_FULL_PATH = {BOOT_PATH, `MROM_FILE}
 )(
     input   logic                       clk,
     input   logic                       rst_n,

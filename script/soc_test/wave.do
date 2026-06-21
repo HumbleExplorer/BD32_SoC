@@ -7,6 +7,7 @@ add wave -noupdate /tb_soc_top/u_SoC_top/u_apb_uart/u_uart_download/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Pipeline_Ctrl/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Data_Hazard_Forward/*
+add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_OITF/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Dynamic_Branch_Predictor/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_RegFile/*
 add wave -noupdate /tb_soc_top/u_SoC_top/u_RISC_V_Core/u_Executer/*

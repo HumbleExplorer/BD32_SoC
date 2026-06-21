@@ -4,7 +4,7 @@
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     char buf[128];
 
     uart_puts("=== printf format test ===\r\n");

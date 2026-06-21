@@ -5,7 +5,7 @@
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     printf("\r\n=== errno test ===\r\n");
 
     errno = 0;

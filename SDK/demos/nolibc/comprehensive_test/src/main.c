@@ -186,7 +186,7 @@ static void breath_loop(void)
  * ================================================================ */
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     uart_puts("\r\n========================================\r\n");
     uart_puts(" BD32 综合中断测试\r\n");
     uart_puts(" 阶段 A: LED0 闪烁(500ms) LED1 常亮\r\n");

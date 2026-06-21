@@ -17,6 +17,7 @@
 #define UART_MCR         (*(volatile uint32_t*)(UART_BASE + 0x10))
 #define UART_LSR         (*(volatile uint32_t*)(UART_BASE + 0x14))
 #define UART_MSR         (*(volatile uint32_t*)(UART_BASE + 0x18))
+#define UART_FCW         (*(volatile uint32_t*)(UART_BASE + 0x24))
 
 #define LSR_DR           (1 << 0)
 #define LSR_THRE         (1 << 5)

@@ -111,7 +111,7 @@ assign  lp_is_div = func3[2];
 logic  access_illegal;
 logic  access_addr_misalign;
 assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG): 1'b0;
-assign exception_code =(illegal_inst_csr) ? 4'd2 : access_illegal ? (access_wr ? 4'd7 : 4'd5) : access_addr_misalign ? (access_wr ? 4'd6 : 4'd4) : {DATA_WIDTH-1{1'b1}};
+assign exception_code = access_illegal ? (access_wr ? 4'd7 : 4'd5) : access_addr_misalign ? (access_wr ? 4'd6 : 4'd4) : (illegal_inst_csr) ? 4'd2 : {DATA_WIDTH-1{1'b1}};
 assign exception_val = (access_illegal || access_addr_misalign) ? access_addr : illegal_inst_csr ? inst : 'h0;
 `ifndef BRANCH_JUMP_DELAYED
 assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);

@@ -1,4 +1,4 @@
-.gitgitignore
+.gitignore
 BD32_SoC/
 ip_repo/
 **/work/

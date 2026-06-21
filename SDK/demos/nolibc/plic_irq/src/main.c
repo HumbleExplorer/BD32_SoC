@@ -21,7 +21,7 @@ void ext_irq_handler(void)
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     GPIO_DIR |= LED_MASK;
     uart_puts("\r\nBD32 PLIC IRQ - Press KEY0 3 times\r\n");
 

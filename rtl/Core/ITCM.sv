@@ -14,8 +14,8 @@ module ITCM #(
     parameter   ALIGN_BYTES  = `ALIGN_BYTES,
     parameter   ALIGN_WIDTH  = `ALIGN_WIDTH,
     localparam  ITCM_SIZE_WIDTH = $clog2(ITCM_DEPTH)+ALIGN_WIDTH,
-    localparam  PATH         = `PATH,
-    localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE}
+    localparam  TEST_PATH         = `TEST_PATH,
+    localparam  ITCM_FULL_PATH = {TEST_PATH,ITCM_FILE}
 )( 
     input   logic                       clk,
     input   logic                       rst_n,

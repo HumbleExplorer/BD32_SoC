@@ -6,7 +6,7 @@
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     uart_puts("\r\nBD32 LED Blink\r\n");
 
     GPIO_DIR |= LED_MASK;

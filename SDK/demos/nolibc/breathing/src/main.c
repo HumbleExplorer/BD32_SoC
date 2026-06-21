@@ -31,7 +31,7 @@ void ext_irq_handler(void)
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     uart_puts("\r\nBD32 Breathing LED (PWM + Timer IRQ)\r\n");
 
     /* 闪烁 LED 输出 */

@@ -14,8 +14,8 @@ parameter GPIO_NUM = `GPIO_NUM;
 localparam  CLK_PERIOD = 10;
 localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
-localparam  PATH  = `PATH;//vsim路径
-localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE};
+localparam  TEST_PATH  = `TEST_PATH;//vsim路径
+localparam  ITCM_FULL_PATH = {TEST_PATH,ITCM_FILE};
 localparam  SAMPLE_PER_BIT = 16;
 
 logic   clk;
@@ -52,7 +52,7 @@ task uart_download_program(
     integer       fd, byte_val, bytes_sent;
 
     $display("\n==================== UART Download Start ====================");
-    $display("File Path: %s", file_path);
+    $display("File TEST_PATH: %s", file_path);
     $display("==============================================================\n");
 
     fd = $fopen(file_path, "rb");  // 二进制模式，避免 0x1A (Ctrl-Z) 误判 EOF
@@ -85,7 +85,7 @@ task send_uart_bit(input logic bit_val);
     // 设置当前bit电平
     uart_rx = bit_val;
     // 等待16个clk_sample周期（1个完整bit周期）
-    repeat(SAMPLE_PER_BIT) @(posedge u_SoC_top.u_apb_uart.clk_sample);
+    repeat(SAMPLE_PER_BIT) @(posedge u_SoC_top.u_apb_uart.sample_pulse);
 endtask
 
 // 任务2: 发送完整UART字节（包含起始位+8位数据+停止位）
@@ -223,7 +223,7 @@ initial  begin
     // DIRECT_LOAD: PC_counter 直接跳转到 ITCM 启动，BootROM 被跳过
     // 所以 download_en 永远不会被置位，跳过它的 wait
     $display("DIRECT_LOAD mode: ITCM pre-initialized, skip UART download");
-    $display("File Path: %s", ITCM_FULL_PATH);
+    $display("File TEST_PATH: %s", ITCM_FULL_PATH);
     #100;
 `else
     // 正常 UART 下载模式：等待 BootROM 启动后置位 download_en
@@ -266,7 +266,7 @@ SoC_top #(
     .GPIO_NUM       	(GPIO_NUM        )
 )u_SoC_top(
     .sys_clk     	(clk        ),
-    .sys_rst_n   	    (rst_n      ),
+    .sys_rst_n   	(rst_n      ),
     // .clk_timer      (clk_timer),
     .uart_rx     	(uart_rx    ),
     .uart_tx     	(uart_tx    ),

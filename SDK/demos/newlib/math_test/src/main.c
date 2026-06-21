@@ -6,7 +6,7 @@
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     printf("\r\n=== math test ===\r\n");
 
     printf("abs(-5)=%d\r\n", abs(-5));

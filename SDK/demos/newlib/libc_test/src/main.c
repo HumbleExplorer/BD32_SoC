@@ -17,7 +17,7 @@ static int tests = 0, passed = 0;
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     printf("\r\n=== BD32 newlib-nano Test ===\r\n");
 
     /* 1. 格式化输出 */

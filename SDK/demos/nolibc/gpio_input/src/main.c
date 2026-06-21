@@ -18,7 +18,7 @@ static int key_scan(void)
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     uart_puts("\r\nBD32 GPIO Input - Press KEY0 5 times\r\n");
 
     GPIO_DIR &= ~PIN_KEY0;

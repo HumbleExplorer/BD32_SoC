@@ -12,7 +12,7 @@ static int uart_getc(void)
 
 int main(void)
 {
-    uart_init();
+    uart_init(115200);
     UART_FCR = 0x01;
 
     uart_puts("\r\nBD32 UART Echo (ESC to quit)\r\n");

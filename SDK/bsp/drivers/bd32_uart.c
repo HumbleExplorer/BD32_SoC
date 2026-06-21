@@ -5,10 +5,14 @@
 
 #include "bsp.h"
 
-void uart_init(void) {
-    /* DLL = 100MHz / (16 * 115200) ≈ 54 */
+void uart_init(uint32_t baud) {
+    /* NCO FCW = (baud * 16 * 2^32 + Fclk/2) / Fclk，四舍五入 */
+    uint32_t fcw = (uint32_t)(((uint64_t)baud * 16 * 0x100000000ULL + CPU_FREQ_HZ/2) / CPU_FREQ_HZ);
+    UART_FCW = fcw;
+
+    /* 兼容旧除数写入（NCO 模式下无效，但无害） */
     UART_LCR = 0x80;        /* DLAB = 1 */
-    UART_DLL = 54;
+    UART_DLL = (uint32_t)(CPU_FREQ_HZ / (16 * baud)) & 0xFF;
     UART_DLM = 0;
     UART_LCR = 0x03;        /* 8N1, DLAB = 0 */
 }
