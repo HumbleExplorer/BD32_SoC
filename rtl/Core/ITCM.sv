@@ -14,8 +14,8 @@ module ITCM #(
     parameter   ALIGN_BYTES  = `ALIGN_BYTES,
     parameter   ALIGN_WIDTH  = `ALIGN_WIDTH,
     localparam  ITCM_SIZE_WIDTH = $clog2(ITCM_DEPTH)+ALIGN_WIDTH,
-    localparam  TEST_PATH         = `TEST_PATH,
-    localparam  ITCM_FULL_PATH = {TEST_PATH,ITCM_FILE}
+    localparam  PATH         = `PATH,
+    localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE}
 )( 
     input   logic                       clk,
     input   logic                       rst_n,
@@ -43,7 +43,7 @@ generate
     `else
         logic [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1];
 
-        `ifdef ITCM_DIRECT_LOAD
+        `ifdef DIRECT_LOAD
             initial begin
                 $readmemh(ITCM_FULL_PATH, itcm_mem);
             end

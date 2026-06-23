@@ -1,6 +1,9 @@
 /*
  * BSP — BD32 板级支持包统一头文件
  * 应用只需 #include "bsp.h"
+ *
+ * v2: CPU_FREQ_HZ 改为运行时变量 g_cpu_freq_hz
+ *     delay_us/delay_ms 自动适配任意主频
  */
 #ifndef BSP_H
 #define BSP_H
@@ -37,17 +40,25 @@ static inline void clint_set_timer(uint32_t ticks) {
     clint_asm_set_timeout_ticks(ticks);
 }
 
-/* 精确延时 */
+/* ===================================================================
+ * 精确延时（基于 CLINT mtime — 独立 1MHz 定时器时钟）
+ *
+ * CLINT mtime 由 timer_clk_i 驱动，频率固定为 1MHz
+ * 1 tick = 1µs，延迟函数直接用 mtime tick 计数
+ * 与 CPU 主频解耦，不受 g_cpu_freq_hz 影响
+ *
+ * 最大延迟：~4295 秒（mtime_lo 32-bit 回绕时间 @1MHz）
+ * =================================================================== */
 static inline void delay_us(uint32_t us) {
     uint32_t start = clint_mtime();
-    uint32_t ticks = us * (CPU_FREQ_KHZ / 1000UL);
-    while ((uint32_t)(clint_mtime() - start) < ticks);
+    while ((uint32_t)(clint_mtime() - start) < us);
 }
 static inline void delay_ms(uint32_t ms) {
     uint32_t start = clint_mtime();
-    uint32_t ticks = ms * CPU_FREQ_KHZ;
+    uint32_t ticks = ms * 1000UL;   /* 1 tick = 1µs → ms 需 1000× 的 tick */
     while ((uint32_t)(clint_mtime() - start) < ticks);
 }
+/* 粗糙延时（仅 CPU 循环，用于极短脉冲等特殊场景）*/
 static inline void delay_loop(volatile uint32_t n) {
     while (n--) __asm__ volatile("");
 }

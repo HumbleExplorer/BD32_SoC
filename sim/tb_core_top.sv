@@ -33,7 +33,7 @@ localparam CLK_PERIOD = 10;
 // localparam    ITCM_FILE    =  "rv32ui-p-srli.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-srai.dat";
 
-// localparam    ITCM_FILE    =  "rv32ui-p-add.dat";
+localparam    ITCM_FILE    =  "rv32ui-p-add.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-sub.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-and.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-or.dat";                                                                                                                                                                                                                                                                                                                                                             
@@ -51,7 +51,7 @@ localparam CLK_PERIOD = 10;
 // localparam    ITCM_FILE    =  "rv32um-p-div.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-divu.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-rem.dat";
-localparam    ITCM_FILE    =  "rv32um-p-remu.dat";
+// localparam    ITCM_FILE    =  "rv32um-p-remu.dat";
 
 // localparam    ITCM_FILE    =  "rv32ui-p-sb.dat";
 // parameter    ITCM_FILE    =  "rv32ui-p-sh.dat";

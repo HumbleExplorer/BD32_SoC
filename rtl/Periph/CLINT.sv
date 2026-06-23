@@ -18,6 +18,8 @@ module CLINT #(
     output  logic   [DATA_WIDTH-1:0]    PRDATA,
     output  logic                       PREADY,
     output  logic                       PSLVERR,
+    // 1MHz timer clock（独立时钟域，由 clk_div_static 从 16MHz 分频产生）
+    input   logic                       timer_clk_i,
     // to Core
     output  logic   [2*DATA_WIDTH-1:0]  mtime_shadow,// 只读影子
     output  logic                       software_int,
@@ -56,6 +58,27 @@ assign mtime_shadow = mtime;
 assign software_int = msip[0];
 assign timer_int = mtime >= mtimecmp;
 
+// -----------------------------------------------------------------------
+// 1MHz timer_clk_i → PCLK 域同步 + 上升沿检测
+// 两拍同步消除亚稳态，第三拍做边沿检测
+// timer_clk_i 来自同一 MMCM 的 clk_16mhz 分频，相位关系固定
+// -----------------------------------------------------------------------
+logic [1:0] timer_clk_sync;       // 2-FF 同步链
+logic       timer_clk_sync_d1;    // 打一拍用于边沿检测
+logic       timer_tick_rise;      // 上升沿脉冲（1 PCLK 周期宽）
+
+always_ff @(posedge PCLK or negedge PRESETn) begin
+    if (!PRESETn) begin
+        timer_clk_sync    <= '0;
+        timer_clk_sync_d1 <= 1'b0;
+    end else begin
+        timer_clk_sync    <= {timer_clk_sync[0], timer_clk_i};
+        timer_clk_sync_d1 <= timer_clk_sync[1];
+    end
+end
+
+assign timer_tick_rise = timer_clk_sync[1] & ~timer_clk_sync_d1;
+
 // assign wr_addr_misalign = PSEL && (PSTRB != 'hF);
 always_ff @(posedge PCLK or negedge PRESETn) begin
     if (!PRESETn) begin
@@ -64,8 +87,10 @@ always_ff @(posedge PCLK or negedge PRESETn) begin
         mtime[DATA_WIDTH-1:0] <= #1 get_write_value(mtime[DATA_WIDTH-1:0]);
     end else if (is_write() && PADDR[15:2] == MTIME_ADDR[15:2] + 1) begin
         mtime[2*DATA_WIDTH-1:DATA_WIDTH] <= #1 get_write_value(mtime[2*DATA_WIDTH-1:DATA_WIDTH]);
-    end else begin
+    end else if (timer_tick_rise) begin
         mtime <= #1 mtime + 1'b1;
+    end else begin
+        mtime <= #1 mtime;
     end
 end
 

@@ -1,18 +1,26 @@
 /*
  * BD32 UART 驱动实现
  * 参考 Panda apb_uart / tinyriscv uart
+ *
+ * v2: uart_init() 使用运行时主频 g_cpu_freq_hz 计算 NCO FCW
+ *     调用前需确保 soc_init() 已完成
  */
-
 #include "bsp.h"
 
 void uart_init(uint32_t baud) {
-    /* NCO FCW = (baud * 16 * 2^32 + Fclk/2) / Fclk，四舍五入 */
-    uint32_t fcw = (uint32_t)(((uint64_t)baud * 16 * 0x100000000ULL + CPU_FREQ_HZ/2) / CPU_FREQ_HZ);
+    uint32_t freq = g_cpu_freq_hz;
+
+    /* NCO FCW = (baud × 16 × 2^32 + Fclk/2) / Fclk，四舍五入
+     * 例：115200 @ 100MHz → FCW = 0x04B7F5A5 (79164837)
+     *     115200 @ 90MHz  → FCW = 0x053E2D62 (87960930)
+     * 注意：分子是 baud×16×2^32，不是 baud×16×2^24（差 256 倍）
+     */
+    uint32_t fcw = (uint32_t)(((uint64_t)baud * 16ULL * 0x100000000ULL + (uint64_t)freq / 2) / (uint64_t)freq);
     UART_FCW = fcw;
 
     /* 兼容旧除数写入（NCO 模式下无效，但无害） */
     UART_LCR = 0x80;        /* DLAB = 1 */
-    UART_DLL = (uint32_t)(CPU_FREQ_HZ / (16 * baud)) & 0xFF;
+    UART_DLL = (uint32_t)(freq / (16 * baud)) & 0xFF;
     UART_DLM = 0;
     UART_LCR = 0x03;        /* 8N1, DLAB = 0 */
 }

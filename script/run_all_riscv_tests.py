@@ -119,9 +119,9 @@ def clean_work_dir():
 
 
 def compile_design(vlog_exe):
-    """一次编译所有 RTL（带 +define+CORE_TEST）"""
+    """一次编译所有 RTL（带 +define+DIRECT_LOAD +define+CORE_TEST）"""
     print("=" * 60)
-    print("  Step 1: Compiling RTL with +define+CORE_TEST ...")
+    print("  Step 1: Compiling RTL with +define+DIRECT_LOAD +define+CORE_TEST ...")
     print("=" * 60)
 
     filelist = os.path.join(CORE_TEST_DIR, "filelist.f")
@@ -129,7 +129,7 @@ def compile_design(vlog_exe):
         print(f"[ERROR] filelist.f not found: {filelist}")
         return False
 
-    cmd = [vlog_exe, "-f", filelist, "+define+CORE_TEST"]
+    cmd = [vlog_exe, "-f", filelist, "+define+DIRECT_LOAD", "+define+CORE_TEST"]
 
     try:
         result = subprocess.run(cmd, cwd=CORE_TEST_DIR, capture_output=True,

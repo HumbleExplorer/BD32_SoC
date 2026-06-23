@@ -34,6 +34,7 @@ module SoC_top #(
     // System
     input   logic   sys_clk,
     input   logic   sys_rst_n,
+    input   logic   timer_clk_i,   // CLINT 1MHz 独立时钟域
     // UART
     input   logic   uart_rx,
     output  logic   uart_tx,
@@ -43,51 +44,10 @@ module SoC_top #(
     inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0] timer_channel_io
 );
 
-logic clk_soc;
-logic rst_async_n;
-`ifdef XILINX
-// clk_wiz_0：MMCM 时钟生成（50MHz → 100MHz）
-logic clk_wiz_locked;
-logic clk_100mhz;
-
-clk_wiz_0 u_clk_wiz_0 (
-    .clk_in    (sys_clk),
-    .clk_100mhz(clk_100mhz),
-    .reset     (~sys_rst_n),
-    .locked    (clk_wiz_locked)
-);
-assign rst_async_n = sys_rst_n && clk_wiz_locked;
-assign clk_soc = clk_100mhz;
-`else
-assign rst_async_n = sys_rst_n;
-assign clk_soc = sys_clk;
-`endif
-
-// =========================================================================
-// 异步复位同步释放 + BUFG 全局缓冲
-// =========================================================================
-logic rst_n_sync_pre;
-Cdc_Sync #(
-    .WIDTH      (1),
-    .RESET_VAL  (0),
-    .DELAY_STAGES(3)
-) u_cdc_rst_sync (
-    .dst_clk    (clk_soc),
-    .dst_rst_n  (rst_async_n),
-    .async_sig  (1'b1),
-    .sync_sig   (rst_n_sync_pre)
-);
-
-// BUFG：将同步释放后的复位推上全局时钟网络，降低 skew、减轻布线拥塞
-`ifdef XILINX
-wire rst_n_sync;
-BUFG u_rst_bufg (
-    .I (rst_n_sync_pre),
-    .O (rst_n_sync)
-);
-`else
-wire rst_n_sync = rst_n_sync_pre;
-`endif
+// clk_wiz / clk_div / BUFG / Cdc_Sync 已全部移至 bd32_board_top（FPGA 板级顶层）
+// SoC_top 作为纯数字 IP，sys_rst_n 已是板级同步释放（3-stage）后的干净复位
+assign clk_soc     = sys_clk;
+wire   rst_n_sync   = sys_rst_n;
 
 // =========================================================================
 // CPU 核心信号
@@ -600,6 +560,7 @@ CLINT #(
     .PRDATA       (apb_prdata[0] ),
     .PREADY       (apb_pready[0] ),
     .PSLVERR      (apb_pslverr[0]),
+    .timer_clk_i   (timer_clk_i  ),
     .mtime_shadow  (mtime_shadow  ),
     .software_int  (software_int  ),
     .timer_int     (timer_int     )

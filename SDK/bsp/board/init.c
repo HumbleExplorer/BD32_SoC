@@ -3,13 +3,14 @@
  * 参考 Panda RISC-V / tinyriscv init.c
  *
  * 在 start.s 的 _start 之后、main 之前被调用
- * 完成：设置 mtvec, 可选使能全局中断
+ * 完成：测主频、设置 mtvec、可选使能全局中断
  */
-
 #include "bsp.h"
 
-
 extern void __vector_table(void);
+
+/* 运行时 CPU 主频（Hz），MROM 测量或 soc_init() 测量 */
+uint32_t g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
 
 /* 弱定义：用户可在 main 前重写 board_init */
 void __attribute__((weak)) board_init(void) {
@@ -17,6 +18,13 @@ void __attribute__((weak)) board_init(void) {
 }
 
 void _init(void) {
+    /* === 测 CPU 主频（10ms） ===
+     * 基于 CLINT mtime 1MHz 基准 + csr mcycle
+     * 结果填入 g_cpu_freq_hz
+     * 必须在任何延时/UART 使用前完成
+     */
+    soc_init();
+
     /* 设置中断向量表 (Vectored 模式) */
     /* mtvec.MODE = 1: 异常 PC=mtvec.BASE, 中断 PC=mtvec.BASE+4*cause */
     __asm__ volatile(

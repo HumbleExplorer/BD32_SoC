@@ -50,50 +50,44 @@
 `define DIRECT_LOAD  // 注释掉则走 UART 下载
 // `define XILINX
 // `define SIMULATION
+
+`ifdef DIRECT_LOAD
+    `ifdef CORE_TEST
+        `define PATH "../../test_data/riscv-tests/"
+    `else
+        `define PATH "../../test_data/custom/"
+    `endif
+    `define ITCM_FILE "plic_irq_itcm.mem"
+    `define DTCM_FILE "plic_irq_dtcm.mem"
+`else
+    `define PATH "../../test_data/custom/"
+    `define ITCM_FILE "plic_irq.uartbin"
+    `define DTCM_FILE "plic_irq.uartbin"
+`endif
+
 `ifdef XILINX
+    `define BOOT_PATH "../../../../../test_data/"
     `ifdef SIMULATION
-        `define TEST_PATH "../../../../../test_data/"
+        `define PATH "../../../../../test_data/custom/"
         `define ITCM_DEPTH 16*1024//8K
         `define DTCM_DEPTH 16*1024//8K
-        `ifdef DIRECT_LOAD
-            `define ITCM_FILE "step2_itcm.mem"
-            `define DTCM_FILE "step2_dtcm.mem"
-            `define ITCM_DIRECT_LOAD
-        `else
-            `define ITCM_FILE "empty.uartbin"
-            `define DTCM_FILE "empty.uartbin"
-        `endif
         `define TCM_Reg_or_BRAM "BRAM"
     `else
         `define SYNTHESIS
-        `define TEST_PATH "../test_data/"//Vivado路径
+        `define PATH "../custom/"//Vivado路径
         `define ITCM_DEPTH 16*1024//8K
         `define DTCM_DEPTH 16*1024//8K
-        `define ITCM_FILE "test2_full.dat"
-        `define DTCM_FILE "welcome_text_full.dat"
         `define TCM_Reg_or_BRAM "BRAM"
     `endif
 `else
     // `define DEBUG
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
-    `ifdef DIRECT_LOAD
-        `ifdef CORE_TEST
-            `define TEST_PATH "../../test_data/riscv-tests/"
-        `else
-            `define TEST_PATH "../../test_data/custom/"
-        `endif
-        `define ITCM_FILE "plic_irq_itcm.mem"
-        `define DTCM_FILE "plic_irq_dtcm.mem"
-        `define ITCM_DIRECT_LOAD
-    `else
-        `define TEST_PATH "../../test_data/custom/"
-        `define ITCM_FILE "apb_timer_irq.uartbin"
-        `define DTCM_FILE "apb_timer_irq.uartbin"
-    `endif
+    `define BOOT_PATH "../../test_data/"
     `define TCM_Reg_or_BRAM "Reg"
 `endif
-`define BOOT_PATH "../../test_data/"
+
+
 `define MROM_DEPTH 1*1024//1K
 
 `define ITCM_LENGTH (`ITCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
@@ -140,7 +134,6 @@
 `ifdef CORE_TEST
     `define ITCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
     `define DTCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
-    `define ITCM_DIRECT_LOAD
 `else
     `define ITCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0001
     `define DTCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0002

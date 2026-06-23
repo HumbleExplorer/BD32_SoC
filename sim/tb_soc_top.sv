@@ -14,8 +14,8 @@ parameter GPIO_NUM = `GPIO_NUM;
 localparam  CLK_PERIOD = 10;
 localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
-localparam  TEST_PATH  = `TEST_PATH;//vsim路径
-localparam  ITCM_FULL_PATH = {TEST_PATH,ITCM_FILE};
+localparam  PATH  = `PATH;//vsim路径
+localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE};
 localparam  SAMPLE_PER_BIT = 16;
 
 logic   clk;
@@ -25,7 +25,6 @@ logic   key0_val;
 wire    [GPIO_NUM-1:0]  gpio_io;
 // GPIO[0] (MODE_SEL) 浮空，BootROM 读到 0 → 进入 UART 下载模式
 // 注：GPIO_SIM 模式下 gpio_io 不连到 apb_gpio（用 gpio_i/gpio_o/gpio_oe 替代）
-// logic   clk_timer;
 logic   uart_rx;
 logic   uart_tx;
 logic   download_done;
@@ -52,7 +51,7 @@ task uart_download_program(
     integer       fd, byte_val, bytes_sent;
 
     $display("\n==================== UART Download Start ====================");
-    $display("File TEST_PATH: %s", file_path);
+    $display("File PATH: %s", file_path);
     $display("==============================================================\n");
 
     fd = $fopen(file_path, "rb");  // 二进制模式，避免 0x1A (Ctrl-Z) 误判 EOF
@@ -120,7 +119,11 @@ task send_uart_word(
 endtask
 
 always #(CLK_PERIOD/2)   clk = ~clk;
-// always #(1000/2)   clk_timer = ~clk_timer;
+
+// CLINT 1MHz timer clock (独立时钟域，由 TB 直接产生)
+logic timer_clk;
+initial timer_clk = 1'b0;
+always #500 timer_clk = ~timer_clk;   // 1MHz = 1000ns period
 
 logic tx_data_valid;
 assign tx_data_valid = u_SoC_top.u_apb_uart.tx_start && ~u_SoC_top.u_apb_uart.tx_busy;
@@ -194,11 +197,14 @@ always @(posedge clk) begin
 end
 
 initial begin
-    clk     = 1'b0;
-    rst_n   = 1'b0;
+    clk = 1'b0;
+    rst_n = 1'b0;
+`ifdef DIRECT_LOAD
+    download_en = 1'b0;
+`else
     download_en = 1'b1;
-    // clk_timer = 1'b0;
     uart_rx = 1'b1;// UART空闲电平为高
+`endif
     #35;
     rst_n   = 1'b1;
     `ifdef XILINX
@@ -223,7 +229,7 @@ initial  begin
     // DIRECT_LOAD: PC_counter 直接跳转到 ITCM 启动，BootROM 被跳过
     // 所以 download_en 永远不会被置位，跳过它的 wait
     $display("DIRECT_LOAD mode: ITCM pre-initialized, skip UART download");
-    $display("File TEST_PATH: %s", ITCM_FULL_PATH);
+    $display("File PATH: %s", ITCM_FULL_PATH);
     #100;
 `else
     // 正常 UART 下载模式：等待 BootROM 启动后置位 download_en
@@ -267,7 +273,7 @@ SoC_top #(
 )u_SoC_top(
     .sys_clk     	(clk        ),
     .sys_rst_n   	(rst_n      ),
-    // .clk_timer      (clk_timer),
+    .timer_clk_i    (timer_clk  ),
     .uart_rx     	(uart_rx    ),
     .uart_tx     	(uart_tx    ),
     .gpio_io     	(gpio_io    ),
