@@ -293,7 +293,7 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 		ee_printf("Iterations/Sec   : %f\n",default_num_contexts*results[0].iterations/time_in_secs(total_time));
 #else 
 	{
-	    uint32_t tt_cs = (uint32_t)(total_time / 1000000);  /* centiseconds @ 100MHz */
+	    uint32_t tt_cs = (uint32_t)(total_time / (g_cpu_freq_hz / 100));  /* centiseconds */
 	    printf("Total time (secs): ");
 	    print_fixed_scaled((int32_t)tt_cs, 100);
 	    printf("\n");
@@ -305,7 +305,7 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 	    printf("CoreMark/MHz     : ");
 	    print_fixed_scaled((int32_t)((unsigned long)default_num_contexts * results[0].iterations * 100 / tt_cs), 100);
 	    printf("\n");
-	    printf("CPU Frequency    : 100 MHz\n");
+	    printf("CPU Frequency    : %u MHz\n", g_cpu_freq_hz / 1000000);
 	}
     /* HPM：分支预测率 */
     {

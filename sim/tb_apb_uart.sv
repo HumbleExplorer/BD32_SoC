@@ -7,6 +7,8 @@ module tb_apb_uart;
 parameter CLK_FREQ    = 100_000_000;
 parameter BAUD_RATE   = 115200;
 localparam SAMPLE_PER_BIT = 16;
+// 真实波特率周期 (ns)：模拟真实串口助手发送节拍
+localparam BAUD_PERIOD_NS = 1_000_000_000 / BAUD_RATE;  // ~8680ns @ 115200
 
 // NCO 频率控制字：FCW = (Baud × 16 / Fclk) × 2^32，四舍五入
 localparam FCW_VAL = int'((BAUD_RATE * SAMPLE_PER_BIT * (2.0**32)) / CLK_FREQ + 0.5);
@@ -95,37 +97,20 @@ initial begin
     $finish;
 end
 
-// =================== 等待 NCO 采样脉冲（代替原来的 clk_sample）===================
-task wait_sample();
-    @(posedge u_apb_uart.sample_pulse);
-endtask
-
-// =================== 发送 UART bit（占 SAMPLE_PER_BIT 个采样脉冲 = 1 bit）===================
 task send_uart_bit(input logic bit_val);
-    int sample_cnt;
     uart_rx_i = bit_val;
-    for (sample_cnt = 0; sample_cnt < SAMPLE_PER_BIT; sample_cnt++) begin
-        wait_sample();
-    end
+    #(BAUD_PERIOD_NS);                          // 真实 bit 时间
 endtask
-
-// =================== 发送完整 UART 字节 ===================
+// =================== UART 发送（真实串口行为）= 不依赖 sample_pulse ===================
 task send_uart_byte(input logic[7:0] byte_data);
     int bit_idx;
     $display("Sending UART Byte: 0x%02h", byte_data);
-    uart_rx_i = 1'b1;
-    wait_sample();
-    // 起始位
-    send_uart_bit(1'b0);
-    // 8 位数据（LSB 先行）
-    for (bit_idx = 0; bit_idx < 8; bit_idx++) begin
-        send_uart_bit(byte_data[bit_idx]);
+    send_uart_bit(1'b0);                   // 起始位
+    for (bit_idx = 0; bit_idx < 8; bit_idx++) begin 
+        send_uart_bit(byte_data[bit_idx]);// LSB先行
     end
-    // 停止位
-    send_uart_bit(1'b1);
-    uart_rx_i = 1'b1;
+    send_uart_bit(1'b1);                   // 停止位
 endtask
-
 // =================== APB 写（PREADY 恒为 1）===================
 task apb_write(input logic[31:0] addr, input logic[31:0] data);
     PSEL    = 1'b1;
@@ -194,7 +179,7 @@ endtask
 task test_uart_tx(input logic[7:0] tx_data);
     logic       tx_bit;
     logic[31:0] lsr_data;
-    int         bit_cnt, i;
+    int         bit_cnt;
 
     $display("\n--- Test 2: UART TX Function (Data=0x%02h) ---", tx_data);
     @(posedge PCLK);
@@ -206,22 +191,18 @@ task test_uart_tx(input logic[7:0] tx_data);
     @(negedge uart_tx_o);
     $display("UART TX Start Bit Detected");
 
-    // 越过起始位：等 16 个 sample_pulse（1 bit）
-    for (i = 0; i < SAMPLE_PER_BIT; i++) wait_sample();
-
-    // 采样 8 位数据位（每个 bit 在中心点采样）
+    // 半 bit 到起始位中央，然后每 bit 采样
+    #(BAUD_PERIOD_NS/2);
     for (bit_cnt = 0; bit_cnt < 8; bit_cnt++) begin
-        // 等 16 个 sample_pulse 到下一个数据位中心
-        for (i = 0; i < SAMPLE_PER_BIT; i++) wait_sample();
+        #(BAUD_PERIOD_NS);
         tx_bit = uart_tx_o;
         if (tx_bit != tx_data[bit_cnt]) begin
             $display("Error: TX Bit %0d error, expected %b, got %b", bit_cnt, tx_data[bit_cnt], tx_bit);
             error_count++;
         end
     end
-
-    // 等一个 bit 到停止位
-    for (i = 0; i < SAMPLE_PER_BIT; i++) wait_sample();
+    // 停止位
+    #(BAUD_PERIOD_NS);
     if (uart_tx_o != 1'b1) begin
         $display("Error: TX Stop Bit error, expected 1, got %b", uart_tx_o);
         error_count++;

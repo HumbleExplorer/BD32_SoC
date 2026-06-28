@@ -25,6 +25,8 @@
 #define CSR_MCYCLE        0xB00     /* mcycle    低 32 位 */
 #define CSR_MCYCLEH       0xB80     /* mcycle    高 32 位 */
 #define CSR_MCOUNTEREN    0x306     /* mcounteren       */
+#define CSR_TIME          0xC01     /* time (mtime 低32位，只读影子) */
+#define CSR_TIMEH         0xC81     /* timeh (mtime 高32位，只读影子) */
 
 #define _csr_read(csr) ({                        \
     uint32_t __tmp;                             \
@@ -77,7 +79,6 @@ extern uint32_t g_cpu_freq_hz;
  * =================================================================== */
 static inline uint32_t measure_cpu_freq(uint32_t n)
 {
-    volatile uint32_t *mtime_lo = (volatile uint32_t *)CLINT_MTIME_LO_ADDR;
     uint32_t start_mtime, delta_mtime;
     uint32_t start_mcycle, delta_mcycle;
 
@@ -85,15 +86,15 @@ static inline uint32_t measure_cpu_freq(uint32_t n)
 
     /* Step 1：同步到 mtime tick 边界
      * 等 mtime 跳变一次后记录起点，避免测量跨过 tick 边界的部分周期 */
-    uint32_t tmp = *mtime_lo;
+    uint32_t tmp = csr_read(CSR_TIME);
     do {
         start_mcycle = csr_read(CSR_MCYCLE);
-        start_mtime  = *mtime_lo;
+        start_mtime  = csr_read(CSR_TIME);
     } while (start_mtime == tmp);
 
     /* Step 2：测量 n 个 mtime tick */
     do {
-        delta_mtime  = *mtime_lo - start_mtime;
+        delta_mtime  = csr_read(CSR_TIME) - start_mtime;
         delta_mcycle = csr_read(CSR_MCYCLE) - start_mcycle;
     } while (delta_mtime < n);
 

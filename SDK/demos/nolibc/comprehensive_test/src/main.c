@@ -101,9 +101,8 @@ static void init_all(void)
     GPIO_TR_LVL0  |=  PIN_KEY0;
     GPIO_IRQ_ENA  |=  PIN_KEY0;
 
-    /* ---- APB Timer：100MHz / 2000 / 1000 = 50Hz (20ms cycle) ---- */
-    /*   实际上想要 ~500Hz 中断率 (2ms)：PSC=100, ARR=1999 → 500Hz   */
-    TIM_PSC  = 100 - 1;                  /* 100MHz → 1MHz       */
+    /* ---- APB Timer：90MHz / 90 / 2000 = 500Hz (2ms cycle) ---- */
+    TIM_PSC  = 90 - 1;                   /* 90MHz → 1MHz         */
     TIM_ARR  = 2000 - 1;                 /* 1MHz → 500Hz        */
     TIM_IER  = 0x03;                     /* UI 中断 + 溢出中断   */
     /* 先不开 PWM 模式（CCMR/CCER 保持默认 0） */
@@ -137,8 +136,8 @@ static void switch_to_breath(void)
     /* 停止 Timer → 重配为 PWM 模式 */
     TIM_CR  = 0;
 
-    /* Timer：100MHz / 100 / 1000 = 1kHz PWM 基频 */
-    TIM_PSC  = 100 - 1;
+    /* Timer：90MHz / 90 / 1000 = 1kHz PWM 基频 */
+    TIM_PSC  = 90 - 1;
     TIM_ARR  = 1000 - 1;
     TIM_CCMR = 0x01;              /* OC1: PWM mode 1                    */
     TIM_CCER = 0x01;              /* CC1 输出使能 → LED2(L15)            */

@@ -62,9 +62,9 @@ logic[7:0]     iir;         // 中断标识寄存器（只读）
 logic[7:0]     fcr;         // FIFO控制寄存器（只写）
 logic[7:0]     lcr;         // 线控制寄存器（8位完整，直接传给子模块）
 logic[7:0]     mcr;         // 调制解调器控制
-logic[7:0]     lsr;         // 线状态寄存器（只读）
+(* mark_debug = "true" *) logic[7:0]     lsr;         // 线状态寄存器（只读）
 logic[7:0]     msr;         // 调制解调器状态（只读）
-logic[31:0]    fcw;     // NCO 频率控制字
+(* mark_debug = "true" *) logic[31:0]    fcw;     // NCO 频率控制字
 
 // 子模块接口信号
 logic[7:0]     rx_data_out;
@@ -89,10 +89,10 @@ logic   [4:0]   rx_fifo_cnt;
 logic   [5:0]   timeout_cnt;
 logic           timeout;
 logic           reg_rd_en, reg_wr_en;
-logic           sample_pulse;   // NCO 采样使能脉冲
+(* mark_debug = "true" *) logic           sample_pulse;   // NCO 采样使能脉冲
 
-logic           download_en;
-logic           download_done;
+(* mark_debug = "true" *) logic           download_en;
+(* mark_debug = "true" *) logic           download_done;
 
 
 assign  reg_sel   = PADDR[5:2];

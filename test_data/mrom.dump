@@ -6,94 +6,92 @@ Disassembly of section .text:
 00000000 <_start>:
        0: 00100293     	li	t0, 0x1
        4: 30629073     	csrw	mcounteren, t0
-       8: f200c2b7     	lui	t0, 0xf200c
-       c: ff828293     	addi	t0, t0, -0x8
-      10: 0002a303     	lw	t1, 0x0(t0)
-      14: 0002a383     	lw	t2, 0x0(t0)
-      18: fe638ee3     	beq	t2, t1, 0x14 <_start+0x14>
-      1c: 0002a303     	lw	t1, 0x0(t0)
-      20: b00023f3     	csrr	t2, mcycle
-      24: 00002e37     	lui	t3, 0x2
-      28: 710e0e13     	addi	t3, t3, 0x710
-      2c: 01c30e33     	add	t3, t1, t3
-      30: 0002ae83     	lw	t4, 0x0(t0)
-      34: ffcecee3     	blt	t4, t3, 0x30 <_start+0x30>
-      38: b0002f73     	csrr	t5, mcycle
-      3c: 407f03b3     	sub	t2, t5, t2
-      40: 06400e13     	li	t3, 0x64
-      44: 03c38533     	mul	a0, t2, t3
-      48: 03c3b5b3     	mulhu	a1, t2, t3
-      4c: 000302b7     	lui	t0, 0x30
-      50: ff028293     	addi	t0, t0, -0x10
-      54: 00a2a023     	sw	a0, 0x0(t0)
-      58: e00000b7     	lui	ra, 0xe0000
-      5c: 01800313     	li	t1, 0x18
-      60: 0060a223     	sw	t1, 0x4(ra)
-      64: 0000a423     	sw	zero, 0x8(ra)
-      68: 00c0a303     	lw	t1, 0xc(ra)
-      6c: 00137313     	andi	t1, t1, 0x1
-      70: 00031863     	bnez	t1, 0x80 <download_mode>
+       8: c0102373     	rdtime	t1
+       c: c01023f3     	rdtime	t2
+      10: fe638ee3     	beq	t2, t1, 0xc <_start+0xc>
+      14: c0102373     	rdtime	t1
+      18: b00023f3     	csrr	t2, mcycle
+      1c: 00002e37     	lui	t3, 0x2
+      20: 710e0e13     	addi	t3, t3, 0x710
+      24: 01c30e33     	add	t3, t1, t3
+      28: c0102ef3     	rdtime	t4
+      2c: ffcecee3     	blt	t4, t3, 0x28 <_start+0x28>
+      30: b0002f73     	csrr	t5, mcycle
+      34: 407f03b3     	sub	t2, t5, t2
+      38: 06400e13     	li	t3, 0x64
+      3c: 03c38533     	mul	a0, t2, t3
+      40: 03c3b5b3     	mulhu	a1, t2, t3
+      44: 000302b7     	lui	t0, 0x30
+      48: ff028293     	addi	t0, t0, -0x10
+      4c: 00a2a023     	sw	a0, 0x0(t0)
+      50: e00000b7     	lui	ra, 0xe0000
+      54: 01800313     	li	t1, 0x18
+      58: 0060a223     	sw	t1, 0x4(ra)
+      5c: 0000a423     	sw	zero, 0x8(ra)
+      60: 00c0a303     	lw	t1, 0xc(ra)
+      64: 00137313     	andi	t1, t1, 0x1
+      68: 00031863     	bnez	t1, 0x78 <download_mode>
 
-00000074 <normal_mode>:
-      74: 00800313     	li	t1, 0x8
-      78: 0060a423     	sw	t1, 0x8(ra)
-      7c: 0780006f     	j	0xf4 <jump_to_itcm>
+0000006c <normal_mode>:
+      6c: 00800313     	li	t1, 0x8
+      70: 0060a423     	sw	t1, 0x8(ra)
+      74: 0780006f     	j	0xec <jump_to_itcm>
 
-00000080 <download_mode>:
-      80: 01000313     	li	t1, 0x10
-      84: 0060a423     	sw	t1, 0x8(ra)
-      88: 001c23b7     	lui	t2, 0x1c2
-      8c: 02755e33     	divu	t3, a0, t2
-      90: 00000613     	li	a2, 0x0
-      94: 001c26b7     	lui	a3, 0x1c2
-      98: 00155e93     	srli	t4, a0, 0x1
-      9c: 01d60633     	add	a2, a2, t4
-      a0: 01d63f33     	sltu	t5, a2, t4
-      a4: 01e686b3     	add	a3, a3, t5
-      a8: 00050713     	mv	a4, a0
-      ac: 050000ef     	jal	0xfc <div64_32>
-      b0: e00100b7     	lui	ra, 0xe0010
-      b4: 08000313     	li	t1, 0x80
-      b8: 0060a623     	sw	t1, 0xc(ra)
-      bc: 01c0a023     	sw	t3, 0x0(ra)
-      c0: 0000a223     	sw	zero, 0x4(ra)
-      c4: 00300313     	li	t1, 0x3
-      c8: 0060a623     	sw	t1, 0xc(ra)
-      cc: 0000a423     	sw	zero, 0x8(ra)
-      d0: 02c0a223     	sw	a2, 0x24(ra)
-      d4: 00100313     	li	t1, 0x1
-      d8: 0060ae23     	sw	t1, 0x1c(ra)
+00000078 <download_mode>:
+      78: 01000313     	li	t1, 0x10
+      7c: 0060a423     	sw	t1, 0x8(ra)
+      80: 001c23b7     	lui	t2, 0x1c2
+      84: 02755e33     	divu	t3, a0, t2
+      88: 00000613     	li	a2, 0x0
+      8c: 001c26b7     	lui	a3, 0x1c2
+      90: 00155e93     	srli	t4, a0, 0x1
+      94: 01d60633     	add	a2, a2, t4
+      98: 01d63f33     	sltu	t5, a2, t4
+      9c: 01e686b3     	add	a3, a3, t5
+      a0: 00050713     	mv	a4, a0
+      a4: 050000ef     	jal	0xf4 <div64_32>
+      a8: e00100b7     	lui	ra, 0xe0010
+      ac: 08000313     	li	t1, 0x80
+      b0: 0060a623     	sw	t1, 0xc(ra)
+      b4: 01c0a023     	sw	t3, 0x0(ra)
+      b8: 0000a223     	sw	zero, 0x4(ra)
+      bc: 00300313     	li	t1, 0x3
+      c0: 0060a623     	sw	t1, 0xc(ra)
+      c4: 0000a423     	sw	zero, 0x8(ra)
+      c8: 02c0a223     	sw	a2, 0x24(ra)
+      cc: 00100313     	li	t1, 0x1
+      d0: 0060ae23     	sw	t1, 0x1c(ra)
 
-000000dc <download_wait>:
-      dc: 0200ae83     	lw	t4, 0x20(ra)
-      e0: 001eff13     	andi	t5, t4, 0x1
-      e4: fe0f0ce3     	beqz	t5, 0xdc <download_wait>
-      e8: e00002b7     	lui	t0, 0xe0000
-      ec: 01800313     	li	t1, 0x18
-      f0: 0062a423     	sw	t1, 0x8(t0)
+000000d4 <download_wait>:
+      d4: 0200ae83     	lw	t4, 0x20(ra)
+      d8: 001eff13     	andi	t5, t4, 0x1
+      dc: fe0f0ce3     	beqz	t5, 0xd4 <download_wait>
+      e0: e00002b7     	lui	t0, 0xe0000
+      e4: 01800313     	li	t1, 0x18
+      e8: 0062a423     	sw	t1, 0x8(t0)
 
-000000f4 <jump_to_itcm>:
-      f4: 00010337     	lui	t1, 0x10
-      f8: 00030067     	jr	t1
+000000ec <jump_to_itcm>:
+      ec: 00010337     	lui	t1, 0x10
+      f0: 00030067     	jr	t1
 
-000000fc <div64_32>:
-      fc: 04000293     	li	t0, 0x40
-     100: 00000793     	li	a5, 0x0
+000000f4 <div64_32>:
+      f4: 04000293     	li	t0, 0x40
+      f8: 00000793     	li	a5, 0x0
 
-00000104 <div_loop>:
-     104: 00179793     	slli	a5, a5, 0x1
-     108: 01f6d313     	srli	t1, a3, 0x1f
-     10c: 0067e7b3     	or	a5, a5, t1
-     110: 00169693     	slli	a3, a3, 0x1
-     114: 01f65313     	srli	t1, a2, 0x1f
-     118: 0066e6b3     	or	a3, a3, t1
-     11c: 00161613     	slli	a2, a2, 0x1
-     120: 00e7e663     	bltu	a5, a4, 0x12c <div_next>
-     124: 40e787b3     	sub	a5, a5, a4
-     128: 00166613     	ori	a2, a2, 0x1
+000000fc <div_loop>:
+      fc: 00179793     	slli	a5, a5, 0x1
+     100: 01f6d313     	srli	t1, a3, 0x1f
+     104: 0067e7b3     	or	a5, a5, t1
+     108: 00169693     	slli	a3, a3, 0x1
+     10c: 01f65313     	srli	t1, a2, 0x1f
+     110: 0066e6b3     	or	a3, a3, t1
+     114: 00161613     	slli	a2, a2, 0x1
+     118: 00e7e663     	bltu	a5, a4, 0x124 <div_next>
+     11c: 40e787b3     	sub	a5, a5, a4
+     120: 00166613     	ori	a2, a2, 0x1
 
-0000012c <div_next>:
-     12c: fff28293     	addi	t0, t0, -0x1
-     130: fc029ae3     	bnez	t0, 0x104 <div_loop>
-     134: 00078693     	mv	a3, a5
-     138: 00008067     	ret
+00000124 <div_next>:
+     124: fff28293     	addi	t0, t0, -0x1
+     128: fc029ae3     	bnez	t0, 0xfc <div_loop>
+     12c: 00078693     	mv	a3, a5
+     130: 00008067     	ret

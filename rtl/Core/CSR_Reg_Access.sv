@@ -283,6 +283,9 @@ always_comb begin
             12'hc48  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
             12'hc49  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
 `endif
+            // time / timeh — 只读影子寄存器（mtime_shadow 来自 CLINT）
+            12'hc01  : csr_rdata = mtime_shadow[DATA_WIDTH-1:0];          // time (低32位)
+            12'hc81  : csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH]; // timeh (高32位)
             default  : begin
                 illegal_inst_csr = 1'b1;
             end

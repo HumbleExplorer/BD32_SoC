@@ -44,23 +44,21 @@ _start:
 # ====================================================================
 # Step 2: 测 CPU 主频
 # 基准时钟: CLINT mtime @ 1MHz (1 tick = 1µs)
-# 方法: 记录 10ms 内 CPU 经过的周期数 → freq = cycles * 100
+# 通过 CSR time (0xC01) 读取，不走 APB 总线
 # ====================================================================
-    li t0, 0xF200BFF8     # t0 = &mtime_lo
-
     # 等待 mtime 变化（确保不从转换沿开始）
-    lw t1, 0(t0)
-1:  lw t2, 0(t0)
+    csrr t1, 0xC01
+1:  csrr t2, 0xC01
     beq t2, t1, 1b
 
-    # 读测量起点: mtime_start, mcycle_start
-    lw t1, 0(t0)          # t1 = mtime_lo
-    csrr t2, 0xB00        # t2 = mcycle (CSR 0xB00)
+    # 读测量起点: time_start, mcycle_start
+    csrr t1, 0xC01          # t1 = time_lo (mtime 低32位)
+    csrr t2, 0xB00          # t2 = mcycle
 
-    # 等待 MEASURE_TICKS 个 mtime ticks
+    # 等待 MEASURE_TICKS 个 time ticks
     li t3, MEASURE_TICKS
-    add t3, t1, t3         # t3 = mtime_start + 10000
-2:  lw t4, 0(t0)
+    add t3, t1, t3           # t3 = time_start + 10000
+2:  csrr t4, 0xC01
     blt t4, t3, 2b
 
     # 读测量终点: mcycle_end

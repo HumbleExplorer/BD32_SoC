@@ -16,7 +16,8 @@ localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
 localparam  PATH  = `PATH;//vsim路径
 localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE};
-localparam  SAMPLE_PER_BIT = 16;
+// 真实波特率周期 (ns)：模拟真实串口助手的发送节拍
+localparam  BAUD_PERIOD_NS = 1_000_000_000 / 115200;  // ~8680ns per bit @ 115200
 
 logic   clk;
 logic   rst_n;
@@ -62,6 +63,7 @@ task uart_download_program(
 
     // 逐字节发送（$fgetc 每次读 1 字节）
     bytes_sent = 0;
+    #($urandom_range(BAUD_PERIOD_NS, 0));
     while (!$feof(fd)) begin
         byte_val = $fgetc(fd);
         if ($feof(fd)) break;
@@ -78,35 +80,26 @@ task uart_download_program(
     $display("==============================================================\n");
 endtask
 
-// -------------------------- 通用封装任务 --------------------------
-// 任务1: 发送单个UART bit（基于clk_sample对齐，避免偏移）
-task send_uart_bit(input logic bit_val);
-    // 设置当前bit电平
-    uart_rx = bit_val;
-    // 等待16个clk_sample周期（1个完整bit周期）
-    repeat(SAMPLE_PER_BIT) @(posedge u_SoC_top.u_apb_uart.sample_pulse);
-endtask
 
-// 任务2: 发送完整UART字节（包含起始位+8位数据+停止位）
+// ================================================================
+// UART 发送 Task（真实串口助手行为）
+// ================================================================
+// 使用真实时间延迟 `#(BAUD_PERIOD_NS)`，不依赖 SoC 内部 sample_pulse
+// 起始位时机与 SoC 采样时钟无任何对齐关系，真实复现串口助手行为
+task send_uart_bit(input logic bit_val);
+    uart_rx = bit_val;
+    #(BAUD_PERIOD_NS);                          // 真实 bit 时间
+endtask
 task send_uart_byte(input logic[7:0] byte_data);
     int bit_idx;
-    // $display("Sending UART Byte: 0x%02h", byte_data);
-    uart_rx = 1'b1;
-    // 1. 发送起始位（低电平）
-    send_uart_bit(1'b0);
-    
-    // 2. 发送8位数据位（LSB先行）
+    // 起始位
+    send_uart_bit(1'b0);  // 起始位
+    // 8 位数据（LSB 先行）
     for (bit_idx = 0; bit_idx < 8; bit_idx++) begin
-        send_uart_bit(byte_data[bit_idx]);
+        send_uart_bit(byte_data[bit_idx]);  // 8位数据（LSB 先行）
     end
-    
-    // 3. 发送停止位（高电平）
-    send_uart_bit(1'b1);
-
-    // 4. 恢复空闲电平（高）
-    uart_rx = 1'b1;
+    send_uart_bit(1'b1);  // 停止位
 endtask
-
 // ------------------------ 辅助Task：发送32位数据（小端UART传输） ------------------------
 task send_uart_word(
     input logic [31:0] word_data  // 32位数据

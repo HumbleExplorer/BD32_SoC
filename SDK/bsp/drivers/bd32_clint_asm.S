@@ -20,32 +20,21 @@
 .equ MTIMECMP_HI,   0x4004
 
 /* uint32_t clint_asm_get_mtime_lo(void)
- * 读 mtime 低 32 位（单次读取，不做双字校验） */
+ * 读 mtime 低 32 位（通过 CSR time，不走 APB 总线） */
 clint_asm_get_mtime_lo:
-    li   t0, CLINT_BASE
-    li   t1, MTIME_LO
-    add  t0, t0, t1
-    lw   a0, 0(t0)
+    csrr a0, 0xC01          # time (mtime 低32位)
     ret
 
 /* uint64_t clint_asm_get_mtime(void)
- * 读完整 64 位 mtime（带双读校验） */
+ * 读完整 64 位 mtime（带双读校验，通过 CSR time/timeh） */
 clint_asm_get_mtime:
-    li   t0, CLINT_BASE
-1:  li   t1, MTIME_HI
-    add  t2, t0, t1
-    lw   t3, 0(t2)          # hi 第一次
-    li   t1, MTIME_LO
-    add  t2, t0, t1
-    lw   t4, 0(t2)          # lo
-    li   t1, MTIME_HI
-    add  t2, t0, t1
-    lw   t5, 0(t2)          # hi 第二次
-    bne  t3, t5, 1b         # 校验
+1:  csrr t3, 0xC81          # timeh (高32位，第一次)
+    csrr t4, 0xC01          # time (低32位)
+    csrr t5, 0xC81          # timeh (高32位，第二次)
+    bne  t3, t5, 1b         # 校验：高32位无变化才能信任低32位
 
-    # 拼接 64 位返回值 (a0 = lo, a1 = hi)
-    mv   a0, t4
-    mv   a1, t3
+    mv   a0, t4              # a0 = lo
+    mv   a1, t3              # a1 = hi
     ret
 
 /* void clint_asm_set_mtimecmp(uint64_t val)

@@ -47,7 +47,7 @@
 // `define GPIO_SIM
 // `define TIMER_SIM
 
-`define DIRECT_LOAD  // 注释掉则走 UART 下载
+// `define DIRECT_LOAD  // 注释掉则走 UART 下载
 // `define XILINX
 // `define SIMULATION
 
@@ -61,8 +61,8 @@
     `define DTCM_FILE "plic_irq_dtcm.mem"
 `else
     `define PATH "../../test_data/custom/"
-    `define ITCM_FILE "plic_irq.uartbin"
-    `define DTCM_FILE "plic_irq.uartbin"
+    `define ITCM_FILE "breathing.uartbin"
+    `define DTCM_FILE "breathing.uartbin"
 `endif
 
 `ifdef XILINX

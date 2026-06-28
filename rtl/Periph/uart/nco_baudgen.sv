@@ -16,18 +16,21 @@ module nco_baudgen #(
 );
 
 logic [FCW_WIDTH-1:0] phase_acc;
-logic [FCW_WIDTH:0] sum;
+logic [FCW_WIDTH:0] sum, sum_r;
 
 assign sum = phase_acc + fcw;
 
 always_ff @(posedge clk or negedge rst_n)
 begin
-    if(!rst_n)
+    if(!rst_n) begin
         phase_acc <= '0;
-    else
+        sum_r     <= '0;
+    end else begin
         phase_acc <= sum[FCW_WIDTH-1:0];
+        sum_r     <= sum;            // 寄存器打一拍，过滤组合进位链毛刺
+    end
 end
 
-assign sample_pulse = sum[FCW_WIDTH];
+assign sample_pulse = sum_r[FCW_WIDTH];
 
 endmodule

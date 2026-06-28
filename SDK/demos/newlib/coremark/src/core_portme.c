@@ -43,9 +43,9 @@ void start_time(void) { t0 = read_cycles(); }
 void stop_time(void)  { t1 = read_cycles(); }
 CORE_TICKS get_time(void) { return t1 - t0; }
 
-/* Return seconds (integer). Clock = 100MHz = 100,000,000 ticks/s */
+/* Return seconds (integer). Clock = g_cpu_freq_hz ticks/s */
 secs_ret time_in_secs(CORE_TICKS ticks) {
-    return (secs_ret)(ticks / 100000000);
+    return (secs_ret)(ticks / g_cpu_freq_hz);
 }
 
 void portable_init(core_portable *p, int *argc, char *argv[]) {

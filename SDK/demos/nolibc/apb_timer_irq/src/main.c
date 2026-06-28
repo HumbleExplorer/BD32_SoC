@@ -26,8 +26,8 @@ int main(void)
     /* 配置 LED0 为推挽输出 */
     GPIO_DIR |= PIN_LED0;               /* bit=1 → 输出模式 */
 
-    /* APB Timer: 100MHz / 50000 = 2000Hz, ARR=999 → 2Hz (0.5s) */
-    TIM_PSC  = 50000 - 1;
+    /* APB Timer: 90MHz / 45000 = 2000Hz, ARR=999 → ~2Hz (0.5s) */
+    TIM_PSC  = 45000 - 1;
     TIM_ARR  = 1000 - 1;
     TIM_IER  = 0x03;                    /* bit0=timer_int_en, bit1=timer_of_int_en */
     TIM_CR   = 0x01;                    /* 启动定时器 */

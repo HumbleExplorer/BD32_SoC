@@ -32,12 +32,11 @@ module bd32_board_top #(
 // MMCM 时钟生成：50MHz → 90MHz / 16MHz / 8.388MHz
 // =========================================================================
 logic clk_wiz_locked;
-logic clk_90mhz, clk_16mhz, clk_8m388;
+logic clk_cpu, clk_16mhz, clk_8m388;
 
 clk_wiz_0 u_clk_wiz_0 (
     .clk_in     (sys_clk),
-    .clk_90mhz  (clk_90mhz),
-    .clk_16mhz  (clk_16mhz),
+    .clk_cpu  (clk_cpu),
     .clk_8m388  (clk_8m388),
     .reset      (~sys_rst_n),
     .locked     (clk_wiz_locked)
@@ -61,7 +60,7 @@ Cdc_Sync #(
     .RESET_VAL   (0),
     .DELAY_STAGES(3)
 ) u_cdc_rst_sync (
-    .dst_clk    (clk_90mhz),
+    .dst_clk    (clk_cpu),
     .dst_rst_n  (rst_n_bufg),
     .async_sig  (1'b1),
     .sync_sig   (rst_n_sync)
@@ -73,9 +72,9 @@ Cdc_Sync #(
 logic clk_1mhz;
 
 clk_div_static #(
-    .DIV_NUM (16)
+    .DIV_NUM (50)
 ) u_clint_timer_div (
-    .clk_in  (clk_16mhz),
+    .clk_in  (sys_clk),
     .rst_n   (rst_n_bufg),
     .clk_out (clk_1mhz)
 );
@@ -97,7 +96,7 @@ SoC_top #(
     .TIMER_NUM       (TIMER_NUM        ),
     .TIMER_CHANNEL_NUM (TIMER_CHANNEL_NUM)
 ) u_SoC_top (
-    .sys_clk          (clk_90mhz  ),
+    .sys_clk          (clk_cpu  ),
     .sys_rst_n        (rst_n_sync ),   // 经 Cdc_Sync 3-stage 同步释放
     .timer_clk_i      (clk_1mhz   ),
     .uart_rx          (uart_rx    ),

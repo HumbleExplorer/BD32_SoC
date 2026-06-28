@@ -44,7 +44,7 @@ function automatic logic [DATA_WIDTH-1:0] get_write_value (input [DATA_WIDTH-1:0
     get_write_value[n*8 +: 8] = PSTRB[n] ? PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
 endfunction : get_write_value
 
-logic   [2*DATA_WIDTH-1:0]  mtime;         // 0x0200BFF8 (64bit)
+(* mark_debug = "true" *) logic   [2*DATA_WIDTH-1:0]  mtime;         // 0x0200BFF8 (64bit)
 logic   [2*DATA_WIDTH-1:0]  mtimecmp;      // 0x02004000 (64bit)
 logic   [DATA_WIDTH-1:0]    msip;          // 0x02000000 (32bit)
 
@@ -65,7 +65,7 @@ assign timer_int = mtime >= mtimecmp;
 // -----------------------------------------------------------------------
 logic [1:0] timer_clk_sync;       // 2-FF 同步链
 logic       timer_clk_sync_d1;    // 打一拍用于边沿检测
-logic       timer_tick_rise;      // 上升沿脉冲（1 PCLK 周期宽）
+(* mark_debug = "true" *) logic       timer_tick_rise;      // 上升沿脉冲（1 PCLK 周期宽）
 
 always_ff @(posedge PCLK or negedge PRESETn) begin
     if (!PRESETn) begin
