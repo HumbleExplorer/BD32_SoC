@@ -46,7 +46,7 @@
 extern uint32_t g_cpu_freq_hz;
 
 /* 编译期默认值（用于 fallback / 旧代码兼容） */
-#define CPU_FREQ_HZ_DEFAULT  90000000UL
+#define CPU_FREQ_HZ_DEFAULT  100000000UL
 
 /* 兼容宏：指向运行时变量，确保延迟/波特率始终用最新值 */
 #define CPU_FREQ_HZ          g_cpu_freq_hz

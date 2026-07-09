@@ -21,6 +21,7 @@ Original Author: Shay Gal-on
 */
 #include "coremark.h"
 #include "bsp.h"
+#include "soc/soc.h"
 
 /* Function: iterate
 	Run the benchmark for a specified number of iterations.
@@ -293,7 +294,7 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 		ee_printf("Iterations/Sec   : %f\n",default_num_contexts*results[0].iterations/time_in_secs(total_time));
 #else 
 	{
-	    uint32_t tt_cs = (uint32_t)(total_time / (g_cpu_freq_hz / 100));  /* centiseconds */
+	    uint32_t tt_cs = (uint32_t)((total_time * 100) / g_cpu_freq_hz);  /* centiseconds @ runtime freq */
 	    printf("Total time (secs): ");
 	    print_fixed_scaled((int32_t)tt_cs, 100);
 	    printf("\n");

@@ -19,9 +19,8 @@ module Executer #(
     input   logic   [DATA_WIDTH-1:0]        imm,
     input   logic                           predict_taken,
     input   logic   [ADDR_WIDTH-1:0]        predict_target,
-    `ifndef BRANCH_JUMP_DELAYED
+    input   logic                           is_nop,
     input   logic                           is_fence_i,
-    `endif
     input   logic                           access_en,
     input   logic                           access_wr,
     // from CSR
@@ -36,10 +35,8 @@ module Executer #(
     input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4,// 预计算 PC+4
     input   logic   [DATA_WIDTH-1:0]        access_wdata_temp,
     // to ctrl
-    `ifndef BRANCH_JUMP_DELAYED
     output  logic                           branch_jump_en,//实际上是否跳转
     output  logic   [ADDR_WIDTH-1:0]        branch_jump_addr,//实际跳转地址
-    `endif
     output  logic   [DATA_WIDTH-2:0]        exception_code,
     output  logic   [DATA_WIDTH-1:0]        exception_val,
     // to OITF（长周期指令派发）
@@ -66,10 +63,8 @@ module Executer #(
     output  logic                           mret_req,
     // to IF
     output  logic                           branch_taken,    // 分支跳转方向
-    output  logic   [ADDR_WIDTH-1:0]        branch_target   // 分支目标跳转地址
-    `ifndef BRANCH_JUMP_DELAYED,
+    output  logic   [ADDR_WIDTH-1:0]        branch_target,   // 分支目标跳转地址
     output  logic                           branch_predict_success
-    `endif
 );
 
 logic   [6:0]               opcode;
@@ -81,9 +76,11 @@ logic   [11:0]              func12;
 logic                       equal;
 logic                       less_signed;
 logic                       less_unsigned;
-
 logic   [DATA_WIDTH-1:0]    sr_shift;
 logic   [DATA_WIDTH-1:0]    sr_shift_mask;
+logic                       mul_div_en;
+logic  access_illegal;
+logic  access_addr_misalign;
 
 assign  opcode          =   inst[6:0];
 assign  rd              =   inst[11:7];
@@ -100,38 +97,16 @@ assign  sr_shift_mask   =   {DATA_WIDTH{1'b1}} >> alu_op2[4:0];
 
 assign  access_addr = alu_op1 + imm;
 assign  access_func3 = func3;
-logic                       mul_div_en;
-logic   [2:0]               mul_div_func3;
-
-assign  mul_div_en = (opcode == `INST_TYPE_R_M) && (func7 == 7'b0000001);
-assign  mul_div_func3 = func3;
 assign  lp_valid = mul_div_en;
 assign  lp_is_div = func3[2];
 
-logic  access_illegal;
-logic  access_addr_misalign;
 assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG): 1'b0;
 assign exception_code = access_illegal ? (access_wr ? 4'd7 : 4'd5) : access_addr_misalign ? (access_wr ? 4'd6 : 4'd4) : (illegal_inst_csr) ? 4'd2 : {DATA_WIDTH-1{1'b1}};
 assign exception_val = (access_illegal || access_addr_misalign) ? access_addr : illegal_inst_csr ? inst : 'h0;
-`ifndef BRANCH_JUMP_DELAYED
-assign  branch_predict_success = (predict_taken == branch_taken) && (predict_target == branch_target);
-assign  branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
-always_comb begin
-    if (is_fence_i) begin
-        branch_jump_addr = inst_addr_plus_4;
-    end else if (branch_predict_success) begin //预测成功
-        branch_jump_addr = predict_target;
-    end else if (branch_taken && ~predict_taken) begin //跳被预测为不跳
-        branch_jump_addr = branch_target;
-    end else if (~branch_taken && predict_taken) begin //不跳被预测为跳
-        branch_jump_addr = inst_addr_plus_4;
-    end else if (predict_target != branch_target) begin //预测地址不正确（默认是跳被预测为跳，因为如果不跳被预测为不跳，那两个地址应都为inst_addr+4）
-        branch_jump_addr = branch_target;
-    end else begin //其他
-        branch_jump_addr = inst_addr_plus_4;
-    end
-end
-`endif
+assign branch_predict_success = ((predict_taken && branch_taken) && (predict_target == branch_target)) 
+                            || (~predict_taken && ~branch_taken);
+assign branch_jump_addr = branch_taken ? branch_target : inst_addr_plus_4;
+assign branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
 
 always_comb begin
     reg_rd_wen        = 1'b0;
@@ -143,11 +118,12 @@ always_comb begin
     csr_wdata         = 'h0;
     wfi_req           = 1'b0;
     mret_req          = 1'b0;
+    mul_div_en        = 1'b0;
     branch_taken      = 1'b0;
-    branch_target     = 'h0;
+    branch_target     = inst_addr_plus_4;
     case(opcode)
         `INST_TYPE_I:begin
-            reg_rd_wen        = 1'b1;
+            reg_rd_wen        = ~is_nop;
             reg_rd_waddr      = rd;
             case(func3)
                 `INST_ADDI  : reg_rd_wdata   = alu_op1 + alu_op2;
@@ -193,7 +169,8 @@ always_comb begin
                 endcase
             end
             else if(func7 == 7'b0000001) begin//RV_M → 结果走 OITF，但 reg_rd_wen/waddr 仍输出
-                reg_rd_wen        = 1'b1;
+                // reg_rd_wen        = 1'b1;
+                mul_div_en = 1'b1;
                 reg_rd_waddr      = rd;
             end
         end
@@ -209,7 +186,8 @@ always_comb begin
                 `INST_BGEU:branch_taken     = ~less_unsigned;
                 default: branch_taken     = 1'b0;
             endcase
-            branch_target   = branch_taken ? jump_imm : 0;
+            // branch_target   = branch_taken ? jump_imm : inst_addr_plus_4;
+            branch_target   = jump_imm;
         end
         `INST_TYPE_S:begin
             case(func3)
@@ -262,7 +240,7 @@ always_comb begin
             endcase
         end
         `INST_TYPE_L: begin
-            reg_rd_wen        = 1'b1;
+            // reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
             case(func3)
                 `INST_LH, `INST_LHU: 
@@ -338,7 +316,6 @@ always_comb begin
                 ;
             end
         end
-        `INST_NOP_OP:;
     endcase
 end
 
@@ -352,17 +329,17 @@ mul_div #(
     .clk         	(clk            ),
     .rst_n       	(rst_n          ),
     .start      	(mul_div_en     ),
-    .reg_rs1_raddr 	(reg_rs1_raddr    ),
-    .reg_rs2_raddr 	(reg_rs2_raddr    ),
-    .reg_rd_waddr   (rd              ),
-    .func3_i     	(mul_div_func3  ),
+    .reg_rs1_raddr 	(reg_rs1_raddr  ),
+    .reg_rs2_raddr 	(reg_rs2_raddr  ),
+    .reg_rd_waddr   (rd             ),
+    .func3_i     	(func3          ),
     .a_i         	(alu_op1        ),
     .b_i         	(alu_op2        ),
     .mul_result_o   (mul_result_wbck),
     .div_result_o   (div_result_wbck),
-    .mul_ready_o    (mul_ready    ),
-    .div_ready_o    (div_ready    ),
-    .mul_valid_o    (mul_valid_wbck),
+    .mul_ready_o    (mul_ready      ),
+    .div_ready_o    (div_ready      ),
+    .mul_valid_o    (mul_valid_wbck ),
     .div_valid_o    (div_valid_wbck)
 
 );

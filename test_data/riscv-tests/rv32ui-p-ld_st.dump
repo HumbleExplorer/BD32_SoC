@@ -1039,18 +1039,3 @@ Disassembly of section .text.init:
 
 00010e84 <loop_pass>:
    10e84:	0000006f          	j	10e84 <loop_pass>
-   10e88:	00000013          	nop
-   10e8c:	00000013          	nop
-   10e90:	00000013          	nop
-   10e94:	00000013          	nop
-   10e98:	00000013          	nop
-   10e9c:	00000013          	nop
-   10ea0:	00000013          	nop
-   10ea4:	00000013          	nop
-   10ea8:	00000013          	nop
-   10eac:	00000013          	nop
-   10eb0:	00000013          	nop
-   10eb4:	00000013          	nop
-   10eb8:	00000013          	nop
-   10ebc:	00000013          	nop
-   10ec0:	00000013          	nop

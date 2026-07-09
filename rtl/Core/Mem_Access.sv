@@ -20,8 +20,6 @@ module Mem_Access #(
     //to dtcm/bus
     output  logic                       dtcm_sel,
     output  logic                       bus_sel,
-    //to crtl
-    output  logic                       bus_access_ready,
     //to Mux (func3 expanded data, only for load instructions)
     output  logic   [DATA_WIDTH-1:0]    func3_expanded_data,
     // 锁存后的 load valid 信号，在 stall 周期保持数据选择正确
@@ -33,18 +31,6 @@ logic [DATA_WIDTH-1:0] access_rdata;
 
 assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `DTCM_BASE_TAG) ;
 assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) ;
-
-
-// ============================================
-// 同步读模式：BRAM 采样地址后下一拍输出数据
-// bus_access_ready 简化：DTCM 无需等待信号，总线等 bus_tran_done
-// 地址→数据同步在 Core 层由 MUX2 和 load-use stall 处理
-// ============================================
-
-// bus_access_ready：
-// - 总线访问：等待 bus_tran_done
-// - DTCM：始终 ready（数据在地址送出的下一拍由 MEM/WB 直接捕获）
-assign bus_access_ready = bus_sel ? bus_tran_done : 1'b1;
 
 // ============================================
 // dtcm_rvalid / bus_rvalid 锁存
@@ -72,7 +58,7 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 assign dtcm_rvalid = dtcm_rvalid_q;
-assign bus_rvalid  = access_en && ~access_wr && bus_tran_done;
+assign bus_rvalid  = ~access_wr && bus_tran_done;
 
 // 读数据选择：使用锁存后的 valid 信号，在 stall 周期仍能正确选择数据源
 assign access_rdata = dtcm_rvalid ? dtcm_rdata :

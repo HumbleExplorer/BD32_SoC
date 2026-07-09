@@ -24,20 +24,15 @@ module IF_ID #(
     output  logic   [DATA_WIDTH-1:0]    inst_o,
     output  logic                       predict_taken_o,
     output  logic   [ADDR_WIDTH-1:0]    predict_target_o
-
+`ifdef DISPLAY_INST_WAVE
+    ,
+    output  logic   [ADDR_WIDTH-1:0]    inst_addr_display_o
+`endif
 `ifdef ENABLE_HPM
     ,
     output  logic                       valid_o
 `endif
 );
-
-`ifdef ENABLE_HPM
-always_ff @(posedge clk or negedge rst_n) begin
-    if(!rst_n)                 valid_o <= #1 1'b0;
-    else if(flush)             valid_o <= #1 1'b0;
-    else if (!stall)           valid_o <= #1 1'b1;
-end
-`endif
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
@@ -46,7 +41,6 @@ always_ff @(posedge clk or negedge rst_n) begin
         predict_taken_o <= #1 1'b0;
         predict_target_o<= #1 'h0;
     end else if(flush) begin
-        inst_addr_o     <= #1 inst_addr_i;
         inst_o          <= #1 `INST_NOP;
         predict_taken_o <= #1 1'b0;
         predict_target_o<= #1 'h0;
@@ -58,6 +52,25 @@ always_ff @(posedge clk or negedge rst_n) begin
         predict_target_o<= #1 predict_target_i;
     end
 end
+
+`ifdef DISPLAY_INST_WAVE
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n) begin
+        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+    end else if(flush) begin
+        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+    end else if (!stall) begin
+        inst_addr_display_o <= #1 inst_addr_i;
+    end
+end
+`endif
+
+`ifdef ENABLE_HPM
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                 valid_o <= #1 1'b0;
+    else if(flush)             valid_o <= #1 1'b0;
+    else if (!stall)           valid_o <= #1 1'b1;
+end
+`endif
+
 endmodule
-
-

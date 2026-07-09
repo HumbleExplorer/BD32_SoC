@@ -27,6 +27,7 @@ module Decoder #(
     output  logic                           csr_en,
     output  logic   [CSR_ADDR_WIDTH-1:0]    csr_addr,
     output  logic                           is_fence_i,
+    output  logic                           is_nop,  
     output  logic   [1:0]                   branch_inst_type,// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
     output  logic                           branch_req,
     output  logic                           push_ras,        // call
@@ -90,6 +91,7 @@ assign  rd_link = (rd == 'd1 || rd == 'd5);
 assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
 assign  rs1_eq_rd = (inst[19:15] == rd);
 
+assign  is_nop = (inst == `INST_NOP);
 assign  exception_code = invalid_inst ? 'h2 : ecall_req ? ((priv_mode == 2'b00) ? 'h8 : 'h11): ebreak_req ? 'h3 : {(DATA_WIDTH-1){1'b1}};
 assign  exception_val  = invalid_inst ? inst : 'h0;
 
@@ -328,16 +330,6 @@ always_comb    begin
             alu_op1         = inst_addr;
             alu_op2         = 32'h4;
             is_fence_i      = func3[0];
-        end
-        `INST_NOP_OP: begin
-
-            access_en       = 1'b0;
-            access_wr       = 1'b0;
-            csr_en          = 1'b0;
-            reg_rs1_raddr   = 5'h0;
-            reg_rs2_raddr   = 5'h0;
-            alu_op1         = 32'h0;
-            alu_op2         = 32'h0;
         end
         default: begin
             invalid_inst = |inst;

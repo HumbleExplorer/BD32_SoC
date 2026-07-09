@@ -8,15 +8,6 @@
 `define DEVICE_TAG_WIDTH 16
 
 
-// ============================================================
-// 分支跳转延迟1拍（EX_MEM锁存）— 时序优化
-// ============================================================
-// 启用后，EX阶段的 branch_jump_en/addr 先经 EX_MEM 寄存器，
-// 下一拍再由 Pipeline_Ctrl 响应，切断 EX→PC 的长组合路径。
-// 代价：预测失败多浪费1拍（3拍 vs 2拍），正确预测零开销。
-// 注释下行则回退到无流水线 valid 的原始模式：
-`define BRANCH_JUMP_DELAYED
-
 
 // ============================================================
 // 性能监控计数器（HPM）+ 流水线 valid 链
@@ -47,7 +38,7 @@
 // `define GPIO_SIM
 // `define TIMER_SIM
 
-// `define DIRECT_LOAD  // 注释掉则走 UART 下载
+`define DIRECT_LOAD  // 注释掉则走 UART 下载
 // `define XILINX
 // `define SIMULATION
 
@@ -57,8 +48,8 @@
     `else
         `define PATH "../../test_data/custom/"
     `endif
-    `define ITCM_FILE "plic_irq_itcm.mem"
-    `define DTCM_FILE "plic_irq_dtcm.mem"
+    `define ITCM_FILE "coremark_itcm.mem"
+    `define DTCM_FILE "coremark_dtcm.mem"
 `else
     `define PATH "../../test_data/custom/"
     `define ITCM_FILE "breathing.uartbin"
@@ -72,6 +63,7 @@
         `define ITCM_DEPTH 16*1024//8K
         `define DTCM_DEPTH 16*1024//8K
         `define TCM_Reg_or_BRAM "BRAM"
+        `define DISPLAY_INST_WAVE
     `else
         `define SYNTHESIS
         `define PATH "../custom/"//Vivado路径
@@ -85,6 +77,7 @@
     `define DTCM_DEPTH 16*1024//8K
     `define BOOT_PATH "../../test_data/"
     `define TCM_Reg_or_BRAM "Reg"
+    `define DISPLAY_INST_WAVE
 `endif
 
 

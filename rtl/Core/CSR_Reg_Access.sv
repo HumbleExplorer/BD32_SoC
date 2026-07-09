@@ -16,8 +16,8 @@ module CSR_Reg_Access #(
 // from ctrl
     input   logic   [ADDR_WIDTH-1:0]        exception_inst_addr,
     input   logic   [ADDR_WIDTH-1:0]        next_inst_addr,//IF/ID或者jump_addr
-    input   logic                           bus_access_ready,
-    input   logic                           mul_div_ready,
+    input   logic                           bus_ready,
+
 // from EX
     input   logic                           wfi_req,
     input   logic                           mret_req,
@@ -131,21 +131,21 @@ end
 
 `endif
 
+logic   int_trap;
 logic   external_int_trap, software_int_trap, timer_int_trap;
-logic   [DATA_WIDTH-1:0] mcause_temp;
+logic   [DATA_WIDTH-1:0] mcause_n;
 logic   [DATA_WIDTH-1:0] int_jump_addr;
-logic           int_come;
-logic           exception_jump;
-logic           int_waiting_jump;
-logic           int_trap_jump;
+logic                    int_come;
+logic                    exception_jump;
+logic                    int_waiting_jump;
+logic                    int_trap_jump;
 
 // 优先级：外部中断>软件中断>定时器中断
 assign external_int_trap = mstatus[3] & mip[11] & mie[11];
 assign software_int_trap = mstatus[3] & mip[3] & mie[3] & (!external_int_trap);
 assign timer_int_trap    = mstatus[3] & mip[7] & mie[7] & (!external_int_trap & !software_int_trap);
-assign int_trap     = external_int_trap | software_int_trap | timer_int_trap;
 assign int_come     = (mip[11] & mie[11]) | (mip[3] & mie[3]) | (mip[7] & mie[7]);
-
+assign int_trap     = mstatus[3] & int_come;
 
 assign priv_mode = mstatus[12:11];
 assign exception_jump = exception_trap;
@@ -161,15 +161,15 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 always_comb begin 
     if (exception_jump)
-        mcause_temp = {1'b0,exception_code};
+        mcause_n = {1'b0,exception_code};
     else if (external_int_trap)
-        mcause_temp = {1'd1,31'd11};
+        mcause_n = {1'd1,31'd11};
     else if (software_int_trap)
-        mcause_temp = {1'd1,31'd3};
+        mcause_n = {1'd1,31'd3};
     else if (timer_int_trap)
-        mcause_temp = {1'd1,31'd7};
+        mcause_n = {1'd1,31'd7};
     else
-        mcause_temp = 'h0;
+        mcause_n = 'h0;
 end
 
 always_comb begin
@@ -191,11 +191,11 @@ always_ff @(posedge clk or negedge rst_n) begin
         int_trap_jump    <= #1 1'b0;
     end else begin
         int_waiting_jump <= #1 int_trap ? 1'b1 :
-                                (bus_access_ready & mul_div_ready) ? 1'b0 :
+                                bus_ready ? 1'b0 : // 只需等总线（乘除法由 OITF 兜底）
                                 int_waiting_jump;
-        int_trap_jump   <= #1 (int_waiting_jump | int_trap) && (bus_access_ready & mul_div_ready);
-        int_jump_addr   <= #1 int_trap ?(mtvec[0]                         // 本周期预计算，下周期直接用
-                        ? ({mtvec[31:2] + mcause_temp[3:0], 2'b00}) : {mtvec[31:2], 2'b00}) : int_jump_addr;
+        int_trap_jump   <= #1 (int_waiting_jump | int_trap) && bus_ready;
+        int_jump_addr   <= #1 int_trap ? (mtvec[0]                         // 本周期预计算，下周期直接用
+                        ? ({mtvec[31:2] + mcause_n[3:0], 2'b00}) : {mtvec[31:2], 2'b00}) : int_jump_addr;
     end
 end
 
@@ -213,7 +213,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         mip                 <= #1 'h0;
     end else begin//优先级：异常>外部中断>软件中断>定时器中断
         mip     <= #1 {mip[31:12],external_int,mip[10:8],timer_int,mip[6:4],software_int,mip[2:0]};
-        mcause  <= #1 mcause_temp;//写入异常原因
+        mcause  <= #1 mcause_n;//写入异常原因
         if (exception_trap) begin//进入异常
             mstatus[7]  <= #1 mstatus[3];//MPIE <- MIE
             mstatus[3]  <= #1 1'b0;//禁用全局中断
@@ -222,7 +222,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         end else if (mret_req) begin//从异常返回 mepc保持不变
             mstatus[3]  <= #1 mstatus[7];//MIE <- MPIE
             mstatus[7]  <= #1 1'b1;
-        end else if(int_trap && !wfi_req) begin
+        end else if(int_trap) begin
             mepc        <= #1 next_inst_addr;
             mstatus[7]  <= #1 mstatus[3];
             mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus

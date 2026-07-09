@@ -144,7 +144,8 @@ generate
     for (k = 0; k < OITF_DEPTH; k++) begin : gen_waw_match
         assign waw_match[k] = oitf_cur[k].vld
                              & oitf_cur[k].rd_wen
-                             & (oitf_cur[k].rd_addr == reg_rd_waddr_ex);
+                             & (oitf_cur[k].rd_addr == reg_rd_waddr_ex)
+                             & ~oitf_cur[k].ready;
     end
 endgenerate
 

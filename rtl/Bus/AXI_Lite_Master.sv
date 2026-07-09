@@ -34,7 +34,7 @@ module AXI_Lite_Master #(
     input  logic [STRB_WIDTH-1:0]     req_wstrb,
     output logic                      req_ready,
     output logic                      rsp_valid,
-    output logic                      rsp_error,
+    output logic [1:0]                rsp_error,
     output logic [DATA_WIDTH-1:0]     rsp_rdata,
 
     // ========================================================================
@@ -218,9 +218,9 @@ module AXI_Lite_Master #(
             rsp_valid <= (next_state == DONE);
             // 进入 DONE 前锁存响应数据
             if (state == WAIT_B && b_hs) begin
-                rsp_error <= m_bresp[1];
+                rsp_error <= m_bresp;
             end else if (state == WAIT_R && r_hs) begin
-                rsp_error <= m_rresp[1];
+                rsp_error <= m_rresp;
                 rsp_rdata <= m_rdata;
             end
         end

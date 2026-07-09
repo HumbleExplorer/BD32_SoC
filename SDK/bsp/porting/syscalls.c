@@ -6,12 +6,10 @@
 #include <sys/times.h>
 #include <sys/unistd.h>
 #include <errno.h>
+#include "bsp.h"
 
 #undef errno
 extern int errno;
-
-/* UART 外设基地址（由 bsp.h 提供） */
-extern void uart_putc(char c);
 
 /* 链接脚本提供的堆边界 */
 extern char __heap_start[];

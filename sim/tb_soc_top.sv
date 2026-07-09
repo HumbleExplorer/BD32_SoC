@@ -11,11 +11,13 @@ parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH;
 parameter ALIGN_BYTES = `ALIGN_BYTES;
 parameter ALIGN_WIDTH = `ALIGN_WIDTH;
 parameter GPIO_NUM = `GPIO_NUM;
-localparam  CLK_PERIOD = 10;
+
 localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
 localparam  PATH  = `PATH;//vsim路径
 localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE};
+localparam  CPU_FREQUENCY = 80_000_000;
+localparam  CLK_PERIOD = 1_000_000_000 / CPU_FREQUENCY; // 1ns/80MHz
 // 真实波特率周期 (ns)：模拟真实串口助手的发送节拍
 localparam  BAUD_PERIOD_NS = 1_000_000_000 / 115200;  // ~8680ns per bit @ 115200
 
@@ -111,6 +113,19 @@ task send_uart_word(
     send_uart_byte(word_data[31:24]);
 endtask
 
+// ------------------------ 辅助Task：发送UART字符串 ------------------------
+task send_uart_string(input string s);
+    for (int i = 0; i < s.len(); i++)
+        send_uart_byte(s[i]);
+endtask
+
+// ------------------------ 辅助Task：发送UART字符串+换行 ------------------------
+task send_uart_line(input string s);
+    send_uart_string(s);
+    send_uart_byte(8'h0D);
+    send_uart_byte(8'h0A);
+endtask
+
 always #(CLK_PERIOD/2)   clk = ~clk;
 
 // CLINT 1MHz timer clock (独立时钟域，由 TB 直接产生)
@@ -192,11 +207,11 @@ end
 initial begin
     clk = 1'b0;
     rst_n = 1'b0;
+    uart_rx = 1'b1;// UART空闲电平为高
 `ifdef DIRECT_LOAD
     download_en = 1'b0;
 `else
     download_en = 1'b1;
-    uart_rx = 1'b1;// UART空闲电平为高
 `endif
     #35;
     rst_n   = 1'b1;
@@ -233,24 +248,68 @@ initial  begin
     #200;
 end
 
-/* KEY0 模拟: 等 UART 开始输出（中断已开）后再按 */
+// =====================================================================
+// UART Echo 测试：模拟用户输入，验证回显
+// =====================================================================
+// 使用方式：在 SoC_Config.sv 中定义 `define UART_ECHO_TEST
+// 或者编译时加 -D UART_ECHO_TEST
+//
+// 测试流程：
+//   1. 等 SoC 发送完欢迎语（BD32 UART Echo ...）
+//   2. 注入 "Hello\n"（内容 + 换行符，换行符触发退出）
+//   3. 观察回显和 Done! 输出
+// =====================================================================
+// initial begin
+//     // 等 SoC 启动完毕（等待 welcome 输出）
+//     #25_000_000;  
+
+//     $display("\n============================================================");
+//     $display("  UART Echo Test: Injecting test characters");
+//     $display("============================================================");
+
+//     $display("[TX->SoC] Sending: \"Hello World!\"");
+//     send_uart_line("Hello World!");
+
+//     #3_000_000;
+//     $display("  UART Echo Test Complete - check console for echo output");
+//     $display("============================================================\n");
+// end
+
+// initial begin
+//     key0_val = 1;  /* 初始高 */
+//     wait(tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mstatus[3]
+//      && tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mie[11]);
+//     #10000000;
+//     key0_val = 0;  /* 按下 */
+//     #5000000;
+//     key0_val = 1;  /* 松开 */
+//     #5000000;
+//     key0_val = 0;  /* 按下 */
+//     #5000000;
+//     key0_val = 1;  /* 松开 */
+//     #5000000;
+//     key0_val = 0;  /* 按下 */
+//     #5000000;
+//     key0_val = 1;  /* 松开 */
+// end
+
 initial begin
     key0_val = 1;  /* 初始高 */
-    wait(tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mstatus[3]
-     && tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mie[11]);
+    wait(tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.wfi_req);
     #10000000;
     key0_val = 0;  /* 按下 */
     #5000000;
     key0_val = 1;  /* 松开 */
-    #5000000;
-    key0_val = 0;  /* 按下 */
-    #5000000;
-    key0_val = 1;  /* 松开 */
-    #5000000;
-    key0_val = 0;  /* 按下 */
-    #5000000;
-    key0_val = 1;  /* 松开 */
+    // #5000000;
+    // key0_val = 0;  /* 按下 */
+    // #5000000;
+    // key0_val = 1;  /* 松开 */
+    // #5000000;
+    // key0_val = 0;  /* 按下 */
+    // #5000000;
+    // key0_val = 1;  /* 松开 */
 end
+
 
 SoC_top #(
     .ITCM_FILE      	(ITCM_FILE       ),

@@ -12,14 +12,18 @@
 #include "board/bd32_board.h"
 
 /* ===================================================================
- * UART 驱动
+ * UART 驱动（uart_init 为常规函数，uart_putc/uart_getc 高频调用故内联）
  * =================================================================== */
 void uart_init(uint32_t baud);
-void uart_putc(char c);
 void uart_puts(const char *s);
 void uart_puthex(uint32_t val);
 void uart_putdec(uint32_t val);
 void uart_put_fixed(int32_t val, int precision);
+
+static inline void uart_putc(char c) {
+    while (!(UART_LSR & LSR_THRE));
+    UART_RBR_THR = (uint32_t)(uint8_t)c;
+}
 
 /* printf 定点小数（需 newlib-nano）*/
 void print_fixed(int32_t val, int precision);
@@ -33,8 +37,15 @@ uint64_t clint_asm_get_mtime(void);
 void     clint_asm_set_mtimecmp(uint64_t val);
 void     clint_asm_set_timeout_ticks(uint32_t ticks);
 
-static inline uint32_t clint_mtime(void) {
-    return clint_asm_get_mtime_lo();
+/* 读 mtime 低 32 位（1 tick = 1µs，32 位绕回周期 ~4295s）*/
+static inline uint32_t clint_mtime_lo(void) {
+    uint32_t val;
+    __asm__ volatile("csrr %0, 0xC01" : "=r"(val));
+    return val;
+}
+/* 读完整 64 位 mtime（带双读校验）*/
+static inline uint64_t clint_mtime(void) {
+    return clint_asm_get_mtime();
 }
 static inline void clint_set_timer(uint32_t ticks) {
     clint_asm_set_timeout_ticks(ticks);
@@ -50,13 +61,13 @@ static inline void clint_set_timer(uint32_t ticks) {
  * 最大延迟：~4295 秒（mtime_lo 32-bit 回绕时间 @1MHz）
  * =================================================================== */
 static inline void delay_us(uint32_t us) {
-    uint32_t start = clint_mtime();
-    while ((uint32_t)(clint_mtime() - start) < us);
+    uint32_t start = clint_mtime_lo();
+    while ((uint32_t)(clint_mtime_lo() - start) < us);
 }
 static inline void delay_ms(uint32_t ms) {
-    uint32_t start = clint_mtime();
+    uint32_t start = clint_mtime_lo();
     uint32_t ticks = ms * 1000UL;   /* 1 tick = 1µs → ms 需 1000× 的 tick */
-    while ((uint32_t)(clint_mtime() - start) < ticks);
+    while ((uint32_t)(clint_mtime_lo() - start) < ticks);
 }
 /* 粗糙延时（仅 CPU 循环，用于极短脉冲等特殊场景）*/
 static inline void delay_loop(volatile uint32_t n) {

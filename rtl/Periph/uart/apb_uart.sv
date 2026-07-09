@@ -90,7 +90,8 @@ logic   [5:0]   timeout_cnt;
 logic           timeout;
 logic           reg_rd_en, reg_wr_en;
 (* mark_debug = "true" *) logic           sample_pulse;   // NCO 采样使能脉冲
-
+logic   [3:0]   tx_sample_cnt;      // ÷16 计数，生成 1x 位时钟
+logic           tx_uart_pulse; // 1x 位时钟采样脉冲
 (* mark_debug = "true" *) logic           download_en;
 (* mark_debug = "true" *) logic           download_done;
 
@@ -99,6 +100,7 @@ assign  reg_sel   = PADDR[5:2];
 assign  reg_rd_en = PSEL & !PWRITE & PENABLE;
 assign  reg_wr_en = PSEL & PWRITE & PENABLE;
 assign  timeout   = timeout_cnt == 6'd63;
+assign  tx_uart_pulse = (tx_sample_cnt == 4'd15) && sample_pulse;
 
 // ==================== 1. 寄存器写逻辑 ====================
 always_ff @(posedge PCLK or negedge PRESETn) begin
@@ -111,13 +113,6 @@ always_ff @(posedge PCLK or negedge PRESETn) begin
         fcw         <= #1 '0;
         download_en <= #1 1'b0;
     end else begin
-        if (reg_wr_en && (uart_reg_sel_e'(reg_sel) == REG_SEL_2))
-            fcr <= #1 PWDATA[7:0];
-        if (fcr[FCR_CLR_RX])
-            fcr[FCR_CLR_RX] <= #1 1'b0;
-        if (fcr[FCR_CLR_TX])
-            fcr[FCR_CLR_TX] <= #1 1'b0;
-
         if (reg_wr_en) begin
             case (uart_reg_sel_e'(reg_sel))
                 REG_SEL_0: begin
@@ -126,6 +121,9 @@ always_ff @(posedge PCLK or negedge PRESETn) begin
                 REG_SEL_1: begin
                     if (lcr[DLAB_BIT]) divisor[15:8] <= #1 PWDATA[7:0];
                     else ier <= #1 PWDATA[3:0];
+                end
+                REG_SEL_2: begin
+                    fcr <= #1 PWDATA[7:0];
                 end
                 REG_SEL_3: begin
                     lcr <= #1 PWDATA[6] ? (PWDATA[7:0] & 8'h7F) : PWDATA[7:0];
@@ -136,11 +134,15 @@ always_ff @(posedge PCLK or negedge PRESETn) begin
                 default: ;
             endcase
         end
+        if (fcr[FCR_CLR_RX])
+            fcr[FCR_CLR_RX] <= #1 1'b0;
+        if (fcr[FCR_CLR_TX])
+            fcr[FCR_CLR_TX] <= #1 1'b0;
     end
 end
 
 // ==================== FIFO 读写使能 ====================
-assign  tx_fifo_rd_en  = ~tx_fifo_rd_empty & ~tx_busy;
+assign  tx_fifo_rd_en  = tx_uart_pulse && ~tx_fifo_rd_empty & ~tx_busy;
 assign  tx_fifo_wr_en  = reg_wr_en && uart_reg_sel_e'(reg_sel) == REG_SEL_0 && ~lcr[DLAB_BIT]
                          && ~tx_fifo_wr_full;
 assign  tx_fifo_wdata  = PWDATA[7:0];
@@ -241,6 +243,15 @@ function automatic logic[3:0] get_trigger();
     endcase
 endfunction
 
+// ÷16 计数：sample_pulse 脉冲下生成 1x 位时钟
+always_ff @(posedge PCLK or negedge PRESETn) begin
+    if(!PRESETn)
+        tx_sample_cnt <= #1 4'd0;
+    else if(sample_pulse) begin
+        tx_sample_cnt <= #1 (tx_sample_cnt == 4'd15) ? 4'd0 : tx_sample_cnt + 1'b1;
+    end
+end
+
 // ==================== 5. 子模块例化 ====================
 nco_baudgen #(.FCW_WIDTH(32)) u_nco (
     .clk           (PCLK),
@@ -263,8 +274,8 @@ uart_rx u_uart_rx(
 
 uart_tx u_uart_tx(
     .clk                (PCLK),
-    .sample_pulse       (sample_pulse),
     .rst_n              (PRESETn),
+    .tx_uart_pulse      (tx_uart_pulse),
     .tx_i               (tx_data_in),
     .tx_start           (tx_start),
     .lcr                (lcr),

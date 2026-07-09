@@ -360,9 +360,3 @@ Disassembly of section .text.init:
 
 00010568 <loop_pass>:
    10568:	0000006f          	j	10568 <loop_pass>
-   1056c:	00000013          	nop
-   10570:	00000013          	nop
-   10574:	00000013          	nop
-   10578:	00000013          	nop
-   1057c:	00000013          	nop
-   10580:	00000013          	nop

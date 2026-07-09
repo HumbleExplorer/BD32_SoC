@@ -15,12 +15,12 @@ int main(void)
     uart_init(115200);
     UART_FCR = 0x01;
 
-    uart_puts("\r\nBD32 UART Echo (ESC to quit)\r\n");
+    uart_puts("\r\nBD32 UART Echo (press Enter to quit)\r\n");
 
     while (1) {
         int c = uart_getc();
         if (c < 0) continue;
-        if (c == 0x1B) break;
+        if (c == '\n' || c == '\r') break;  // Enter → quit
         uart_putc((char)c);
     }
 

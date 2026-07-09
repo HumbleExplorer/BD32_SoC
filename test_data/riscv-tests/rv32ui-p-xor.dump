@@ -377,12 +377,3 @@ Disassembly of section .text.init:
 
 000104dc <loop_pass>:
    104dc:	0000006f          	j	104dc <loop_pass>
-   104e0:	00000013          	nop
-   104e4:	00000013          	nop
-   104e8:	00000013          	nop
-   104ec:	00000013          	nop
-   104f0:	00000013          	nop
-   104f4:	00000013          	nop
-   104f8:	00000013          	nop
-   104fc:	00000013          	nop
-   10500:	00000013          	nop

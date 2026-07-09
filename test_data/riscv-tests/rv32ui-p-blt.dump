@@ -237,12 +237,3 @@ Disassembly of section .text.init:
 
 000102dc <loop_pass>:
    102dc:	0000006f          	j	102dc <loop_pass>
-   102e0:	00000013          	nop
-   102e4:	00000013          	nop
-   102e8:	00000013          	nop
-   102ec:	00000013          	nop
-   102f0:	00000013          	nop
-   102f4:	00000013          	nop
-   102f8:	00000013          	nop
-   102fc:	00000013          	nop
-   10300:	00000013          	nop

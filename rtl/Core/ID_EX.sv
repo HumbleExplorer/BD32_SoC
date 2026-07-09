@@ -30,6 +30,7 @@ module ID_EX #(
     input   logic                           access_wr_i,
     input   logic                           csr_en_i,
     input   logic   [CSR_ADDR_WIDTH-1:0]    csr_addr_i,
+    input   logic                           is_nop_i,
     input   logic                           is_fence_i_i,
     input   logic   [1:0]                   branch_inst_type_i,// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
     input   logic                           branch_req_i,
@@ -51,6 +52,7 @@ module ID_EX #(
     output  logic                           access_wr_o,
     output  logic                           csr_en_o,
     output  logic   [CSR_ADDR_WIDTH-1:0]    csr_addr_o,
+    output  logic                           is_nop_o,
     output  logic                           is_fence_i_o,
     output  logic   [1:0]                   branch_inst_type_o,// 指令类型 (00:非跳转指令, 01:B, 10:JAL, 11:JALR)
     output  logic                           branch_req_o,
@@ -59,7 +61,10 @@ module ID_EX #(
     //to Data_Hazard
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr_o,
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr_o
-
+`ifdef DISPLAY_INST_WAVE
+    ,
+    output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o
+`endif
 `ifdef ENABLE_HPM
     ,
     input   logic   [2:0]                   inst_type_i,
@@ -72,6 +77,7 @@ module ID_EX #(
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        
         inst_o          <= #1 `INST_NOP;
         predict_taken_o <= #1 1'b0;
         predict_target_o<= #1 'h0;
@@ -85,6 +91,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         access_wr_o     <= #1 1'b0;
         csr_en_o        <= #1 1'b0;
         csr_addr_o      <= #1 'h0;
+        is_nop_o        <= #1 1'b1;
         is_fence_i_o    <= #1 1'b0;
         branch_inst_type_o<= #1 'h0;
         branch_req_o    <= #1 1'b0;
@@ -96,13 +103,17 @@ always_ff @(posedge clk or negedge rst_n) begin
         inst_type_o     <= #1 3'd0;
 `endif
     end else if(flush) begin
-        inst_addr_o     <= #1 inst_addr_i;
         inst_o          <= #1 `INST_NOP;
         predict_taken_o <= #1 1'b0;
         predict_target_o<= #1 'h0;
         access_en_o     <= #1 1'b0;
         csr_en_o        <= #1 1'b0;
+        is_nop_o        <= #1 1'b1;
         is_fence_i_o    <= #1 1'b0;
+        branch_inst_type_o<= #1 'h0;
+        branch_req_o    <= #1 1'b0;
+        push_ras_o      <= #1 1'b0;
+        pop_ras_o       <= #1 1'b0;
 `ifdef ENABLE_HPM
         inst_type_o     <= #1 3'd0;
 `endif
@@ -121,6 +132,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         access_wr_o     <= #1 access_wr_i;
         csr_en_o        <= #1 csr_en_i;
         csr_addr_o      <= #1 csr_addr_i;
+        is_nop_o        <= #1 is_nop_i;
         is_fence_i_o    <= #1 is_fence_i_i;
         branch_inst_type_o<= #1 branch_inst_type_i;
         branch_req_o    <= #1 branch_req_i;
@@ -133,7 +145,17 @@ always_ff @(posedge clk or negedge rst_n) begin
 `endif
     end
 end
-
+`ifdef DISPLAY_INST_WAVE
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n) begin
+        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+    end else if(flush) begin
+        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+    end else if (!stall) begin
+        inst_addr_display_o <= #1 inst_addr_i;
+    end
+end
+`endif
 `ifdef ENABLE_HPM
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)                    valid_o <= #1 1'b0;

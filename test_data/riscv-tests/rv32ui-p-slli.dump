@@ -230,11 +230,3 @@ Disassembly of section .text.init:
 
 000102a0 <loop_pass>:
    102a0:	0000006f          	j	102a0 <loop_pass>
-   102a4:	00000013          	nop
-   102a8:	00000013          	nop
-   102ac:	00000013          	nop
-   102b0:	00000013          	nop
-   102b4:	00000013          	nop
-   102b8:	00000013          	nop
-   102bc:	00000013          	nop
-   102c0:	00000013          	nop

@@ -438,8 +438,8 @@ Disassembly of section .text.init:
 0001056c <test_43>:
    1056c:	02b00193          	li	gp,43
    10570:	40000093          	li	ra,1024
-   10574:	00001137          	lui	sp,0x1
-   10578:	80010113          	addi	sp,sp,-2048 # 800 <_start-0xf800>
+   10574:	00100113          	li	sp,1
+   10578:	00b11113          	slli	sp,sp,0xb
    1057c:	0020d033          	srl	zero,ra,sp
    10580:	00000393          	li	t2,0
    10584:	00701463          	bne	zero,t2,1058c <fail>
@@ -458,11 +458,3 @@ Disassembly of section .text.init:
 
 000105a0 <loop_pass>:
    105a0:	0000006f          	j	105a0 <loop_pass>
-   105a4:	00000013          	nop
-   105a8:	00000013          	nop
-   105ac:	00000013          	nop
-   105b0:	00000013          	nop
-   105b4:	00000013          	nop
-   105b8:	00000013          	nop
-   105bc:	00000013          	nop
-   105c0:	00000013          	nop

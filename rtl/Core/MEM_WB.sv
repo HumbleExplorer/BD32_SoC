@@ -27,7 +27,10 @@ module MEM_WB #(
     output  logic                           reg_rd_wen_o,
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rd_waddr_o,
     output  logic   [DATA_WIDTH-1:0]        reg_rd_wdata_o
-
+`ifdef DISPLAY_INST_WAVE
+    ,
+    output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o
+`endif
 `ifdef ENABLE_HPM
     ,
     input   logic   [2:0]                   inst_type_i,
@@ -36,7 +39,6 @@ module MEM_WB #(
     output  logic                           valid_o
 `endif
 );
-
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
@@ -49,7 +51,6 @@ always_ff @(posedge clk or negedge rst_n) begin
         inst_type_o     <= #1 3'd0;
 `endif
     end else if(flush) begin
-        inst_addr_o     <= #1 inst_addr_i;
         inst_o          <= #1 `INST_NOP;
         reg_rd_wen_o    <= #1 1'b0;
         reg_rd_waddr_o  <= #1 'h0;
@@ -68,6 +69,18 @@ always_ff @(posedge clk or negedge rst_n) begin
 `endif
     end
 end
+
+`ifdef DISPLAY_INST_WAVE
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n) begin
+        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+    end else if(flush) begin
+        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+    end else if (!stall) begin
+        inst_addr_display_o <= #1 inst_addr_i;
+    end
+end
+`endif
 
 `ifdef ENABLE_HPM
 always_ff @(posedge clk or negedge rst_n) begin

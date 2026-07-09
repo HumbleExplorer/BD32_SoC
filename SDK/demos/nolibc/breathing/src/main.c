@@ -39,7 +39,7 @@ int main(void)
     GPIO_CLR(PIN_LED0);
 
     /* Timer: PSC=89 → 90MHz/90=1MHz, ARR=999 → 1kHz PWM */
-    TIM_PSC  = 90 - 1;
+    TIM_PSC  = 80 - 1;
     TIM_ARR  = 1000 - 1;
     TIM_CCMR = 0x01;            /* PWM mode 1 */
     TIM_CCER = 0x01;            /* 使能 OC1 输出 */

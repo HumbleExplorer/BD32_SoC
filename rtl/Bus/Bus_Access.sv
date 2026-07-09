@@ -29,8 +29,11 @@ module Bus_Access #(
     input  logic [ADDR_WIDTH-1:0]     i_addr,
     input  logic [DATA_WIDTH-1:0]     i_wdata,
     input  logic [STRB_WIDTH-1:0]     i_wmask,
-    output logic [DATA_WIDTH-1:0]     o_rdata,
-    output logic                      o_tran_done,
+    
+    output logic                      o_bus_tran_done,
+    output logic                      o_bus_ready,
+    output logic [DATA_WIDTH-1:0]     o_bus_rdata,
+    output logic [1:0]                o_bus_error,
 
     // ========================================================================
     // AXI4 Master 接口 → AXI_Interconnect
@@ -89,11 +92,14 @@ module Bus_Access #(
     // CPU 侧直通 → AXI_Lite_Master（输入寄存器已移入 AXI_Lite_Master）
     // =========================================================================
     logic                      axi_rsp_valid;
-    logic                      axi_rsp_error;
+    logic                      axi_rsp_ready;
     logic [DATA_WIDTH-1:0]     axi_rsp_rdata;
-
-    assign o_tran_done = axi_rsp_valid;
-    assign o_rdata     = axi_rsp_rdata;
+    logic [1:0]                axi_rsp_error;
+    
+    assign o_bus_tran_done = axi_rsp_valid;
+    assign o_bus_ready = axi_rsp_ready && ~i_transfer;
+    assign o_bus_rdata = axi_rsp_rdata;
+    assign o_bus_error = axi_rsp_error;
 
     // =========================================================================
     // AXI_Lite_Master
@@ -114,7 +120,7 @@ module Bus_Access #(
         .req_addr     (i_addr        ),
         .req_wdata    (i_wdata       ),
         .req_wstrb    (i_wmask       ),
-        .req_ready    (),
+        .req_ready    (axi_rsp_ready ),
         .rsp_valid    (axi_rsp_valid ),
         .rsp_error    (axi_rsp_error ),
         .rsp_rdata    (axi_rsp_rdata ),

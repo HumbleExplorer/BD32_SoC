@@ -8,7 +8,6 @@
 .text
 .align 2
 
-.global clint_asm_get_mtime_lo
 .global clint_asm_get_mtime
 .global clint_asm_set_mtimecmp
 .global clint_asm_set_timeout_ticks
@@ -18,12 +17,6 @@
 .equ MTIME_HI,      0xBFFC
 .equ MTIMECMP_LO,   0x4000
 .equ MTIMECMP_HI,   0x4004
-
-/* uint32_t clint_asm_get_mtime_lo(void)
- * 读 mtime 低 32 位（通过 CSR time，不走 APB 总线） */
-clint_asm_get_mtime_lo:
-    csrr a0, 0xC01          # time (mtime 低32位)
-    ret
 
 /* uint64_t clint_asm_get_mtime(void)
  * 读完整 64 位 mtime（带双读校验，通过 CSR time/timeh） */

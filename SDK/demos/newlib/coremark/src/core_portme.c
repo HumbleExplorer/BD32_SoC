@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include "coremark.h"
 #include "bsp.h"
+#include "soc/soc.h"
 
 #if VALIDATION_RUN
 	volatile ee_s32 seed1_volatile=0x3415;
@@ -43,7 +44,7 @@ void start_time(void) { t0 = read_cycles(); }
 void stop_time(void)  { t1 = read_cycles(); }
 CORE_TICKS get_time(void) { return t1 - t0; }
 
-/* Return seconds (integer). Clock = g_cpu_freq_hz ticks/s */
+/* Return seconds using runtime-measured CPU frequency (ticks/sec) */
 secs_ret time_in_secs(CORE_TICKS ticks) {
     return (secs_ret)(ticks / g_cpu_freq_hz);
 }

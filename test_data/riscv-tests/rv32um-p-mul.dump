@@ -15,8 +15,8 @@ Disassembly of section .text.init:
    10014:	b6db7637          	lui	a2,0xb6db7
    10018:	db760613          	addi	a2,a2,-585 # b6db6db7 <begin_signature+0xb6da5d67>
    1001c:	02c58733          	mul	a4,a1,a2
-   10020:	000013b7          	lui	t2,0x1
-   10024:	20038393          	addi	t2,t2,512 # 1200 <_start-0xee00>
+   10020:	00900393          	li	t2,9
+   10024:	00939393          	slli	t2,t2,0x9
    10028:	4a771463          	bne	a4,t2,104d0 <fail>
 
 0001002c <test_33>:
@@ -399,10 +399,3 @@ Disassembly of section .text.init:
 
 000104e4 <loop_pass>:
    104e4:	0000006f          	j	104e4 <loop_pass>
-   104e8:	00000013          	nop
-   104ec:	00000013          	nop
-   104f0:	00000013          	nop
-   104f4:	00000013          	nop
-   104f8:	00000013          	nop
-   104fc:	00000013          	nop
-   10500:	00000013          	nop

@@ -267,4 +267,3 @@ Disassembly of section .text.init:
 
 0001033c <loop_pass>:
    1033c:	0000006f          	j	1033c <loop_pass>
-   10340:	00000013          	nop

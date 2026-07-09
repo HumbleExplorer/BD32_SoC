@@ -4,7 +4,7 @@
 #define FLAGS_STR "-Os -march=rv32im -mabi=ilp32"
 #endif
 #define PERFORMANCE_RUN 1
-#define ITERATIONS 500       /* ~1.5s 快速验证 */
+#define ITERATIONS 1         /* 调试用：最小轮数，加速仿真定位（数据初始化仍完整执行） */
 
 #ifndef BD32_CORE_PORTME_H
 #define BD32_CORE_PORTME_H

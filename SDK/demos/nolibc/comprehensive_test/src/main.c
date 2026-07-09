@@ -66,14 +66,10 @@ void ext_irq_handler(void)
         break;
 
     case PLIC_SRC_GPIO: {
-        /* Opensoc GPIO 中断清除流程：先读后写 */
+        /* GPIO 中断清除流程：先读后写 */
         (void)GPIO_TR_STAT;
         GPIO_TR_STAT = 0xFF;
-
-        /* 去抖：按键引脚是否确实为低 */
-        if (!(GPIO_IN & PIN_KEY0)) {
-            btn_done = 1;
-        }
+        btn_done = 1;                   /* 按键触发标志置位 */
         break;
     }
 
@@ -102,7 +98,7 @@ static void init_all(void)
     GPIO_IRQ_ENA  |=  PIN_KEY0;
 
     /* ---- APB Timer：90MHz / 90 / 2000 = 500Hz (2ms cycle) ---- */
-    TIM_PSC  = 90 - 1;                   /* 90MHz → 1MHz         */
+    TIM_PSC  = 80 - 1;                   /* 90MHz → 1MHz         */
     TIM_ARR  = 2000 - 1;                 /* 1MHz → 500Hz        */
     TIM_IER  = 0x03;                     /* UI 中断 + 溢出中断   */
     /* 先不开 PWM 模式（CCMR/CCER 保持默认 0） */
@@ -137,7 +133,7 @@ static void switch_to_breath(void)
     TIM_CR  = 0;
 
     /* Timer：90MHz / 90 / 1000 = 1kHz PWM 基频 */
-    TIM_PSC  = 90 - 1;
+    TIM_PSC  = 80 - 1;
     TIM_ARR  = 1000 - 1;
     TIM_CCMR = 0x01;              /* OC1: PWM mode 1                    */
     TIM_CCER = 0x01;              /* CC1 输出使能 → LED2(L15)            */
@@ -161,7 +157,7 @@ static void breath_loop(void)
         delay_ms(BREATH_STEP_US / 1000);   /* 微秒→毫秒 */
 
         if (dir == 0) {
-            if (ccr >= (TIM_ARR >> 1)) {   /* 爬升到一半 */
+            if (ccr >= (TIM_ARR - 1)) {   /* 爬升到一半 */
                 dir = 1;
                 ccr--;
             } else {
@@ -189,14 +185,14 @@ int main(void)
     uart_puts("\r\n========================================\r\n");
     uart_puts(" BD32 综合中断测试\r\n");
     uart_puts(" 阶段 A: LED0 闪烁(500ms) LED1 常亮\r\n");
-    uart_puts(" 按 KEY0 进入 阶段 B: LED2 呼吸\r\n");
+    uart_puts(" 按 KEY0 进入阶段 B: LED2 呼吸\r\n");
     uart_puts("========================================\r\n\r\n");
 
     init_all();
 
     /* ---- 阶段 A：等按键 ---- */
     while (!btn_done) {
-        __asm__ volatile("wfi");
+        ;
     }
     uart_puts("按键触发！切换到呼吸灯阶段...\r\n");
 

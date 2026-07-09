@@ -25,11 +25,6 @@ void uart_init(uint32_t baud) {
     UART_LCR = 0x03;        /* 8N1, DLAB = 0 */
 }
 
-void uart_putc(char c) {
-    while (!(UART_LSR & LSR_THRE));
-    UART_RBR_THR = (uint32_t)(uint8_t)c;
-}
-
 void uart_puts(const char *s) {
     while (*s) {
         if (*s == '\n') uart_putc('\r');

@@ -280,7 +280,3 @@ Disassembly of section .text.init:
 
 00010370 <loop_pass>:
    10370:	0000006f          	j	10370 <loop_pass>
-   10374:	00000013          	nop
-   10378:	00000013          	nop
-   1037c:	00000013          	nop
-   10380:	00000013          	nop

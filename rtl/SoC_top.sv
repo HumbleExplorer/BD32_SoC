@@ -64,8 +64,11 @@ logic   [ADDR_WIDTH-1:0]    bus_access_addr;
 logic                       bus_access_write;
 logic   [DATA_WIDTH-1:0]    bus_access_wdata;
 logic   [ALIGN_BYTES-1:0]   bus_access_wstrb;
-logic   [DATA_WIDTH-1:0]    bus_rdata;
+
 logic                       bus_tran_done;
+logic                       bus_ready;
+logic   [DATA_WIDTH-1:0]    bus_rdata;
+logic   [1:0]               bus_resp;
 
 logic   [2*DATA_WIDTH-1:0]  mtime_shadow;
 logic                       software_int;
@@ -222,25 +225,27 @@ RISC_V_Core #(
     .ALIGN_BYTES    (ALIGN_BYTES    ),
     .ALIGN_WIDTH    (ALIGN_WIDTH    )
 ) u_RISC_V_Core (
-    .clk                (clk_soc  ),
-    .rst_n              (rst_n_sync      ),
-    .itcm_download_en         (itcm_download_en      ),
-    .itcm_download_addr       (itcm_download_addr    ),
-    .itcm_download_data       (itcm_download_data    ),
-    .dtcm_download_en         (dtcm_download_en      ),
-    .dtcm_download_addr       (dtcm_download_addr    ),
-    .dtcm_download_data       (dtcm_download_data    ),
-    .mtime_shadow       (mtime_shadow    ),
-    .software_int       (software_int    ),
-    .timer_int          (timer_int       ),
-    .external_int       (external_int    ),
-    .bus_rdata          (bus_rdata       ),
-    .bus_tran_done      (bus_tran_done   ),
-    .bus_transfer       (bus_transfer    ),
-    .bus_access_write   (bus_access_write       ),
-    .bus_access_addr    (bus_access_addr        ),
-    .bus_access_wstrb   (bus_access_wstrb       ),
-    .bus_access_wdata   (bus_access_wdata       )
+    .clk                (clk_soc            ),
+    .rst_n              (rst_n_sync         ),
+    .itcm_download_en   (itcm_download_en   ),
+    .itcm_download_addr (itcm_download_addr ),
+    .itcm_download_data (itcm_download_data ),
+    .dtcm_download_en   (dtcm_download_en   ),
+    .dtcm_download_addr (dtcm_download_addr ),
+    .dtcm_download_data (dtcm_download_data ),
+    .mtime_shadow       (mtime_shadow       ),
+    .software_int       (software_int       ),
+    .timer_int          (timer_int          ),
+    .external_int       (external_int       ),
+    .bus_tran_done      (bus_tran_done      ),
+    .bus_ready          (bus_ready          ),
+    .bus_rdata          (bus_rdata          ),
+    .bus_resp           (bus_resp           ),
+    .bus_transfer       (bus_transfer       ),
+    .bus_access_write   (bus_access_write   ),
+    .bus_access_addr    (bus_access_addr    ),
+    .bus_access_wstrb   (bus_access_wstrb   ),
+    .bus_access_wdata   (bus_access_wdata   )
 
 );
 
@@ -262,8 +267,10 @@ Bus_Access #(
     .i_addr       (bus_access_addr ),
     .i_wdata      (bus_access_wdata),
     .i_wmask      (bus_access_wstrb),
-    .o_rdata      (bus_rdata     ),
-    .o_tran_done  (bus_tran_done ),
+    .o_bus_tran_done(bus_tran_done ),
+    .o_bus_ready  (bus_ready),
+    .o_bus_rdata  (bus_rdata),
+    .o_bus_error  (bus_resp),
     // AXI Master → Interconnect
     .o_awid       (axi_awid      ),
     .o_awaddr     (axi_awaddr    ),

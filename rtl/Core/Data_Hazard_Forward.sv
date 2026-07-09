@@ -35,8 +35,8 @@ module Data_Hazard_Forward #(
     input   logic   [DATA_WIDTH-1:0]        reg_rd_wdata_mem,
     input   logic   [DATA_WIDTH-1:0]        reg_rd_wdata_wb,
     input   logic                           bus_sel,
-    input   logic                           bus_rvalid_r1,
-    input   logic                           bus_access_ready,
+
+    input   logic                           bus_ready,
     // Load-Use冒险标志(停顿给pc_hold，if_id_hold，id_ex_clear)
     output  logic                           load_use_flag,
     (* MAX_FANOUT = 16 *)output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
@@ -115,8 +115,8 @@ always_comb begin
         3'b011: alu_op1_o = reg_rd_wdata_wb;
         3'b100: alu_op1_o = reg_rd_wdata_mem;
         3'b101: alu_op1_o = reg_rd_wdata_mem; 
-        3'b110: alu_op1_o = bus_rvalid_r1 ? reg_rd_wdata_wb : reg_rd_wdata_mem;  // bus 完成
-        3'b111: alu_op1_o = bus_rvalid_r1 ? reg_rd_wdata_wb : reg_rd_wdata_mem;  // bus 完成
+        3'b110: alu_op1_o = reg_rd_wdata_mem;  
+        3'b111: alu_op1_o = reg_rd_wdata_mem;  
         default: alu_op1_o = alu_op1_from_id_ex;
     endcase
 end
@@ -129,8 +129,8 @@ always_comb begin
         3'b011: alu_op2_o = reg_rd_wdata_wb;
         3'b100: alu_op2_o = reg_rd_wdata_mem;
         3'b101: alu_op2_o = reg_rd_wdata_mem;
-        3'b110: alu_op2_o = bus_rvalid_r1 ? reg_rd_wdata_wb : reg_rd_wdata_mem;
-        3'b111: alu_op2_o = bus_rvalid_r1 ? reg_rd_wdata_wb : reg_rd_wdata_mem;  // bus 完成
+        3'b110: alu_op2_o = reg_rd_wdata_mem;
+        3'b111: alu_op2_o = reg_rd_wdata_mem;  
         default: alu_op2_o = alu_op2_from_id_ex;
     endcase
 end
@@ -143,8 +143,8 @@ always_comb begin
         3'b011: access_wdata = reg_rd_wdata_wb;
         3'b100: access_wdata = reg_rd_wdata_mem;
         3'b101: access_wdata = reg_rd_wdata_mem;
-        3'b110: access_wdata = bus_rvalid_r1 ? reg_rd_wdata_wb : reg_rd_wdata_mem;
-        3'b111: access_wdata = bus_rvalid_r1 ? reg_rd_wdata_wb : reg_rd_wdata_mem;  // bus 完成
+        3'b110: access_wdata = reg_rd_wdata_mem;
+        3'b111: access_wdata = reg_rd_wdata_mem; 
         default: access_wdata = reg_rs2_rdata_ex;
     endcase
 end

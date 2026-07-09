@@ -79,13 +79,3 @@ Disassembly of section .text.init:
 
 000100f4 <loop_pass>:
    100f4:	0000006f          	j	100f4 <loop_pass>
-   100f8:	00000013          	nop
-   100fc:	00000013          	nop
-   10100:	00000013          	nop
-   10104:	00000013          	nop
-   10108:	00000013          	nop
-   1010c:	00000013          	nop
-   10110:	00000013          	nop
-   10114:	00000013          	nop
-   10118:	00000013          	nop
-   1011c:	00000013          	nop

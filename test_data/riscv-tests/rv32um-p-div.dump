@@ -94,5 +94,3 @@ Disassembly of section .text.init:
 
 000100f8 <loop_pass>:
    100f8:	0000006f          	j	100f8 <loop_pass>
-   100fc:	00000013          	nop
-   10100:	00000013          	nop

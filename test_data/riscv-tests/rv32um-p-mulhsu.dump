@@ -395,10 +395,3 @@ Disassembly of section .text.init:
 
 000104e4 <loop_pass>:
    104e4:	0000006f          	j	104e4 <loop_pass>
-   104e8:	00000013          	nop
-   104ec:	00000013          	nop
-   104f0:	00000013          	nop
-   104f4:	00000013          	nop
-   104f8:	00000013          	nop
-   104fc:	00000013          	nop
-   10500:	00000013          	nop

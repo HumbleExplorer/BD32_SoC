@@ -24,9 +24,7 @@ module Pipeline_Ctrl #(
     // from Forward
     input   logic                       load_use_flag,
     // from EX
-    input   logic                       branch_taken,
-    input   logic   [ADDR_WIDTH-1:0]    branch_target,
-    input   logic                       bus_access_ready,
+    input   logic                       bus_ready,
     input   logic                       oitf_stall,
     input   logic                       reg_rd_wen_wb,      // WB 阶段写寄存器
     // from IF/ID/EX
@@ -54,12 +52,13 @@ module Pipeline_Ctrl #(
     (* MAX_FANOUT = 16 *)output  logic                       ex_mem_flush,
     (* MAX_FANOUT = 16 *)output  logic                       mem_wb_stall,
     (* MAX_FANOUT = 16 *)output  logic                       mem_wb_flush,
+    // to OITF
+    output  logic                       oitf_flush,
     // to CSR
     output  logic   [ADDR_WIDTH-1:0]    exception_inst_addr,
     (* MAX_FANOUT = 16 *)output  logic                       exception_trap,
     output  logic   [DATA_WIDTH-2:0]    exception_code,
-    output  logic   [DATA_WIDTH-1:0]    exception_val,
-    output  logic   [ADDR_WIDTH-1:0]    next_inst_addr
+    output  logic   [DATA_WIDTH-1:0]    exception_val
 );
 
 
@@ -144,17 +143,8 @@ always_comb begin
         end
     endcase
 end
-
-logic branch_jump_en_r;
-always_ff @(posedge clk) begin
-    branch_jump_en_r <= branch_jump_en;
-end
-// 中断处理的下一条指令地址选择（不受停顿影响，受冲刷影响）
-assign next_inst_addr = branch_jump_en ? branch_jump_addr : branch_taken ? branch_target : branch_jump_en_r ? inst_addr_if : inst_addr_id;
 assign exception_trap = ~(exception_code_if[DATA_WIDTH-2] && exception_code_id[DATA_WIDTH-2] && exception_code_ex[DATA_WIDTH-2]);
-
-logic   main_stall;
-assign  main_stall = waiting_int || ~bus_access_ready || oitf_stall;
+assign oitf_flush     = exception_trap;
 
 always_comb begin
     pc_stall        = 1'b0;
@@ -168,26 +158,33 @@ always_comb begin
     mem_wb_stall    = 1'b0;
     mem_wb_flush    = 1'b0;
     ctrl_jump_addr  = `BOOT_BASE_TAG;
-    if (branch_jump_en) begin
-        if_id_flush  = 1'b1;
-        id_ex_flush  = 1'b1;
-    `ifdef BRANCH_JUMP_DELAYED
-        ex_mem_flush = 1'b1;
-    `endif 
-        ctrl_jump_en = 1'b1;
-        ctrl_jump_addr = branch_jump_addr;
+    if (waiting_int) begin
+        pc_stall        = 1'b1;
+        if_id_stall     = 1'b1;
+        id_ex_stall     = 1'b1;
+        ex_mem_stall    = 1'b1;
+        mem_wb_stall    = 1'b1;
     end else if(trap_jump) begin
         if_id_flush = 1'b1;
         id_ex_flush = (sel_stage >= 2'd1);
         ex_mem_flush = (sel_stage >= 2'd2);
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
-    end else if (main_stall) begin
+    end else if (branch_jump_en) begin
+        if_id_flush  = 1'b1;
+        id_ex_flush  = 1'b1;
+        ctrl_jump_en = 1'b1;
+        ctrl_jump_addr = branch_jump_addr;
+    end else if (oitf_stall) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
-        mem_wb_stall    = ~bus_access_ready;
+    end else if (~bus_ready) begin
+        pc_stall        = 1'b1;
+        if_id_stall     = 1'b1;
+        id_ex_flush     = 1'b1;
+        ex_mem_flush    = 1'b1;
     end else if (load_use_flag) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
