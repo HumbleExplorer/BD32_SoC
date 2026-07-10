@@ -170,16 +170,16 @@ always_comb begin
         ex_mem_flush = (sel_stage >= 2'd2);
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
-    end else if (branch_jump_en) begin
-        if_id_flush  = 1'b1;
-        id_ex_flush  = 1'b1;
-        ctrl_jump_en = 1'b1;
-        ctrl_jump_addr = branch_jump_addr;
     end else if (oitf_stall) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
+    end else if (branch_jump_en) begin
+        if_id_flush  = 1'b1;
+        id_ex_flush  = 1'b1;
+        ctrl_jump_en = 1'b1;
+        ctrl_jump_addr = branch_jump_addr;
     end else if (~bus_ready) begin
         pc_stall        = 1'b1;
         if_id_stall     = 1'b1;

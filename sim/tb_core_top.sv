@@ -33,7 +33,7 @@ localparam CLK_PERIOD = 10;
 // localparam    ITCM_FILE    =  "rv32ui-p-srli.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-srai.dat";
 
-localparam    ITCM_FILE    =  "rv32ui-p-add.dat";
+// localparam    ITCM_FILE    =  "rv32ui-p-add.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-sub.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-and.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-or.dat";                                                                                                                                                                                                                                                                                                                                                             
@@ -44,7 +44,7 @@ localparam    ITCM_FILE    =  "rv32ui-p-add.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-srl.dat";
 // localparam    ITCM_FILE    =  "rv32ui-p-sra.dat";
 
-// localparam    ITCM_FILE    =  "rv32um-p-mul.dat";
+localparam    ITCM_FILE    =  "rv32um-p-mul.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-mulh.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-mulhsu.dat";
 // localparam    ITCM_FILE    =  "rv32um-p-mulhu.dat";
@@ -78,8 +78,11 @@ logic   [31:0]  dtcm_download_data;
 logic   external_int;
 logic   software_int;
 logic   timer_int;
-logic   [31:0]  bus_rdata;
 logic   bus_tran_done;
+logic   bus_ready;
+logic   [31:0]  bus_rdata;
+logic   [1:0]   bus_resp;
+
 logic   bus_transfer;
 logic   bus_access_write;
 logic   [31:0]  bus_access_addr;
@@ -109,7 +112,9 @@ initial begin
     software_int = 1'b0;
     timer_int = 1'b0;
     mtime_shadow = 'h0;
+    bus_ready       = 1'b1;
     bus_rdata       = 'h0;
+    bus_resp        = 'h0;
     bus_tran_done   = 'h0;
     #50;
     rst_n   = 1'b1;
@@ -175,8 +180,10 @@ RISC_V_Core #(
     .software_int       (software_int    ),
     .timer_int          (timer_int       ),
     .external_int       (external_int    ),
-    .bus_rdata          (bus_rdata       ),
     .bus_tran_done      (bus_tran_done   ),
+    .bus_ready          (bus_ready       ),
+    .bus_rdata          (bus_rdata       ),
+    .bus_resp           (bus_resp        ),
     .bus_transfer       (bus_transfer    ),
     .bus_access_write   (bus_access_write),
     .bus_access_addr    (bus_access_addr ),

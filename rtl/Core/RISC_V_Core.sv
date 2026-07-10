@@ -640,6 +640,7 @@ CSR_Reg_Access #(
     .exception_inst_addr(exception_inst_addr),
     .next_inst_addr 	(next_inst_addr     ),
     .bus_ready       	(bus_ready          ),
+    .oitf_stall         (oitf_stall         ),
     .wfi_req        	(wfi_req            ),
     .mret_req       	(mret_req           ),
     .exception_trap 	(exception_trap     ),
