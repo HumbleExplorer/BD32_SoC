@@ -10,7 +10,7 @@
 extern void __vector_table(void);
 
 /* 运行时 CPU 主频（Hz），MROM 测量或 soc_init() 测量 */
-uint32_t g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
+uint32_t g_cpu_freq_hz;
 
 /* 弱定义：用户可在 main 前重写 board_init */
 void __attribute__((weak)) board_init(void) {

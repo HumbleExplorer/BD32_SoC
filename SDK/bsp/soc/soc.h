@@ -18,6 +18,7 @@
 #include "clint.h"
 #include "plic.h"
 
+#define CPU_FREQ_DEFINED
 /* ===================================================================
  * CSR 读写宏（机器模式）
  * 两级宏：外层展开符号 → 内层字符串化
@@ -46,7 +47,7 @@
 extern uint32_t g_cpu_freq_hz;
 
 /* 编译期默认值（用于 fallback / 旧代码兼容） */
-#define CPU_FREQ_HZ_DEFAULT  100000000UL
+#define CPU_FREQ_HZ_DEFAULT  80000000UL
 
 /* 兼容宏：指向运行时变量，确保延迟/波特率始终用最新值 */
 #define CPU_FREQ_HZ          g_cpu_freq_hz
@@ -121,7 +122,10 @@ static inline void soc_init(void)
 {
     /* 使能 mcycle 计数器 */
     csr_write(CSR_MCOUNTEREN, 1);
-
+#ifdef CPU_FREQ_DEFINED
+    /* 读取已定义的 CPU 频率 */
+    g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
+#else
     /* 预热：丢弃第一次测量（CSR 管线尚未稳定）*/
     measure_cpu_freq(1);
 
@@ -133,6 +137,6 @@ static inline void soc_init(void)
         g_cpu_freq_hz = freq;
     else
         g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
+#endif
 }
-
 #endif

@@ -184,6 +184,8 @@ always_comb begin
         trap_jump_addr = 'h0;
 end
 
+logic int_trap_jump_n;
+assign int_trap_jump_n = (int_waiting_jump | int_trap) && (bus_ready && ~oitf_stall) && ~int_trap_jump;
 // 中断预计算：int_trap 有效且无异常时，锁存 trap 地址（CARRY4 不参与关键路径）
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -194,8 +196,8 @@ always_ff @(posedge clk or negedge rst_n) begin
         int_waiting_jump <= #1 int_trap ? 1'b1 :
                                 (bus_ready && ~oitf_stall) ? 1'b0 : // 只需等总线（乘除法由 OITF 兜底）
                                 int_waiting_jump;
-        int_trap_jump   <= #1 (int_waiting_jump | int_trap) && (bus_ready && ~oitf_stall);
-        int_jump_addr   <= #1 int_trap ? (mtvec[0]                         // 本周期预计算，下周期直接用
+        int_trap_jump   <= #1 int_trap_jump_n;
+        int_jump_addr   <= #1 int_trap_jump_n ? (mtvec[0]                         // 本周期预计算，下周期直接用
                         ? ({mtvec[31:2] + mcause_n[3:0], 2'b00}) : {mtvec[31:2], 2'b00}) : int_jump_addr;
     end
 end
@@ -223,7 +225,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         end else if (mret_req) begin//从异常返回 mepc保持不变
             mstatus[3]  <= #1 mstatus[7];//MIE <- MPIE
             mstatus[7]  <= #1 1'b1;
-        end else if((int_waiting_jump | int_trap) && (bus_ready && ~oitf_stall)) begin//int_trap_jump前一周期判断，防止长周期指令和跳转指令间的相关性导致next_inst_addr错误
+        end else if(int_trap_jump_n) begin//int_trap_jump前一周期判断，防止长周期指令和跳转指令间的相关性导致next_inst_addr错误
             mepc        <= #1 next_inst_addr;
             mstatus[7]  <= #1 mstatus[3];
             mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus

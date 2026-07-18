@@ -46,27 +46,27 @@
     `ifdef CORE_TEST
         `define PATH "../../test_data/riscv-tests/"
     `else
-        `define PATH "../../test_data/custom/"
+        `define PATH "../../test_data/soc/c/"
     `endif
     `define ITCM_FILE "coremark_itcm.mem"
     `define DTCM_FILE "coremark_dtcm.mem"
 `else
-    `define PATH "../../test_data/custom/"
+    `define PATH "../../test_data/soc/c/"
     `define ITCM_FILE "breathing.uartbin"
     `define DTCM_FILE "breathing.uartbin"
 `endif
 
 `ifdef XILINX
-    `define BOOT_PATH "../../../../../test_data/"
+    `define BOOT_PATH "../../../../../test_data/soc/"
     `ifdef SIMULATION
-        `define PATH "../../../../../test_data/custom/"
+        `define PATH "../../../../../test_data/soc/c/"
         `define ITCM_DEPTH 16*1024//8K
         `define DTCM_DEPTH 16*1024//8K
         `define TCM_Reg_or_BRAM "BRAM"
         `define DISPLAY_INST_WAVE
     `else
         `define SYNTHESIS
-        `define PATH "../custom/"//Vivado路径
+        `define PATH "../soc/c/"//Vivado路径
         `define ITCM_DEPTH 16*1024//8K
         `define DTCM_DEPTH 16*1024//8K
         `define TCM_Reg_or_BRAM "BRAM"
@@ -75,7 +75,7 @@
     // `define DEBUG
     `define ITCM_DEPTH 16*1024//8K
     `define DTCM_DEPTH 16*1024//8K
-    `define BOOT_PATH "../../test_data/"
+    `define BOOT_PATH "../../test_data/soc/"
     `define TCM_Reg_or_BRAM "Reg"
     `define DISPLAY_INST_WAVE
 `endif

@@ -1,0 +1,55 @@
+
+auipc_test.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
+   10008:	00000193          	li	gp,0
+   1000c:	00000517          	auipc	a0,0x0
+   10010:	00000597          	auipc	a1,0x0
+   10014:	40a58633          	sub	a2,a1,a0
+   10018:	00400693          	li	a3,4
+   1001c:	02d61863          	bne	a2,a3,1004c <f_diff>
+   10020:	0080006f          	j	10028 <skip_lit>
+
+00010024 <litpool>:
+   10024:	cafebabe          	.word	0xcafebabe
+
+00010028 <skip_lit>:
+   10028:	00000717          	auipc	a4,0x0
+   1002c:	ffc70713          	addi	a4,a4,-4 # 10024 <litpool>
+   10030:	00072783          	lw	a5,0(a4)
+   10034:	cafec837          	lui	a6,0xcafec
+   10038:	abe80813          	addi	a6,a6,-1346 # cafebabe <_end+0xcafdaa76>
+   1003c:	01079c63          	bne	a5,a6,10054 <f_la>
+   10040:	00100d93          	li	s11,1
+   10044:	00100d13          	li	s10,1
+
+00010048 <p>:
+   10048:	0000006f          	j	10048 <p>
+
+0001004c <f_diff>:
+   1004c:	00100193          	li	gp,1
+   10050:	00c0006f          	j	1005c <rf>
+
+00010054 <f_la>:
+   10054:	00200193          	li	gp,2
+   10058:	0040006f          	j	1005c <rf>
+
+0001005c <rf>:
+   1005c:	00000d93          	li	s11,0
+   10060:	00100d13          	li	s10,1
+
+00010064 <fl>:
+   10064:	0000006f          	j	10064 <fl>
+   10068:	00000013          	nop
+   1006c:	00000013          	nop
+
+00010070 <begin_signature>:
+   10070:	00000013          	nop
+   10074:	00000013          	nop
+   10078:	00000013          	nop
+   1007c:	00000013          	nop

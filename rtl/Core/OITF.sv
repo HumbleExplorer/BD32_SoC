@@ -112,18 +112,23 @@ assign  disp_fire = lp_valid & ~oitf_stall & ~flush;
 assign  retire_fire = oitf_cur[rd_ptr].vld
                     & oitf_cur[rd_ptr].ready;
 
-// --- RAW 依赖（EX 阶段：当前 EX 指令的 rs 与 OITF 未就绪条目的 rd 冲突）---
+// --- RAW 依赖（EX 阶段：当前 EX 指令的 rs 与 OITF 条目的 rd 冲突）---
+// 修复：仅当匹配条目"本拍正在退休"（位于 FIFO 头部且 ready）时才解除阻塞。
+// 因为前递数据源 lp_retire_wdata 只在头部条目退休那一拍提供其数据。若较年轻
+// 的快单元条目（如 MUL）已 ready 但仍在 FIFO 中（头部是更老的慢单元如 DIV，
+// 尚未退休），其数据尚无法前递，必须继续停顿，否则会读到寄存器堆中的陈旧值。
+// 原实现用 ~oitf_cur[j].ready，会在"结果已算好但未退休"时错误放行 → 数据错误。
 generate
     genvar j;
     for (j = 0; j < OITF_DEPTH; j++) begin : gen_raw_match
         assign rs1_match[j] = oitf_cur[j].vld
                              & oitf_cur[j].rd_wen
                              & (oitf_cur[j].rd_addr == reg_rs1_raddr_ex)
-                             & ~oitf_cur[j].ready;
+                             & ~((j == rd_ptr) & oitf_cur[j].ready);
         assign rs2_match[j] = oitf_cur[j].vld
                              & oitf_cur[j].rd_wen
                              & (oitf_cur[j].rd_addr == reg_rs2_raddr_ex)
-                             & ~oitf_cur[j].ready;
+                             & ~((j == rd_ptr) & oitf_cur[j].ready);
     end
 endgenerate
 
@@ -139,13 +144,15 @@ assign  raw_hazard = (~lp_valid) & (
                      );
 
 // --- WAW 依赖（EX 阶段：当前 EX 指令的 rd 与 OITF 任何有效条目冲突）---
+// 同 RAW 修复：仅当匹配条目"本拍正在退休"时才解除阻塞，否则较年轻指令会抢先
+// 写回，随后被尚未退休的更老 OITF 条目（双写端口 port2）覆盖，导致最终值错误。
 generate
     genvar k;
     for (k = 0; k < OITF_DEPTH; k++) begin : gen_waw_match
         assign waw_match[k] = oitf_cur[k].vld
                              & oitf_cur[k].rd_wen
                              & (oitf_cur[k].rd_addr == reg_rd_waddr_ex)
-                             & ~oitf_cur[k].ready;
+                             & ~((k == rd_ptr) & oitf_cur[k].ready);
     end
 endgenerate
 

@@ -107,46 +107,31 @@ assign load_use_flag = (access_ren_ex && (reg_rd_waddr_ex != 'h0) &&//load
 `endif
 
 logic   [DATA_WIDTH-1:0]        access_wdata;
+// 前递优先级（修正）：OITF退休 > MEM阶段 > WB阶段 > 寄存器堆（默认）
+// 关键修正点：OITF退休前递必须拥有最高优先级。
+// 依赖指令因 OITF RAW 停顿、直到被依赖的长指令（MUL/DIV）经 OITF 退休拍释放；
+// 该拍依赖指令要的正是 OITF 退休写回值（程序序上最新的相关写）。
+// 原 case 写法在 OITF 与 WB/MEM 同时命中同一 rs 时错误地选了 WB/MEM（旧值），
+// 导致 mul->依赖 这类链前递失效（coremark CRC 全错、listprobe 数组初始化错）。
 always_comb begin
-    case(forward_A)
-        3'b000: alu_op1_o = alu_op1_from_id_ex;
-        3'b001: alu_op1_o = lp_retire_wdata;
-        3'b010: alu_op1_o = reg_rd_wdata_wb;
-        3'b011: alu_op1_o = reg_rd_wdata_wb;
-        3'b100: alu_op1_o = reg_rd_wdata_mem;
-        3'b101: alu_op1_o = reg_rd_wdata_mem; 
-        3'b110: alu_op1_o = reg_rd_wdata_mem;  
-        3'b111: alu_op1_o = reg_rd_wdata_mem;  
-        default: alu_op1_o = alu_op1_from_id_ex;
-    endcase
+    if      (forward_A[0]) alu_op1_o = lp_retire_wdata;     // OITF退休（最高）
+    else if (forward_A[2]) alu_op1_o = reg_rd_wdata_mem;    // MEM
+    else if (forward_A[1]) alu_op1_o = reg_rd_wdata_wb;     // WB
+    else                   alu_op1_o = alu_op1_from_id_ex;   // 寄存器堆
 end
 
 always_comb begin
-    case(forward_B)
-        3'b000: alu_op2_o = alu_op2_from_id_ex;
-        3'b001: alu_op2_o = lp_retire_wdata;
-        3'b010: alu_op2_o = reg_rd_wdata_wb;
-        3'b011: alu_op2_o = reg_rd_wdata_wb;
-        3'b100: alu_op2_o = reg_rd_wdata_mem;
-        3'b101: alu_op2_o = reg_rd_wdata_mem;
-        3'b110: alu_op2_o = reg_rd_wdata_mem;
-        3'b111: alu_op2_o = reg_rd_wdata_mem;  
-        default: alu_op2_o = alu_op2_from_id_ex;
-    endcase
+    if      (forward_B[0]) alu_op2_o = lp_retire_wdata;
+    else if (forward_B[2]) alu_op2_o = reg_rd_wdata_mem;
+    else if (forward_B[1]) alu_op2_o = reg_rd_wdata_wb;
+    else                   alu_op2_o = alu_op2_from_id_ex;
 end
 
 always_comb begin
-    case(forward_B)
-        3'b000: access_wdata = reg_rs2_rdata_ex;
-        3'b001: access_wdata = lp_retire_wdata;
-        3'b010: access_wdata = reg_rd_wdata_wb;
-        3'b011: access_wdata = reg_rd_wdata_wb;
-        3'b100: access_wdata = reg_rd_wdata_mem;
-        3'b101: access_wdata = reg_rd_wdata_mem;
-        3'b110: access_wdata = reg_rd_wdata_mem;
-        3'b111: access_wdata = reg_rd_wdata_mem; 
-        default: access_wdata = reg_rs2_rdata_ex;
-    endcase
+    if      (forward_B[0]) access_wdata = lp_retire_wdata;
+    else if (forward_B[2]) access_wdata = reg_rd_wdata_mem;
+    else if (forward_B[1]) access_wdata = reg_rd_wdata_wb;
+    else                   access_wdata = reg_rs2_rdata_ex;
 end
 
 `ifdef FORWARD_C_EN

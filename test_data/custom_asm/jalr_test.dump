@@ -1,0 +1,69 @@
+
+jalr_test.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
+   10008:	0001d137          	lui	sp,0x1d
+   1000c:	00000197          	auipc	gp,0x0
+   10010:	07818193          	addi	gp,gp,120 # 10084 <func0>
+   10014:	00312023          	sw	gp,0(sp) # 1d000 <_end+0xbfb8>
+   10018:	00000217          	auipc	tp,0x0
+   1001c:	07420213          	addi	tp,tp,116 # 1008c <func1>
+   10020:	00412223          	sw	tp,4(sp)
+   10024:	00000297          	auipc	t0,0x0
+   10028:	07428293          	addi	t0,t0,116 # 10098 <func2>
+   1002c:	00512423          	sw	t0,8(sp)
+   10030:	00412383          	lw	t2,4(sp)
+   10034:	000380e7          	jalr	t2
+   10038:	000014b7          	lui	s1,0x1
+   1003c:	11148493          	addi	s1,s1,273 # 1111 <_start-0xeeef>
+   10040:	02941a63          	bne	s0,s1,10074 <failJALR>
+   10044:	00812383          	lw	t2,8(sp)
+   10048:	000380e7          	jalr	t2
+   1004c:	000024b7          	lui	s1,0x2
+   10050:	22248493          	addi	s1,s1,546 # 2222 <_start-0xddde>
+   10054:	02941063          	bne	s0,s1,10074 <failJALR>
+   10058:	00012383          	lw	t2,0(sp)
+   1005c:	000380e7          	jalr	t2
+   10060:	00000493          	li	s1,0
+   10064:	00941863          	bne	s0,s1,10074 <failJALR>
+   10068:	00100d13          	li	s10,1
+   1006c:	00100d93          	li	s11,1
+
+00010070 <pass_loop>:
+   10070:	0000006f          	j	10070 <pass_loop>
+
+00010074 <failJALR>:
+   10074:	00100d13          	li	s10,1
+   10078:	00000d93          	li	s11,0
+   1007c:	02800193          	li	gp,40
+
+00010080 <fail_loop>:
+   10080:	0000006f          	j	10080 <fail_loop>
+
+00010084 <func0>:
+   10084:	00000413          	li	s0,0
+   10088:	00008067          	ret
+
+0001008c <func1>:
+   1008c:	00001437          	lui	s0,0x1
+   10090:	11140413          	addi	s0,s0,273 # 1111 <_start-0xeeef>
+   10094:	00008067          	ret
+
+00010098 <func2>:
+   10098:	00002437          	lui	s0,0x2
+   1009c:	22240413          	addi	s0,s0,546 # 2222 <_start-0xddde>
+   100a0:	00008067          	ret
+   100a4:	00000013          	nop
+   100a8:	00000013          	nop
+   100ac:	00000013          	nop
+
+000100b0 <begin_signature>:
+   100b0:	00000013          	nop
+   100b4:	00000013          	nop
+   100b8:	00000013          	nop
+   100bc:	00000013          	nop

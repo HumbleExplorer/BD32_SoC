@@ -705,6 +705,8 @@ Mem_Access #(
 )u_Mem_Access(
     .clk                        (clk),
     .rst_n                      (rst_n),
+    .ex_mem_flush               (ex_mem_flush),
+    .ex_mem_stall               (ex_mem_stall),
     .access_addr                (access_addr_ex),
     .access_en                  (access_en_ex),
     .access_wr                  (access_wr_ex),
@@ -730,7 +732,7 @@ DTCM #(
     .clk        (clk),
     .rst_n      (rst_n),
     .access_addr(access_addr_ex),
-    .wr_en      (access_wr_ex && dtcm_sel && ~ex_mem_stall),
+    .wr_en      (access_wr_ex && dtcm_sel && ~(ex_mem_stall || ex_mem_flush)),
     .wr_data    (access_wdata_ex),
     .wr_mask    (access_wmask_ex),
     .dtcm_download_en (dtcm_download_en   ),

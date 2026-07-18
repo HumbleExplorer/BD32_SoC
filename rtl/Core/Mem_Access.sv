@@ -9,6 +9,8 @@ module Mem_Access #(
 )(
     input   logic                       clk,
     input   logic                       rst_n,
+    input   logic                       ex_mem_stall,
+    input   logic                       ex_mem_flush,
     input   logic   [ADDR_WIDTH-1:0]    access_addr,
     input   logic                       access_en,
     input   logic                       access_wr,
@@ -39,21 +41,30 @@ assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >=
 logic        dtcm_rvalid_q;
 logic [2:0]  access_func3_r;
 logic [1:0]  access_byte_r;
+logic        stall_flsuh_r;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         dtcm_rvalid_q  <= #1 1'b0;
         access_func3_r <= #1 '0;
         access_byte_r  <= #1 '0;
+        stall_flsuh_r  <= #1 1'b0;
     end else begin
-        // dtcm_rvalid: 在访问开始时锁存，下一拍自动清除（DTCM 同步读 1 拍延迟）
-        dtcm_rvalid_q <= #1 (access_en && ~access_wr && dtcm_sel);
-
-        // 锁存 func3 和地址低位（用于 stall 周期保持正确 func3 扩展）
-        if (access_en  && ~access_wr && (dtcm_sel || bus_sel)) begin
-            access_func3_r <= #1 access_func3;
-            access_byte_r  <= #1 access_addr[1:0];
+        // stall/flush 期间禁止更新：此时 access_addr/access_func3 来自 EX 级
+        // 的不同指令（ex_mem 未 stall/flush 时 EX 级仍在前进），
+        // 锁存 rvalid 会导致"用旧 rvalid 选新地址数据"的不一致。
+        // 只有在 ex_mem_stall=0 && ex_mem_flush=0 时才更新，保证 rvalid 和 func3 与
+        // 对应指令的 load 地址严格同步。
+        stall_flsuh_r <= #1 ex_mem_stall | ex_mem_flush;
+        if (~stall_flsuh_r) begin
+            dtcm_rvalid_q <= #1 (~access_wr && dtcm_sel);
+            if (~access_wr && (dtcm_sel || bus_sel)) begin
+                access_func3_r <= #1 access_func3;
+                access_byte_r  <= #1 access_addr[1:0];
+            end
         end
+        // stall/flush 期间不清零 rvalid（保持旧值，等 stall 解除后再
+        // 被新的 load/store 覆盖），确保 DTCM 同步读 1 拍延迟的数据不被丢弃
     end
 end
 

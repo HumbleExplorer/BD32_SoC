@@ -39,9 +39,6 @@ BD32 目前使用 **xPack RISC-V GCC 15.2.0** 工具链。代码路径中硬编�
 
 > **Clang 集成（可选）：** 通过 `build.py` / `build_riscv_tests.py` 的 `--clang` 开关，可用官方 LLVM/clang 替代 GCC 做 `.c` 代码生成，链接仍复用 xPack 的 `libgcc` 与 `link.ld`。详见 [2.3 LLVM/Clang 集成](#23-llvmclang-集成clang)。
 
-备选：NucleiStudio 捆绑工具链也可用
-（`D:/NucleiStudio/toolchain/gcc/bin/riscv64-unknown-elf-gcc`，需修改 `build.py` 中的路径）。
-
 ### 仿真器
 
 ModelSim SE-64 2020.4，路径 `D:\modeltech64_2020.4\win64`。
@@ -251,16 +248,6 @@ bash Working/test_data/build_mrom.sh
 
 > **注意：** MROM 地址固定在 0x00000000，大小限制为 1K words (4096 bytes)。
 
-#### 构建依赖
-
-```bash
-# 工具链（Nuclei）
-D:/NucleiStudio/toolchain/gcc/bin/riscv64-unknown-elf-gcc
-D:/NucleiStudio/toolchain/gcc/bin/llvm-objcopy
-```
-
----
-
 ## 4. 仿真脚本（script/）
 
 ### 4.1 各测试子目录一览
@@ -326,7 +313,7 @@ TB 中需提供：
 
 **路径：** `Working/script/run_all_riscv_tests.py`
 
-利用 ModelSim 批量运行 RISC-V 指令兼容性测试，输出 PASS/FAIL 汇总报告。
+利用 ModelSim 批量运行 RISC-V 指令兼容性测试，输出 PASS/FAIL 汇总报告。由于暂不支持非对齐访存和自修改代码，因此会有2个测试失败，这是正常情况。
 
 #### 用法
 
@@ -359,7 +346,7 @@ python run_all_riscv_tests.py
 
 ```
 ╔══════════════════════════╗
-║  批量测试运行器           ║
+║  批量测试运行器            ║
 ╚══════════════════════════╝
 
   Found 48 test files
@@ -443,7 +430,6 @@ SDK/tools/build_riscv_tests.py (GCC, 可选 --clang)
 ### Q: 编译报错 `riscv-none-elf-gcc: command not found`
 
 xPack 工具链未安装或路径不正确。检查 `D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin/` 是否存在。
-备选：修改 `build.py` 中的 `TOOLCHAIN` 路径为 Nuclei 工具链。
 
 ### Q: ModelSim 找不到 `vsim`
 
