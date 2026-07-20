@@ -225,7 +225,6 @@ logic   [ADDR_WIDTH-1:0]    inst_addr_mem_display;
 logic   [ADDR_WIDTH-1:0]    inst_addr_wb_display;
 assign inst_addr_if_display = inst_addr_if;
 `endif
-`ifdef ENABLE_HPM
 // HPM：流水线 valid 链
 logic                       if_id_valid;
 logic                       id_ex_valid;
@@ -242,7 +241,6 @@ logic                       hpm_mispredict;
 assign hpm_mispredict = ~branch_predict_success_ex;
 assign hpm_valid = mem_wb_valid & ~mem_wb_stall;
 assign hpm_inst_type = inst_type_wb;
-`endif
 
 
 
@@ -432,12 +430,9 @@ IF_ID #(
     .predict_target_o   (predict_target_id)
 `ifdef DISPLAY_INST_WAVE
     ,
-    .inst_addr_display_o(inst_addr_id_display)
+    .inst_addr_display_o(inst_addr_id_display),
 `endif
-`ifdef ENABLE_HPM
-    ,
     .valid_o            (if_id_valid)
-`endif
 );
 
 Decoder #(
@@ -467,11 +462,8 @@ Decoder #(
     .push_ras       (push_ras_id),
     .pop_ras        (pop_ras_id),
     .exception_code (exception_code_id),
-    .exception_val  (exception_val_id)
-`ifdef ENABLE_HPM
-    ,
+    .exception_val  (exception_val_id),
     .inst_type      (inst_type_id)
-`endif
 );
 
 // OITF：ID 阶段识别 mul/div 指令，istruction type 由 Decoder inst_type 给出
@@ -554,15 +546,12 @@ ID_EX #(
     .reg_rs2_raddr_o(reg_rs2_raddr_ex)
 `ifdef DISPLAY_INST_WAVE
     ,
-    .inst_addr_display_o(inst_addr_ex_display)
+    .inst_addr_display_o(inst_addr_ex_display),
 `endif
-`ifdef ENABLE_HPM
-    ,
     .inst_type_i    (inst_type_id),
     .inst_type_o    (inst_type_ex),
     .valid_i        (if_id_valid),
     .valid_o        (id_ex_valid)
-`endif
 );
 
 Executer #(
@@ -597,6 +586,8 @@ Executer #(
     .branch_jump_addr   (branch_jump_addr_ex),
     .exception_code  	(exception_code_ex  ),
     .exception_val   	(exception_val_ex   ),
+    .id_ex_flush        (id_ex_flush),
+    .id_ex_stall        (id_ex_stall),
     .lp_valid           (lp_valid           ),
     .lp_is_div          (lp_is_div          ),
     .mul_ready          (mul_ready          ),
@@ -654,13 +645,10 @@ CSR_Reg_Access #(
     .priv_mode      	(priv_mode          ),
     .trap_jump      	(trap_jump          ),
     .trap_jump_addr 	(trap_jump_addr     ),
-    .waiting_int        (waiting_int        )
-`ifdef ENABLE_HPM
-    ,
+    .waiting_int        (waiting_int        ),
     .hpm_valid          (hpm_valid          ),
     .hpm_inst_type      (hpm_inst_type      ),
     .hpm_mispredict     (hpm_mispredict)
-`endif
 );
 
 EX_MEM #(
@@ -688,15 +676,12 @@ EX_MEM #(
     .reg_rd_wdata_o (reg_rd_wdata_mem)
 `ifdef DISPLAY_INST_WAVE
     ,
-    .inst_addr_display_o(inst_addr_mem_display)
+    .inst_addr_display_o(inst_addr_mem_display),
 `endif
-`ifdef ENABLE_HPM
-    ,
     .inst_type_i    (inst_type_ex),
     .inst_type_o    (inst_type_mem),
     .valid_i        (id_ex_valid),
     .valid_o        (ex_mem_valid)
-`endif
 );
 
 Mem_Access #(
@@ -770,15 +755,12 @@ MEM_WB #(
     .reg_rd_wdata_o (reg_rd_wdata_wb)
 `ifdef DISPLAY_INST_WAVE
     ,
-    .inst_addr_display_o(inst_addr_wb_display)
+    .inst_addr_display_o(inst_addr_wb_display),
 `endif
-`ifdef ENABLE_HPM
-    ,
     .inst_type_i    (inst_type_mem),
     .inst_type_o    (inst_type_wb),
     .valid_i        (ex_mem_valid),
     .valid_o        (mem_wb_valid)
-`endif
 );
 
 // ==========================================================================

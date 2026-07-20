@@ -35,12 +35,8 @@ module Decoder #(
 
     //to Ctrl
     output  logic   [DATA_WIDTH-2:0]        exception_code,
-    output  logic   [DATA_WIDTH-1:0]        exception_val
-
-`ifdef ENABLE_HPM
-    ,
+    output  logic   [DATA_WIDTH-1:0]        exception_val,
     output  logic   [2:0]                   inst_type           // 0:OTHER 1:ALU 2:LOAD 3:STORE 4:BR 5:JMP 6:MULDIV
-`endif
 );
 
 
@@ -95,7 +91,6 @@ assign  is_nop = (inst == `INST_NOP);
 assign  exception_code = invalid_inst ? 'h2 : ecall_req ? ((priv_mode == 2'b00) ? 'h8 : 'h11): ebreak_req ? 'h3 : {(DATA_WIDTH-1){1'b1}};
 assign  exception_val  = invalid_inst ? inst : 'h0;
 
-`ifdef ENABLE_HPM
 always_comb begin
     inst_type = 3'd0;
     case(opcode)
@@ -109,7 +104,6 @@ always_comb begin
         default:                 inst_type = 3'd0;  // OTHER
     endcase
 end
-`endif
 
 always_comb begin
     case(opcode)

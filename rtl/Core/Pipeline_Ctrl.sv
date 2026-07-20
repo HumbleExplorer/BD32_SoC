@@ -175,6 +175,7 @@ always_comb begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
+        mem_wb_stall    = 1'b1;
     end else if (branch_jump_en) begin
         if_id_flush  = 1'b1;
         id_ex_flush  = 1'b1;

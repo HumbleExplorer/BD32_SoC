@@ -106,3 +106,6 @@ Disassembly of section .text.init:
    10128:	00000013          	nop
    1012c:	00000013          	nop
    10130:	00000013          	nop
+   10134:	00000013          	nop
+   10138:	00000013          	nop
+   1013c:	00000013          	nop

@@ -138,10 +138,7 @@ assign  rs2_hit = |rs2_match;
 // 非 longpipe 指令才检查 RAW（longpipe 自身已通过 disp_fire 保证了
 // 无冲突才能入队；若 longpipe 自身与 OITF 有 RAW，oitf_stall 已包含
 // unit_ready 条件，会被停顿）
-assign  raw_hazard = (~lp_valid) & (
-                         (ex_rs1_valid & rs1_hit)
-                       | (ex_rs2_valid & rs2_hit)
-                     );
+assign  raw_hazard = (ex_rs1_valid & rs1_hit) | (ex_rs2_valid & rs2_hit);
 
 // --- WAW 依赖（EX 阶段：当前 EX 指令的 rd 与 OITF 任何有效条目冲突）---
 // 同 RAW 修复：仅当匹配条目"本拍正在退休"时才解除阻塞，否则较年轻指令会抢先
@@ -184,7 +181,7 @@ generate
 endgenerate
 
 // --- 流水线停顿条件 ---
-assign  oitf_stall = (lp_valid & (full | (lp_unit_id == 1 && ~unit_ready)))//长指令入队时，如果 FIFO 已满或当前长周期单元未就绪，则停顿
+assign  oitf_stall = (lp_valid & (full | (lp_unit_id == 1 && ~unit_ready[1])))//长指令入队时，如果 FIFO 已满或当前长周期单元未就绪，则停顿
                    | raw_hazard // RAW 依赖
                    | (reg_rd_wen_ex & waw_hit);//WAW 依赖
 

@@ -292,21 +292,33 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 	ee_printf("Total time (secs): %f\n",time_in_secs(total_time));
 	if (time_in_secs(total_time) > 0)
 		ee_printf("Iterations/Sec   : %f\n",default_num_contexts*results[0].iterations/time_in_secs(total_time));
-#else 
+#else
 	{
-	    uint32_t tt_cs = (uint32_t)((total_time * 100) / g_cpu_freq_hz);  /* centiseconds @ runtime freq */
-	    printf("Total time (secs): ");
-	    print_fixed_scaled((int32_t)tt_cs, 100);
-	    printf("\n");
-	    if (tt_cs > 0) {
+	    /* 用微秒精度，CPU_FREQ_HZ 为编译期常量 */
+	    uint32_t total_us = (uint32_t)((total_time * 1000000ULL) / CPU_FREQ_HZ);
+	    printf("Total time (us)  : %u\n", total_us);
+	    /* 诊断: 同一个值分别用 printf %u 和 uart_puthex 打印 */
+	    volatile uint32_t freq_val = (uint32_t)CPU_FREQ_HZ;
+	    printf("CPU_FREQ printf  : %u\n", freq_val);
+	    uart_puts("CPU_FREQ hex   : ");
+	    uart_puthex(freq_val);
+	    uart_puts("\r\n");
+	    if (total_us > 0) {
+	        /* iterations/sec = freq_hz * iters / total_cycles */
+	        uint64_t ips_x10000 = (uint64_t)CPU_FREQ_HZ * default_num_contexts
+	                              * results[0].iterations * 10000ULL / (uint32_t)total_time;
 	        printf("Iterations/Sec   : ");
-	        print_fixed_scaled((int32_t)((unsigned long)default_num_contexts * results[0].iterations * 10000 / tt_cs), 100);
+	        print_fixed_scaled((int32_t)ips_x10000, 10000);
 	        printf("\n");
+	        /* CoreMark/MHz = ips / freq_mhz */
+	        uint64_t cm_mhz_x10000 = ips_x10000 / (CPU_FREQ_HZ / 1000000UL);
+	        printf("CoreMark/MHz     : ");
+	        print_fixed_scaled((int32_t)cm_mhz_x10000, 10000);
+	        printf("\n");
+	    } else {
+	        printf("Iterations/Sec   : N/A (time too short)\n");
+	        printf("CoreMark/MHz     : N/A\n");
 	    }
-	    printf("CoreMark/MHz     : ");
-	    print_fixed_scaled((int32_t)((unsigned long)default_num_contexts * results[0].iterations * 100 / tt_cs), 100);
-	    printf("\n");
-	    printf("CPU Frequency    : %u MHz\n", g_cpu_freq_hz / 1000000);
 	}
     /* HPM：分支预测率 */
     {

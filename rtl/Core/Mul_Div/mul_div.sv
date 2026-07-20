@@ -43,10 +43,10 @@ assign data_valid    = mul_valid || div_valid;
 assign mul_ready_o   = mul_ready;
 assign div_ready_o   = div_ready;
 
-assign mul_en       = (!func3_i[2] && start);           // 流水线，不需要融合
+assign mul_en       = (!func3_i[2] && start && mul_ready);           // 流水线，不需要融合
 assign mul_valid_o  = mul_valid;
 
-assign div_en       = (func3_i[2]  && start);
+assign div_en       = (func3_i[2]  && start && div_ready);
 assign div_valid_o  = div_valid;
 
 // ==========================================================================

@@ -49,3 +49,5 @@ Disassembly of section .text.init:
 00010070 <begin_signature>:
    10070:	00000013          	nop
    10074:	00000013          	nop
+   10078:	00000013          	nop
+   1007c:	00000013          	nop

@@ -41,17 +41,16 @@
 #define csr_write(csr, val)  _csr_write(csr, val)
 
 /* ===================================================================
- * 运行时 CPU 频率（Hz）
- * 启动后由 MROM 或 BSP 测量填充，默认为保守值
+ * CPU 频率（Hz）— 编译期常量
+ * 直接使用宏定义，避免全局变量 gp/s0 寄存器破坏问题
  * =================================================================== */
-extern uint32_t g_cpu_freq_hz;
-
-/* 编译期默认值（用于 fallback / 旧代码兼容） */
 #define CPU_FREQ_HZ_DEFAULT  80000000UL
 
-/* 兼容宏：指向运行时变量，确保延迟/波特率始终用最新值 */
-#define CPU_FREQ_HZ          g_cpu_freq_hz
+#define CPU_FREQ_HZ          CPU_FREQ_HZ_DEFAULT
 #define CPU_FREQ_KHZ         (CPU_FREQ_HZ / 1000UL)
+
+/* 保留全局变量声明（兼容旧代码），但不再作为主要访问路径 */
+extern uint32_t g_cpu_freq_hz;
 
 /* ===================================================================
  * 频率测量常数
@@ -122,21 +121,7 @@ static inline void soc_init(void)
 {
     /* 使能 mcycle 计数器 */
     csr_write(CSR_MCOUNTEREN, 1);
-#ifdef CPU_FREQ_DEFINED
-    /* 读取已定义的 CPU 频率 */
+    /* 设置 CPU 频率默认值 */
     g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
-#else
-    /* 预热：丢弃第一次测量（CSR 管线尚未稳定）*/
-    measure_cpu_freq(1);
-
-    /* 正式测量：10ms 窗口 */
-    uint32_t freq = measure_cpu_freq(MEASURE_MTIME_TICKS);
-
-    /* 合理性检查：<1MHz 或 >1GHz 视为无效，回退默认值 */
-    if (freq > 1000000UL && freq < 1000000000UL)
-        g_cpu_freq_hz = freq;
-    else
-        g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
-#endif
 }
 #endif

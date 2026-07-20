@@ -7,17 +7,6 @@
 `define ALIGN_WIDTH 2
 `define DEVICE_TAG_WIDTH 16
 
-
-
-// ============================================================
-// 性能监控计数器（HPM）+ 流水线 valid 链
-// ============================================================
-// 启用后，各级流水线寄存器携带 1-bit valid 信号，
-// 并在 CSR 空间映射 8 个 64 位性能计数器：
-//   mHPMcounter3-10（CSR 0xBC3-0xBCA / 0xC43-0xC4A）
-// 注释下行则关闭 HPM，流水线不携带 valid 位：
-`define ENABLE_HPM
-
 // 取消注释下行启用 3 级流水线乘法器（默认状态机，4 拍一结果）
 `define MULT_PIPELINE
 
@@ -44,7 +33,12 @@
 
 `ifdef DIRECT_LOAD
     `ifdef CORE_TEST
-        `define PATH "../../test_data/riscv-tests/"
+        `define CUSTOM_ASM
+        `ifdef CUSTOM_ASM
+            `define PATH "../../test_data/custom_asm/"
+        `else
+            `define PATH "../../test_data/riscv-tests/"
+        `endif
     `else
         `define PATH "../../test_data/soc/c/"
     `endif
@@ -60,21 +54,21 @@
     `define BOOT_PATH "../../../../../test_data/soc/"
     `ifdef SIMULATION
         `define PATH "../../../../../test_data/soc/c/"
-        `define ITCM_DEPTH 16*1024//8K
-        `define DTCM_DEPTH 16*1024//8K
+        `define ITCM_DEPTH 16*1024
+        `define DTCM_DEPTH 16*1024
         `define TCM_Reg_or_BRAM "BRAM"
         `define DISPLAY_INST_WAVE
     `else
         `define SYNTHESIS
         `define PATH "../soc/c/"//Vivado路径
-        `define ITCM_DEPTH 16*1024//8K
-        `define DTCM_DEPTH 16*1024//8K
+        `define ITCM_DEPTH 16*1024
+        `define DTCM_DEPTH 16*1024
         `define TCM_Reg_or_BRAM "BRAM"
     `endif
 `else
     // `define DEBUG
-    `define ITCM_DEPTH 16*1024//8K
-    `define DTCM_DEPTH 16*1024//8K
+    `define ITCM_DEPTH 16*1024
+    `define DTCM_DEPTH 16*1024
     `define BOOT_PATH "../../test_data/soc/"
     `define TCM_Reg_or_BRAM "Reg"
     `define DISPLAY_INST_WAVE

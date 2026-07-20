@@ -8,7 +8,7 @@
 #include "bsp.h"
 
 void uart_init(uint32_t baud) {
-    uint32_t freq = g_cpu_freq_hz;
+    uint32_t freq = CPU_FREQ_HZ;
 
     /* NCO FCW = (baud × 16 × 2^32 + Fclk/2) / Fclk，四舍五入
      * 例：115200 @ 100MHz → FCW = 0x04B7F5A5 (79164837)

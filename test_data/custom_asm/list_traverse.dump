@@ -79,3 +79,5 @@ Disassembly of section .text.init:
    100ec:	00000013          	nop
    100f0:	00000013          	nop
    100f4:	00000013          	nop
+   100f8:	00000013          	nop
+   100fc:	00000013          	nop

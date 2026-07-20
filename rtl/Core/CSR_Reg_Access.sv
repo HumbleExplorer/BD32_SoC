@@ -37,13 +37,11 @@ module CSR_Reg_Access #(
     output  logic   [1:0]                   priv_mode,//特权模式 0：U；  1：S；  3：M
     (* MAX_FANOUT = 16 *)output  logic                           trap_jump,
     output  logic   [DATA_WIDTH-1:0]        trap_jump_addr,
-    output  logic                           waiting_int
-`ifdef ENABLE_HPM
-    ,
+    output  logic                           waiting_int,
+
     input   logic                           hpm_valid,
     input   logic   [2:0]                   hpm_inst_type,
     input   logic                           hpm_mispredict
-`endif
 // to CLINT
 );
 
@@ -87,7 +85,6 @@ always_ff @(posedge clk or negedge rst_n) begin
         minstret <= #1 minstret + 'h1;
 end
 
-`ifdef ENABLE_HPM
 // HPM 计数器（64位，0xBC3-0xBC9/0xC43-0xC49）
 // 各计数器受 mcounteren / mcountinhibit / mcounterclr 对应位控制
 //   mhp_counter3 (ALU)      0
@@ -130,7 +127,6 @@ always_ff @(posedge clk or negedge rst_n) begin
                                             mhpmcounter[6] <= #1 mhpmcounter[6] + 'h1;
 end
 
-`endif
 
 logic   int_trap;
 logic   external_int_trap, software_int_trap, timer_int_trap;
@@ -268,7 +264,6 @@ always_comb begin
             12'hb80  : csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
             12'hb02  : csr_rdata = minstret[DATA_WIDTH-1:0];
             12'hb82  : csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
-`ifdef ENABLE_HPM
             // hpm_counter3-9 / 3h-9h (CSR 0xBC3-0xBC9 / 0xC43-0xC49)
             12'hbc3  : csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
             12'hbc4  : csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
@@ -285,7 +280,6 @@ always_comb begin
             12'hc47  : csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
             12'hc48  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
             12'hc49  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
-`endif
             // time / timeh — 只读影子寄存器（mtime_shadow 来自 CLINT）
             12'hc01  : csr_rdata = mtime_shadow[DATA_WIDTH-1:0];          // time (低32位)
             12'hc81  : csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH]; // timeh (高32位)

@@ -18,37 +18,30 @@ void __attribute__((weak)) board_init(void) {
 }
 
 void _init(void) {
-    /* === 测 CPU 主频（10ms） ===
-     * 基于 CLINT mtime 1MHz 基准 + csr mcycle
-     * 结果填入 g_cpu_freq_hz
-     * 必须在任何延时/UART 使用前完成
-     */
     soc_init();
+    g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
+
+    /* UART 初始化（唯一调用点，避免 __udivdi3 破坏 gp） */
+    uart_init(115200);
 
     /* 设置中断向量表 (Vectored 模式) */
-    /* mtvec.MODE = 1: 异常 PC=mtvec.BASE, 中断 PC=mtvec.BASE+4*cause */
     __asm__ volatile(
         ".option push\n"
         ".option norelax\n"
         "la a0, __vector_table\n"
-        "ori a0, a0, 1\n"         /* MODE=1: Vectored */
+        "ori a0, a0, 1\n"
         "csrw mtvec, a0\n"
         ".option pop\n"
     );
 
-    /* 用户板级初始化 */
     board_init();
 
-    /* 使能 mcycle + mhpm_counter3~9 CSR 读取 */
-    /* bit 0 = mcycle, bit 2 = minstret */
-    /* bit 3~9 = mhp_counter3~9 (ALU/LOAD/STORE/BRANCH/JUMP/MULDIV/PRED_OK) */
+    /* 使能 mcycle + minstret + HPM counters */
     __asm__ volatile("li a0, %0\n"
                      "csrrs x0, mcounteren, a0\n"
                      : : "i"((1 << 0) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) |
                              (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9)));
 
-    /* 注意：这里不开 mstatus.MIE！
-     * 由应用程序在 main 中合适时机手动开启：
-     *   core_global_irq_enable();
-     */
+    /* 保险：重新赋值（gp 可能在后续被破坏） */
+    g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
 }

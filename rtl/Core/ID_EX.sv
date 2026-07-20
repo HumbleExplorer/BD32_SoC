@@ -63,15 +63,12 @@ module ID_EX #(
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr_o
 `ifdef DISPLAY_INST_WAVE
     ,
-    output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o
+    output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o,
 `endif
-`ifdef ENABLE_HPM
-    ,
     input   logic   [2:0]                   inst_type_i,
     output  logic   [2:0]                   inst_type_o,
     input   logic                           valid_i,
     output  logic                           valid_o
-`endif
 );
 
 always_ff @(posedge clk or negedge rst_n) begin
@@ -99,9 +96,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         pop_ras_o       <= #1 1'b0;
         reg_rs1_raddr_o <= #1 'h0;
         reg_rs2_raddr_o <= #1 'h0;
-`ifdef ENABLE_HPM
         inst_type_o     <= #1 3'd0;
-`endif
     end else if(flush) begin
         inst_o          <= #1 `INST_NOP;
         predict_taken_o <= #1 1'b0;
@@ -114,9 +109,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         branch_req_o    <= #1 1'b0;
         push_ras_o      <= #1 1'b0;
         pop_ras_o       <= #1 1'b0;
-`ifdef ENABLE_HPM
         inst_type_o     <= #1 3'd0;
-`endif
     end else if (!stall) begin
         inst_addr_o     <= #1 inst_addr_i;
         inst_o          <= #1 inst_i;
@@ -140,9 +133,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         pop_ras_o       <= #1 pop_ras_i;
         reg_rs1_raddr_o <= #1 reg_rs1_raddr_i;
         reg_rs2_raddr_o <= #1 reg_rs2_raddr_i;
-`ifdef ENABLE_HPM
         inst_type_o     <= #1 inst_type_i;
-`endif
     end
 end
 `ifdef DISPLAY_INST_WAVE
@@ -156,12 +147,10 @@ always_ff @(posedge clk or negedge rst_n) begin
     end
 end
 `endif
-`ifdef ENABLE_HPM
 always_ff @(posedge clk or negedge rst_n) begin
-    if(!rst_n)                    valid_o <= #1 1'b0;
-    else if(flush)                valid_o <= #1 1'b0;
-    else if(!stall)               valid_o <= #1 valid_i;
+    if(!rst_n)           valid_o <= #1 1'b0;
+    else if(flush)       valid_o <= #1 1'b0;
+    else                 valid_o <= #1 ~stall & valid_i;
 end
-`endif
 
 endmodule

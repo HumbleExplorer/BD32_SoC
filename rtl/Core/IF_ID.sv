@@ -26,12 +26,9 @@ module IF_ID #(
     output  logic   [ADDR_WIDTH-1:0]    predict_target_o
 `ifdef DISPLAY_INST_WAVE
     ,
-    output  logic   [ADDR_WIDTH-1:0]    inst_addr_display_o
+    output  logic   [ADDR_WIDTH-1:0]    inst_addr_display_o,
 `endif
-`ifdef ENABLE_HPM
-    ,
     output  logic                       valid_o
-`endif
 );
 
 always_ff @(posedge clk or negedge rst_n) begin
@@ -65,12 +62,9 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 `endif
 
-`ifdef ENABLE_HPM
 always_ff @(posedge clk or negedge rst_n) begin
-    if(!rst_n)                 valid_o <= #1 1'b0;
-    else if(flush)             valid_o <= #1 1'b0;
-    else if (!stall)           valid_o <= #1 1'b1;
+    if(!rst_n)                    valid_o <= #1 1'b0;
+    else if(flush)                valid_o <= #1 1'b0;
+    else                          valid_o <= #1 1'b1;
 end
-`endif
-
 endmodule

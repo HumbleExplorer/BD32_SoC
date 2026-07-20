@@ -23,6 +23,8 @@ module Executer #(
     input   logic                           is_fence_i,
     input   logic                           access_en,
     input   logic                           access_wr,
+    input   logic                           id_ex_flush,
+    input   logic                           id_ex_stall,
     // from CSR
     input   logic   [DATA_WIDTH-1:0]        csr_rdata,
     input   logic                           illegal_inst_csr,
@@ -97,7 +99,6 @@ assign  sr_shift_mask   =   {DATA_WIDTH{1'b1}} >> alu_op2[4:0];
 
 assign  access_addr = alu_op1 + imm;
 assign  access_func3 = func3;
-assign  lp_valid = mul_div_en;
 assign  lp_is_div = func3[2];
 
 assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG): 1'b0;
@@ -118,6 +119,7 @@ always_comb begin
     csr_wdata         = 'h0;
     wfi_req           = 1'b0;
     mret_req          = 1'b0;
+    lp_valid          = 1'b0;
     mul_div_en        = 1'b0;
     branch_taken      = 1'b0;
     branch_target     = inst_addr_plus_4;
@@ -143,9 +145,9 @@ always_comb begin
             endcase
         end
         `INST_TYPE_R_M:begin
+            reg_rd_waddr      = rd;
             if ((func7 == 7'b0000000) || (func7 == 7'b0100000)) begin
                 reg_rd_wen        = 1'b1;
-                reg_rd_waddr      = rd;
                 case(func3)
                     `INST_ADD_SUB:begin
                         if(func7 == 7'b000_0000)//ADD
@@ -170,8 +172,8 @@ always_comb begin
             end
             else if(func7 == 7'b0000001) begin//RV_M → 结果走 OITF，但 reg_rd_wen/waddr 仍输出
                 // reg_rd_wen        = 1'b1;
-                mul_div_en = 1'b1;
-                reg_rd_waddr      = rd;
+                mul_div_en = ~(id_ex_flush || id_ex_stall);
+                lp_valid = 1'b1;
             end
         end
         `INST_TYPE_B: begin

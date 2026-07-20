@@ -32,15 +32,13 @@ module EX_MEM #(
     output  logic   [DATA_WIDTH-1:0]        reg_rd_wdata_o
 `ifdef DISPLAY_INST_WAVE
     ,
-    output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o
+    output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o,
 `endif
-`ifdef ENABLE_HPM
-    ,
+
     input   logic   [2:0]                   inst_type_i,
     output  logic   [2:0]                   inst_type_o,
     input   logic                           valid_i,
     output  logic                           valid_o
-`endif
 );
 
 always_ff @(posedge clk or negedge rst_n) begin
@@ -52,17 +50,13 @@ always_ff @(posedge clk or negedge rst_n) begin
         reg_rd_wen_o    <= #1 1'b0;
         reg_rd_waddr_o  <= #1 'h0;
         reg_rd_wdata_o  <= #1 'h0;
-`ifdef ENABLE_HPM
         inst_type_o     <= #1 3'd0;
-`endif
     end else begin
         if(flush) begin
             inst_o          <= #1 `INST_NOP;
             access_en_o     <= #1 1'b0;
             reg_rd_wen_o    <= #1 1'b0;
-`ifdef ENABLE_HPM
             inst_type_o     <= #1 3'd0;
-`endif
         end else if(!stall) begin
             inst_addr_o     <= #1 inst_addr_i;
             inst_o          <= #1 inst_i;
@@ -71,9 +65,7 @@ always_ff @(posedge clk or negedge rst_n) begin
             reg_rd_wen_o    <= #1 reg_rd_wen_i;
             reg_rd_waddr_o  <= #1 reg_rd_waddr_i;
             reg_rd_wdata_o  <= #1 reg_rd_wdata_i;
-`ifdef ENABLE_HPM
             inst_type_o     <= #1 inst_type_i;
-`endif
         end
     end
 end
@@ -88,12 +80,9 @@ always_ff @(posedge clk or negedge rst_n) begin
     end
 end
 `endif
-`ifdef ENABLE_HPM
 always_ff @(posedge clk or negedge rst_n) begin
-    if(!rst_n)                    valid_o <= #1 1'b0;
-    else if(flush)                valid_o <= #1 1'b0;
-    else if(!stall)               valid_o <= #1 valid_i;
+    if(!rst_n)           valid_o <= #1 1'b0;
+    else if(flush)       valid_o <= #1 1'b0;
+    else                 valid_o <= #1 ~stall & valid_i;
 end
-`endif
-
 endmodule
