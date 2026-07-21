@@ -41,7 +41,11 @@ module Data_Hazard_Forward #(
     output  logic                           load_use_flag,
     (* MAX_FANOUT = 16 *)output  logic   [DATA_WIDTH-1:0]        alu_op1_o,
     output  logic   [DATA_WIDTH-1:0]        alu_op2_o,
-    output  logic   [DATA_WIDTH-1:0]        access_wdata_temp
+    output  logic   [DATA_WIDTH-1:0]        access_wdata_temp,
+    // 前递命中标志：当前有前递源正在驱动 alu_op1_o / alu_op2_o。
+    // 供 ID_EX 在停顿期间锁存前递值，避免 OITF 退休的 1 拍前递脉冲丢失。
+    output  logic                           fwd_a_hit,
+    output  logic                           fwd_b_hit
 );
 
 // ===================================== 第一步：ALU操作数前递逻辑（forwardA/forwardB） =====================================
@@ -82,6 +86,10 @@ assign forward_A[2] = reg_rd_wen_mem && (reg_rd_waddr_mem == reg_rs1_raddr_ex) &
 assign forward_B[0] = lp_retire_valid && (lp_retire_waddr == reg_rs2_raddr_ex) && (reg_rs2_raddr_ex != 0);
 assign forward_B[1] = reg_rd_wen_wb && (reg_rd_waddr_wb == reg_rs2_raddr_ex) && (reg_rs2_raddr_ex != 0);
 assign forward_B[2] = reg_rd_wen_mem && (reg_rd_waddr_mem == reg_rs2_raddr_ex) && (reg_rs2_raddr_ex != 0);
+
+// 前递命中：任一前递源有效。供 ID_EX 在停顿期间锁存前递值。
+assign fwd_a_hit = |forward_A;
+assign fwd_b_hit = |forward_B;
 
 
 // ===================================== 第二步：Load-Use冒险逻辑（load_use_flag_o） =====================================

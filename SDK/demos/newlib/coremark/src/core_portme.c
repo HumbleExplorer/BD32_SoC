@@ -51,18 +51,5 @@ secs_ret time_in_secs(CORE_TICKS ticks) {
 
 void portable_init(core_portable *p, int *argc, char *argv[]) {
     (void)p; (void)argc; (void)argv;
-    /* uart_init 已在 _init() 中调用 */
     uart_puts("CoreMark running...\r\n");
-
-    /* 诊断: 直接写入+读回 g_cpu_freq_hz，用 uart_puthex 绕过 printf */
-    g_cpu_freq_hz = 0xDEADBEEF;
-    uart_puts("DTCM_WR=");
-    uart_puthex(g_cpu_freq_hz);
-    uart_puts("\r\n");
-
-    /* 写回正确值 */
-    g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
-    uart_puts("DTCM_OK=");
-    uart_puthex(g_cpu_freq_hz);
-    uart_puts("\r\n");
 }

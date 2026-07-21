@@ -32,7 +32,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CORE_TEST_DIR = os.path.join(BASE_DIR, "core_test")
 TEST_DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "test_data", "custom_asm"))
 
-SIM_TIME_US = 50
+SIM_TIME_US = 1000
 TIMEOUT_SEC = 60
 
 # ============================================================

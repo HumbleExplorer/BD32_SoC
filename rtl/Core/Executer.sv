@@ -172,7 +172,7 @@ always_comb begin
             end
             else if(func7 == 7'b0000001) begin//RV_M → 结果走 OITF，但 reg_rd_wen/waddr 仍输出
                 // reg_rd_wen        = 1'b1;
-                mul_div_en = ~(id_ex_flush || id_ex_stall);
+                mul_div_en = ~id_ex_stall;//在停顿的最后一周期启动
                 lp_valid = 1'b1;
             end
         end

@@ -18,6 +18,9 @@
 #   K: decimal conversion loop — divu/remu by 10 in a loop (printf %u pattern)
 #   L: back-to-back div/rem pairs — OITF forwarding stress (divu→remu, remu→divu,
 #      signed div→rem, loop with alternating div/rem)
+#   M: O3-specific patterns from CoreMark -O3 disassembly (divu→mul RAW, divu→remu→mul
+#      triple, mulhu→mul pair, unrolled mul×4, 0xFFFFFFFF decimal loop, div→mul→div
+#      chain, mul→div→rem→mul ping-pong)
 
 #include "riscv_test.h"
 #undef RVTEST_RV64U
@@ -268,6 +271,112 @@ divrem_loop:
   li   x14, 0
   bne  x12, x14, failL6_rem
 
+  # ================================================================
+  # M: O3-specific patterns — extracted from CoreMark -O3 disassembly
+  #    These replicate the exact instruction sequences that O3
+  #    generates but O2 does not (loop unroll, aggressive mul, etc.)
+  # ================================================================
+
+  # M1: divu→mul immediate RAW (main @ 0x1137C: divu a1,a1,a3 → mul a4,a4,a1)
+  #     div result is the VERY NEXT mul's operand — OITF cross-unit forwarding
+  li   x2, 200
+  li   x28, 7
+  li   x4, 5
+  divu x10, x2, x28    # 200/7 = 28
+  mul  x11, x10, x4    # 28*5 = 140  ← RAW on divu result
+  li   x12, 28
+  bne  x10, x12, failM1_div
+  li   x13, 140
+  bne  x11, x13, failM1_mul
+
+  # M2: divu→remu→mul triple (__udivdi3 @ 0x15020 pattern)
+  #     Three M-ext instructions in a row, mul uses divu's result
+  li   x2, 1000
+  li   x28, 7
+  divu x10, x2, x28    # 1000/7 = 142
+  remu x11, x2, x28    # 1000%7 = 6   ← back-to-back with divu
+  mul  x12, x10, x11   # 142*6 = 852  ← uses both divu and remu results
+  li   x13, 142
+  bne  x10, x13, failM2_div
+  li   x14, 6
+  bne  x11, x14, failM2_rem
+  li   x15, 852
+  bne  x12, x15, failM2_mul
+
+  # M3: mulhu→mul back-to-back, same operands (main @ 0x11794 pattern)
+  #     64-bit multiply: both go to MUL unit, OITF must track two entries
+  li   x2, 0x10001
+  li   x28, 0x10001
+  mulhu x10, x2, x28   # high = 0x00000001
+  mul   x11, x2, x28   # low  = 0x00020001  ← back-to-back mulhu→mul
+  li   x12, 1
+  bne  x10, x12, failM3_hi
+  li   x13, 0x00020001
+  bne  x11, x13, failM3_lo
+
+  # M4: unrolled mul×4 with ZERO intervening instructions (O3 unroll)
+  #     O2 inserts li/addi between muls; O3 unrolls them back-to-back
+  li   x2, 2;  li x4, 4;  li x6, 6;  li x8, 8
+  li   x28, 3; li x5, 5;  li x7, 7;  li x9, 9
+  mul  x10, x2, x28    # 6   ─┐
+  mul  x11, x4, x5     # 20   │ 4 consecutive MUL, no gaps
+  mul  x12, x6, x7     # 42   │
+  mul  x13, x8, x9     # 72  ─┘
+  add  x14, x10, x11   # 26
+  add  x15, x12, x13   # 114
+  add  x16, x14, x15   # 140
+  li   x17, 140
+  bne  x16, x17, failM4
+
+  # M5: printf %u with 0xFFFFFFFF (max 10-digit value, longest remu/divu loop)
+  #     4294967295 → digits: 4,2,9,4,9,6,7,2,9,5 → sum=57, count=10
+  li   x10, 0xFFFFFFFF
+  li   x11, 10
+  li   x12, 0           # digit count
+  li   x13, 0           # digit sum
+dec_loop_max:
+  remu x14, x10, x11   # digit = value % 10
+  add  x13, x13, x14
+  divu x10, x10, x11   # value = value / 10
+  addi x12, x12, 1
+  bnez x10, dec_loop_max
+  li   x15, 10
+  bne  x12, x15, failM5_cnt
+  li   x15, 57
+  bne  x13, x15, failM5_sum
+
+  # M6: divu→mul→divu chain (each result feeds the next)
+  #     1000/3=333, 333*2=666, 666/7=95
+  li   x2, 1000
+  li   x28, 3
+  li   x4, 2
+  li   x5, 7
+  divu x10, x2, x28    # 333
+  mul  x11, x10, x4    # 666  ← RAW on divu
+  divu x12, x11, x5    # 95   ← RAW on mul, cross-unit again
+  li   x13, 333
+  bne  x10, x13, failM6_d1
+  li   x14, 666
+  bne  x11, x14, failM6_m
+  li   x15, 95
+  bne  x12, x15, failM6_d2
+
+  # M7: mul→divu→remu→mul cross-unit ping-pong
+  #     6*7=42, 42/5=8, 42%5=2, 8*2=16
+  li   x2, 6
+  li   x28, 7
+  li   x4, 5
+  mul  x10, x2, x28    # 42
+  divu x11, x10, x4    # 8   ← RAW on mul result
+  remu x12, x10, x4    # 2   ← back-to-back divu→remu, same src
+  mul  x13, x11, x12   # 16  ← uses both divu and remu results
+  li   x14, 8
+  bne  x11, x14, failM7_div
+  li   x15, 2
+  bne  x12, x15, failM7_rem
+  li   x16, 16
+  bne  x13, x16, failM7_mul
+
   # all passed
   li x26, 1
   li x27, 1
@@ -308,6 +417,22 @@ failL5_rsum: li x26,1; li x27,32; li gp,32; j fail_loop
 failL5_cnt:  li x26,1; li x27,33; li gp,33; j fail_loop
 failL6_div:  li x26,1; li x27,34; li gp,34; j fail_loop
 failL6_rem:  li x26,1; li x27,35; li gp,35; j fail_loop
+failM1_div:  li x26,1; li x27,36; li gp,36; j fail_loop
+failM1_mul:  li x26,1; li x27,37; li gp,37; j fail_loop
+failM2_div:  li x26,1; li x27,38; li gp,38; j fail_loop
+failM2_rem:  li x26,1; li x27,39; li gp,39; j fail_loop
+failM2_mul:  li x26,1; li x27,40; li gp,40; j fail_loop
+failM3_hi:   li x26,1; li x27,41; li gp,41; j fail_loop
+failM3_lo:   li x26,1; li x27,42; li gp,42; j fail_loop
+failM4:      li x26,1; li x27,43; li gp,43; j fail_loop
+failM5_cnt:  li x26,1; li x27,44; li gp,44; j fail_loop
+failM5_sum:  li x26,1; li x27,45; li gp,45; j fail_loop
+failM6_d1:   li x26,1; li x27,46; li gp,46; j fail_loop
+failM6_m:    li x26,1; li x27,47; li gp,47; j fail_loop
+failM6_d2:   li x26,1; li x27,48; li gp,48; j fail_loop
+failM7_div:  li x26,1; li x27,49; li gp,49; j fail_loop
+failM7_rem:  li x26,1; li x27,50; li gp,50; j fail_loop
+failM7_mul:  li x26,1; li x27,51; li gp,51; j fail_loop
 fail_loop:
   j fail_loop
 

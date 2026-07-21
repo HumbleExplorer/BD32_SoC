@@ -297,12 +297,6 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 	    /* 用微秒精度，CPU_FREQ_HZ 为编译期常量 */
 	    uint32_t total_us = (uint32_t)((total_time * 1000000ULL) / CPU_FREQ_HZ);
 	    printf("Total time (us)  : %u\n", total_us);
-	    /* 诊断: 同一个值分别用 printf %u 和 uart_puthex 打印 */
-	    volatile uint32_t freq_val = (uint32_t)CPU_FREQ_HZ;
-	    printf("CPU_FREQ printf  : %u\n", freq_val);
-	    uart_puts("CPU_FREQ hex   : ");
-	    uart_puthex(freq_val);
-	    uart_puts("\r\n");
 	    if (total_us > 0) {
 	        /* iterations/sec = freq_hz * iters / total_cycles */
 	        uint64_t ips_x10000 = (uint64_t)CPU_FREQ_HZ * default_num_contexts

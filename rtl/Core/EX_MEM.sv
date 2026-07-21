@@ -29,9 +29,8 @@ module EX_MEM #(
     // to wb
     output  logic                           reg_rd_wen_o,
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rd_waddr_o,
-    output  logic   [DATA_WIDTH-1:0]        reg_rd_wdata_o
+    output  logic   [DATA_WIDTH-1:0]        reg_rd_wdata_o,
 `ifdef DISPLAY_INST_WAVE
-    ,
     output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o,
 `endif
 

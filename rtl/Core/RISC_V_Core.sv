@@ -99,6 +99,8 @@ logic   [DATA_WIDTH-1:0]    alu_op1_forward;
 logic   [DATA_WIDTH-1:0]    alu_op2_forward;
 logic   [DATA_WIDTH-1:0]    access_wdata_temp;
 logic   [DATA_WIDTH-1:0]    reg_rs2_rdata_ex;
+logic                       fwd_a_hit;
+logic                       fwd_b_hit;
 
 //RegFile
 logic                       reg_rd_wen;
@@ -322,7 +324,9 @@ Data_Hazard_Forward #(
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
     .alu_op2_o          	(alu_op2_forward    ),
-    .access_wdata_temp   	(access_wdata_temp  )
+    .access_wdata_temp   	(access_wdata_temp  ),
+    .fwd_a_hit           	(fwd_a_hit          ),
+    .fwd_b_hit           	(fwd_b_hit          )
 );
 
 Dynamic_Branch_Predictor #(
@@ -427,9 +431,8 @@ IF_ID #(
     .inst_addr_o        (inst_addr_id),
     .inst_o             (inst_id),
     .predict_taken_o    (predict_taken_id),
-    .predict_target_o   (predict_target_id)
+    .predict_target_o   (predict_target_id),
 `ifdef DISPLAY_INST_WAVE
-    ,
     .inst_addr_display_o(inst_addr_id_display),
 `endif
     .valid_o            (if_id_valid)
@@ -508,6 +511,10 @@ ID_EX #(
     .alu_op2_i      (alu_op2_id),
     .imm_i          (imm_id),
     .reg_rs2_rdata_i(reg_rs2_rdata),
+    .alu_op1_fwd_i  (alu_op1_forward),
+    .fwd_a_hit_i    (fwd_a_hit),
+    .alu_op2_fwd_i  (alu_op2_forward),
+    .fwd_b_hit_i    (fwd_b_hit),
     .jump_imm_i     (jump_imm_id),
     .inst_addr_plus_4_i(inst_addr_plus_4_id),
     .reg_rs1_raddr_i(reg_rs1_raddr),
@@ -543,9 +550,8 @@ ID_EX #(
     .push_ras_o     (push_ras_ex),
     .pop_ras_o      (pop_ras_ex),
     .reg_rs1_raddr_o(reg_rs1_raddr_ex),
-    .reg_rs2_raddr_o(reg_rs2_raddr_ex)
+    .reg_rs2_raddr_o(reg_rs2_raddr_ex),
 `ifdef DISPLAY_INST_WAVE
-    ,
     .inst_addr_display_o(inst_addr_ex_display),
 `endif
     .inst_type_i    (inst_type_id),
@@ -673,9 +679,8 @@ EX_MEM #(
     .access_wr_o    (access_wr_mem),
     .reg_rd_wen_o   (reg_rd_wen_mem),
     .reg_rd_waddr_o (reg_rd_waddr_mem),
-    .reg_rd_wdata_o (reg_rd_wdata_mem)
+    .reg_rd_wdata_o (reg_rd_wdata_mem),
 `ifdef DISPLAY_INST_WAVE
-    ,
     .inst_addr_display_o(inst_addr_mem_display),
 `endif
     .inst_type_i    (inst_type_ex),
@@ -752,9 +757,8 @@ MEM_WB #(
     .inst_addr_o    (inst_addr_wb),
     .reg_rd_wen_o   (reg_rd_wen_wb),
     .reg_rd_waddr_o (reg_rd_waddr_wb),
-    .reg_rd_wdata_o (reg_rd_wdata_wb)
+    .reg_rd_wdata_o (reg_rd_wdata_wb),
 `ifdef DISPLAY_INST_WAVE
-    ,
     .inst_addr_display_o(inst_addr_wb_display),
 `endif
     .inst_type_i    (inst_type_mem),

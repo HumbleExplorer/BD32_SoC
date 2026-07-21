@@ -26,9 +26,7 @@ generate
             // 例化 Xilinx BRAM IP（单端口，字节写使能）
         mrom u_BootROM (
             .clka(clk),            // input wire clka
-            .wea(1'b0),              // input wire [0 : 0] wea
             .addra(inst_addr[MROM_SIZE_WIDTH-1:ALIGN_WIDTH]),// input wire [9 : 0] addra
-            .dina(0),            // input wire [31 : 0] dina
             .douta(inst)          // output wire [31 : 0] douta
         );
         assign inst_o = rst_n ? inst : `INST_NOP;

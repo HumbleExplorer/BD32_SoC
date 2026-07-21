@@ -201,9 +201,6 @@ def get_test_list():
         basename = os.path.basename(f)
         if basename.startswith("rv32ui-p-") or basename.startswith("rv32um-p-"):
             test_list.append(basename)
-        elif not basename.startswith("rv32") and basename.endswith(".dat"):
-            # custom assembly tests
-            test_list.append(basename)
     return test_list
 
 

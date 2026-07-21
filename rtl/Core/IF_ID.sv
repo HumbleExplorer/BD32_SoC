@@ -23,9 +23,8 @@ module IF_ID #(
     output  logic   [ADDR_WIDTH-1:0]    inst_addr_o,
     output  logic   [DATA_WIDTH-1:0]    inst_o,
     output  logic                       predict_taken_o,
-    output  logic   [ADDR_WIDTH-1:0]    predict_target_o
+    output  logic   [ADDR_WIDTH-1:0]    predict_target_o,
 `ifdef DISPLAY_INST_WAVE
-    ,
     output  logic   [ADDR_WIDTH-1:0]    inst_addr_display_o,
 `endif
     output  logic                       valid_o

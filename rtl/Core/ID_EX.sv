@@ -22,6 +22,13 @@ module ID_EX #(
     input   logic   [DATA_WIDTH-1:0]        alu_op2_i,
     input   logic   [DATA_WIDTH-1:0]        imm_i,
     input   logic   [DATA_WIDTH-1:0]        reg_rs2_rdata_i,
+    // 停顿期间前递回写（Solution A）：当指令因 OITF RAW 停顿停留在 EX 时，
+    // 被依赖的长周期指令陆续退休，其 1 拍前递脉冲需锁存进操作数寄存器，
+    // 否则先退休指令（如 divu）的前递值会在后退休指令（如 remu）退休前丢失。
+    input   logic   [DATA_WIDTH-1:0]        alu_op1_fwd_i,
+    input   logic                           fwd_a_hit_i,
+    input   logic   [DATA_WIDTH-1:0]        alu_op2_fwd_i,
+    input   logic                           fwd_b_hit_i,
     input   logic   [ADDR_WIDTH-1:0]        jump_imm_i,
     input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4_i,
     input   logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr_i,
@@ -60,9 +67,8 @@ module ID_EX #(
     output  logic                           pop_ras_o,          // ret
     //to Data_Hazard
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr_o,
-    output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr_o
+    output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr_o,
 `ifdef DISPLAY_INST_WAVE
-    ,
     output  logic   [ADDR_WIDTH-1:0]        inst_addr_display_o,
 `endif
     input   logic   [2:0]                   inst_type_i,
@@ -134,6 +140,15 @@ always_ff @(posedge clk or negedge rst_n) begin
         reg_rs1_raddr_o <= #1 reg_rs1_raddr_i;
         reg_rs2_raddr_o <= #1 reg_rs2_raddr_i;
         inst_type_o     <= #1 inst_type_i;
+    end else begin
+        // stall 期间：控制字段保持不变，但若前递命中，则锁存前递值到操作数
+        // 寄存器。用于捕获 OITF 退休的 1 拍前递脉冲（先退休的长指令结果不会
+        // 因后续仍停顿而丢失）。
+        if (fwd_a_hit_i) alu_op1_o       <= #1 alu_op1_fwd_i;
+        if (fwd_b_hit_i) begin
+            alu_op2_o       <= #1 alu_op2_fwd_i;
+            reg_rs2_rdata_o <= #1 alu_op2_fwd_i;
+        end
     end
 end
 `ifdef DISPLAY_INST_WAVE

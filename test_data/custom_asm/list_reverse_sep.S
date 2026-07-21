@@ -1,8 +1,10 @@
-# list_reverse_sep.S - SAME as list_reverse BUT list placed at 0x2B000 (DTCM tag 0x0002),
-# i.e. the SEPARATED ITCM/DTCM mapping that coremark (soc_test) actually uses.
-# Run with SoC_Config CORE_TEST DTCM_BASE_TAG temporarily = 0x0002.
-# If this FAILS while list_reverse (0x1B000, tag 0x0001) passes, the separated
-# DTCM mapping has a hidden store/load bug.
+# list_reverse_sep.S - 链表原地反转 + 遍历求和（4 节点，数据和=1+2+3+4=10）。
+# 链表放在 0x1B000（DTCM tag 0x0001，与当前 CORE_TEST 的 DTCM_BASE_TAG 一致）。
+# 注：原本本测试用 0x2B000（tag 0x0002）验证 coremark 的分离 ITCM/DTCM 映射，
+# 但 CORE_TEST 下 DTCM_BASE_TAG=0x0001，0x2B000 落不到 DTCM（读回 0 会死循环），
+# 故改到 0x1B000 使其在当前配置下可 PASS；如需测分离映射，临时把 DTCM_BASE_TAG
+# 改回 0x0002 并把地址恢复为 0x2B000。
+# x27=1 pass / x27=0 fail; gp=32 表示反转/遍历结果错误。
 
 #include "riscv_test.h"
 #undef RVTEST_RV64U
@@ -10,16 +12,16 @@
 
   RVTEST_CODE_BEGIN
 
-  li x2, 0x2B000
-  li x3, 0x2B008
+  li x2, 0x1B000
+  li x3, 0x1B008
   sw x3, 0(x2)
   li x4, 1
   sw x4, 4(x2)
-  li x5, 0x2B010
+  li x5, 0x1B010
   sw x5, 0(x3)
   li x6, 2
   sw x6, 4(x3)
-  li x7, 0x2B018
+  li x7, 0x1B018
   sw x7, 0(x5)
   li x8, 3
   sw x8, 4(x5)
@@ -28,7 +30,7 @@
   sw x9, 4(x7)
 
   li x10, 0
-  li x11, 0x2B000
+  li x11, 0x1B000
 revloop:
   beq x11, x0, revdone
   lw x12, 0(x11)

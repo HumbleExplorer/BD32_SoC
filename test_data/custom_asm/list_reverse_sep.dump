@@ -1,5 +1,5 @@
 
-list_reverse_sep.elf:     file format elf32-littleriscv
+D:\Desktop\OpenClaw_Workspace\Working\test_data\custom_asm\list_reverse_sep.elf:     file format elf32-littleriscv
 
 
 Disassembly of section .text.init:
@@ -7,19 +7,19 @@ Disassembly of section .text.init:
 00010000 <_start>:
    10000:	00000d13          	li	s10,0
    10004:	00000d93          	li	s11,0
-   10008:	0002b137          	lui	sp,0x2b
-   1000c:	0002b1b7          	lui	gp,0x2b
-   10010:	00818193          	addi	gp,gp,8 # 2b008 <_end+0x19fc0>
-   10014:	00312023          	sw	gp,0(sp) # 2b000 <_end+0x19fb8>
+   10008:	0001b137          	lui	sp,0x1b
+   1000c:	0001b1b7          	lui	gp,0x1b
+   10010:	00818193          	addi	gp,gp,8 # 1b008 <_end+0x9fc0>
+   10014:	00312023          	sw	gp,0(sp) # 1b000 <_end+0x9fb8>
    10018:	00100213          	li	tp,1
    1001c:	00412223          	sw	tp,4(sp)
-   10020:	0002b2b7          	lui	t0,0x2b
-   10024:	01028293          	addi	t0,t0,16 # 2b010 <_end+0x19fc8>
+   10020:	0001b2b7          	lui	t0,0x1b
+   10024:	01028293          	addi	t0,t0,16 # 1b010 <_end+0x9fc8>
    10028:	0051a023          	sw	t0,0(gp)
    1002c:	00200313          	li	t1,2
    10030:	0061a223          	sw	t1,4(gp)
-   10034:	0002b3b7          	lui	t2,0x2b
-   10038:	01838393          	addi	t2,t2,24 # 2b018 <_end+0x19fd0>
+   10034:	0001b3b7          	lui	t2,0x1b
+   10038:	01838393          	addi	t2,t2,24 # 1b018 <_end+0x9fd0>
    1003c:	0072a023          	sw	t2,0(t0)
    10040:	00300413          	li	s0,3
    10044:	0082a223          	sw	s0,4(t0)
@@ -27,11 +27,11 @@ Disassembly of section .text.init:
    1004c:	00400493          	li	s1,4
    10050:	0093a223          	sw	s1,4(t2)
    10054:	00000513          	li	a0,0
-   10058:	0002b5b7          	lui	a1,0x2b
+   10058:	0001b5b7          	lui	a1,0x1b
 
 0001005c <revloop>:
    1005c:	00058c63          	beqz	a1,10074 <revdone>
-   10060:	0005a603          	lw	a2,0(a1) # 2b000 <_end+0x19fb8>
+   10060:	0005a603          	lw	a2,0(a1) # 1b000 <_end+0x9fb8>
    10064:	00a5a023          	sw	a0,0(a1)
    10068:	00058513          	mv	a0,a1
    1006c:	00060593          	mv	a1,a2

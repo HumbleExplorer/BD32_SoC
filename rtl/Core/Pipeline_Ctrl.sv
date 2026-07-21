@@ -97,10 +97,24 @@ logic [3:0] priority_id;
 logic [3:0] priority_ex;
 logic [3:0] min_priority;
 logic [1:0] sel_stage;
+logic [DATA_WIDTH-2:0] exception_code_if_m;
+logic [DATA_WIDTH-2:0] exception_code_id_m;
+logic [DATA_WIDTH-2:0] exception_code_ex_m;
 
-assign priority_if = exception_code_if[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd0, exception_code_if);
-assign priority_id = exception_code_id[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd1, exception_code_id);
-assign priority_ex = exception_code_ex[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd2, exception_code_ex);
+// 分支/跳转重定向有效（branch_jump_en）时，IF/ID 级是被冲刷的更年轻误取指令，
+// 其异常作废（否则误取到的非法字异常会抢在重定向之前触发陷阱，跳飞 PC）。
+// 做法：把 IF/ID 的异常码替换为全 1 的“无异常”哨兵值；EX 级（分支指令自身，
+// 如 jalr 地址未对齐 / 非法 CSR）保持不变，仍可正常触发陷阱。
+// 注意：exception_trap 必须沿用原有的 NAND（~(a&&b&&c)）结构，它在复位初期
+// inst_addr 尚为不定态 X 时是“复位安全”的（X&&.. 解析为不触发陷阱）；
+// 若改写成 OR 形式会改变 X 解析行为，导致复位瞬间误触发陷阱跳飞 PC。
+assign exception_code_if_m = branch_jump_en ? {DATA_WIDTH-1{1'b1}} : exception_code_if;
+assign exception_code_id_m = branch_jump_en ? {DATA_WIDTH-1{1'b1}} : exception_code_id;
+assign exception_code_ex_m = exception_code_ex;
+
+assign priority_if = exception_code_if_m[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd0, exception_code_if_m);
+assign priority_id = exception_code_id_m[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd1, exception_code_id_m);
+assign priority_ex = exception_code_ex_m[DATA_WIDTH-2] ? {4{1'b1}} : get_priority(2'd2, exception_code_ex_m);
 
 always_comb begin
     min_priority = 4'd15;
@@ -122,17 +136,17 @@ end
 always_comb begin
     case(sel_stage)
         2'd2: begin // EX阶段
-            exception_code = exception_code_ex;
+            exception_code = exception_code_ex_m;
             exception_inst_addr = inst_addr_ex;
             exception_val = exception_val_ex;
         end
         2'd1: begin // ID阶段
-            exception_code = exception_code_id;
+            exception_code = exception_code_id_m;
             exception_inst_addr = inst_addr_id;
             exception_val = exception_val_id;
         end
         2'd0: begin // IF阶段
-            exception_code = exception_code_if;
+            exception_code = exception_code_if_m;
             exception_inst_addr = inst_addr_if;
             exception_val = exception_val_if;
         end
@@ -143,7 +157,7 @@ always_comb begin
         end
     endcase
 end
-assign exception_trap = ~(exception_code_if[DATA_WIDTH-2] && exception_code_id[DATA_WIDTH-2] && exception_code_ex[DATA_WIDTH-2]);
+assign exception_trap = ~(exception_code_if_m[DATA_WIDTH-2] && exception_code_id_m[DATA_WIDTH-2] && exception_code_ex_m[DATA_WIDTH-2]);
 assign oitf_flush     = exception_trap;
 
 always_comb begin

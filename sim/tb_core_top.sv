@@ -51,7 +51,7 @@ localparam CLK_PERIOD = 10;
 // parameter    ITCM_FILE    =  "rv32um-p-div.dat";
 // parameter    ITCM_FILE    =  "rv32um-p-divu.dat";
 // parameter    ITCM_FILE    =  "rv32um-p-rem.dat";
-// parameter    ITCM_FILE    =  "rv32um-p-remu.dat";
+parameter    ITCM_FILE    =  "rv32um-p-remu.dat";
 
 // parameter    ITCM_FILE    =  "rv32ui-p-sb.dat";
 // parameter    ITCM_FILE    =  "rv32ui-p-sh.dat";
@@ -65,7 +65,7 @@ localparam CLK_PERIOD = 10;
 // parameter    ITCM_FILE    =  "rv32ui-p-ma_data.dat";
 // parameter    ITCM_FILE    =  "rv32ui-p-fence_i.dat";
 // parameter    ITCM_FILE    =  "rv32ui-p-simple.dat";
-parameter    ITCM_FILE    =  "m_extension_stress.dat";
+// parameter    ITCM_FILE    =  "m_extension_stress.dat";
 
  
 logic   clk;

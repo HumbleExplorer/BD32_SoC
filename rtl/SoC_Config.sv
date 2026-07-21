@@ -28,12 +28,13 @@
 // `define TIMER_SIM
 
 `define DIRECT_LOAD  // 注释掉则走 UART 下载
+// `define CUSTOM_ASM
 // `define XILINX
 // `define SIMULATION
 
 `ifdef DIRECT_LOAD
     `ifdef CORE_TEST
-        `define CUSTOM_ASM
+        
         `ifdef CUSTOM_ASM
             `define PATH "../../test_data/custom_asm/"
         `else
