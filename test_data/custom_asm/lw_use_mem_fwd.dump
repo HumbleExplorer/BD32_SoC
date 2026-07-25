@@ -1,0 +1,63 @@
+
+D:\Desktop\OpenClaw_Workspace\Working\test_data\custom_asm\lw_use_mem_fwd.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
+   10008:	000192b7          	lui	t0,0x19
+   1000c:	12345337          	lui	t1,0x12345
+   10010:	67830313          	addi	t1,t1,1656 # 12345678 <_end+0x12334630>
+   10014:	aaaa0537          	lui	a0,0xaaaa0
+   10018:	00150513          	addi	a0,a0,1 # aaaa0001 <_end+0xaaa8efb9>
+   1001c:	aaaa05b7          	lui	a1,0xaaaa0
+   10020:	00258593          	addi	a1,a1,2 # aaaa0002 <_end+0xaaa8efba>
+   10024:	aaaa0637          	lui	a2,0xaaaa0
+   10028:	00360613          	addi	a2,a2,3 # aaaa0003 <_end+0xaaa8efbb>
+   1002c:	0062a023          	sw	t1,0(t0) # 19000 <_end+0x7fb8>
+   10030:	0002a503          	lw	a0,0(t0)
+   10034:	000505b3          	add	a1,a0,zero
+   10038:	00a00633          	add	a2,zero,a0
+   1003c:	123453b7          	lui	t2,0x12345
+   10040:	67838393          	addi	t2,t2,1656 # 12345678 <_end+0x12334630>
+   10044:	04759a63          	bne	a1,t2,10098 <fail>
+   10048:	04761863          	bne	a2,t2,10098 <fail>
+   1004c:	bbbb06b7          	lui	a3,0xbbbb0
+   10050:	00468693          	addi	a3,a3,4 # bbbb0004 <_end+0xbbb9efbc>
+   10054:	0002a683          	lw	a3,0(t0)
+   10058:	00868713          	addi	a4,a3,8
+   1005c:	12345e37          	lui	t3,0x12345
+   10060:	680e0e13          	addi	t3,t3,1664 # 12345680 <_end+0x12334638>
+   10064:	03c71a63          	bne	a4,t3,10098 <fail>
+   10068:	00019eb7          	lui	t4,0x19
+   1006c:	004e8e93          	addi	t4,t4,4 # 19004 <_end+0x7fbc>
+   10070:	00500f13          	li	t5,5
+   10074:	01eea023          	sw	t5,0(t4)
+   10078:	cccc07b7          	lui	a5,0xcccc0
+   1007c:	00578793          	addi	a5,a5,5 # cccc0005 <_end+0xcccaefbd>
+   10080:	000ea783          	lw	a5,0(t4)
+   10084:	41e78833          	sub	a6,a5,t5
+   10088:	00081863          	bnez	a6,10098 <fail>
+   1008c:	00100d93          	li	s11,1
+   10090:	00100d13          	li	s10,1
+
+00010094 <p>:
+   10094:	0000006f          	j	10094 <p>
+
+00010098 <fail>:
+   10098:	00000d93          	li	s11,0
+   1009c:	00100d13          	li	s10,1
+
+000100a0 <fl>:
+   100a0:	0000006f          	j	100a0 <fl>
+   100a4:	00000013          	nop
+   100a8:	00000013          	nop
+   100ac:	00000013          	nop
+
+000100b0 <begin_signature>:
+   100b0:	00000013          	nop
+   100b4:	00000013          	nop
+   100b8:	00000013          	nop
+   100bc:	00000013          	nop

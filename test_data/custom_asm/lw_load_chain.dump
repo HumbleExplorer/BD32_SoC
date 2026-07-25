@@ -1,0 +1,61 @@
+
+D:\Desktop\OpenClaw_Workspace\Working\test_data\custom_asm\lw_load_chain.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
+   10008:	000192b7          	lui	t0,0x19
+   1000c:	00019337          	lui	t1,0x19
+   10010:	00430313          	addi	t1,t1,4 # 19004 <_end+0x7fbc>
+   10014:	0062a023          	sw	t1,0(t0) # 19000 <_end+0x7fb8>
+   10018:	000053b7          	lui	t2,0x5
+   1001c:	67838393          	addi	t2,t2,1656 # 5678 <_start-0xa988>
+   10020:	00732023          	sw	t2,0(t1)
+   10024:	0000be37          	lui	t3,0xb
+   10028:	aaae0e13          	addi	t3,t3,-1366 # aaaa <_start-0x5556>
+   1002c:	0002ae03          	lw	t3,0(t0)
+   10030:	000e1e83          	lh	t4,0(t3)
+   10034:	00005f37          	lui	t5,0x5
+   10038:	678f0f13          	addi	t5,t5,1656 # 5678 <_start-0xa988>
+   1003c:	07ee9c63          	bne	t4,t5,100b4 <fail>
+   10040:	000192b7          	lui	t0,0x19
+   10044:	01028293          	addi	t0,t0,16 # 19010 <_end+0x7fc8>
+   10048:	00019337          	lui	t1,0x19
+   1004c:	0062a023          	sw	t1,0(t0)
+   10050:	0000c437          	lui	s0,0xc
+   10054:	bbb40413          	addi	s0,s0,-1093 # bbbb <_start-0x4445>
+   10058:	0002a403          	lw	s0,0(t0)
+   1005c:	00042483          	lw	s1,0(s0)
+   10060:	00049903          	lh	s2,0(s1)
+   10064:	00005f37          	lui	t5,0x5
+   10068:	678f0f13          	addi	t5,t5,1656 # 5678 <_start-0xa988>
+   1006c:	05e91463          	bne	s2,t5,100b4 <fail>
+   10070:	000192b7          	lui	t0,0x19
+   10074:	02028293          	addi	t0,t0,32 # 19020 <_end+0x7fd8>
+   10078:	00019337          	lui	t1,0x19
+   1007c:	02430313          	addi	t1,t1,36 # 19024 <_end+0x7fdc>
+   10080:	0062a023          	sw	t1,0(t0)
+   10084:	10000393          	li	t2,256
+   10088:	00732023          	sw	t2,0(t1)
+   1008c:	0000d537          	lui	a0,0xd
+   10090:	ccc50513          	addi	a0,a0,-820 # cccc <_start-0x3334>
+   10094:	0002a503          	lw	a0,0(t0)
+   10098:	00052583          	lw	a1,0(a0)
+   1009c:	00b58633          	add	a2,a1,a1
+   100a0:	20000f13          	li	t5,512
+   100a4:	01e61863          	bne	a2,t5,100b4 <fail>
+   100a8:	00100d93          	li	s11,1
+   100ac:	00100d13          	li	s10,1
+
+000100b0 <p>:
+   100b0:	0000006f          	j	100b0 <p>
+
+000100b4 <fail>:
+   100b4:	00000d93          	li	s11,0
+   100b8:	00100d13          	li	s10,1
+
+000100bc <fl>:
+   100bc:	0000006f          	j	100bc <fl>

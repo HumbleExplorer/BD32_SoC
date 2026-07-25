@@ -27,10 +27,19 @@
 // `define GPIO_SIM
 // `define TIMER_SIM
 
+// 复位后重新下载测试：模拟「下载程序→复位→再次下载」场景
+// 启用后自动关闭 DIRECT_LOAD，走 UART 下载路径，使用 blink.uartbin
+// `define RESET_REDOWNLOAD_TEST
+
 `define DIRECT_LOAD  // 注释掉则走 UART 下载
 // `define CUSTOM_ASM
 // `define XILINX
 // `define SIMULATION
+`define RESET_REDOWNLOAD_TEST
+// RESET_REDOWNLOAD_TEST 需要 UART 下载路径，强制关闭 DIRECT_LOAD
+`ifdef RESET_REDOWNLOAD_TEST
+    `undef DIRECT_LOAD
+`endif
 
 `ifdef DIRECT_LOAD
     `ifdef CORE_TEST
@@ -43,12 +52,17 @@
     `else
         `define PATH "../../test_data/soc/c/"
     `endif
-    `define ITCM_FILE "coremark_itcm.mem"
-    `define DTCM_FILE "coremark_dtcm.mem"
+    `define ITCM_FILE "coremark_o2_itcm.mem"
+    `define DTCM_FILE "coremark_o2_dtcm.mem"
 `else
     `define PATH "../../test_data/soc/c/"
-    `define ITCM_FILE "breathing.uartbin"
-    `define DTCM_FILE "breathing.uartbin"
+    `ifdef RESET_REDOWNLOAD_TEST
+        `define ITCM_FILE "blink.uartbin"
+        `define DTCM_FILE "blink.uartbin"
+    `else
+        `define ITCM_FILE "breathing.uartbin"
+        `define DTCM_FILE "breathing.uartbin"
+    `endif
 `endif
 
 `ifdef XILINX

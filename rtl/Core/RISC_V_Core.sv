@@ -320,7 +320,6 @@ Data_Hazard_Forward #(
     .reg_rd_wdata_mem    	(reg_rd_wdata_mem   ),
     .reg_rd_wdata_wb     	(reg_rd_wdata_wb    ),
     .bus_sel                (bus_sel            ),
-    .bus_ready              (bus_ready          ),
     .load_use_flag      	(load_use_flag      ),
     .alu_op1_o          	(alu_op1_forward    ),
     .alu_op2_o          	(alu_op2_forward    ),

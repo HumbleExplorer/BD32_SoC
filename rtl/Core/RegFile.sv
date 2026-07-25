@@ -31,10 +31,10 @@ always_comb begin
         reg_rs1_rdata = 'h0;
     else if(reg_rs1_raddr == 5'h0)
         reg_rs1_rdata = 'h0;
+    else if(reg_rd_wen2 && (reg_rs1_raddr == reg_rd_waddr2))//旁路 Port2（OITF退休优先）
+        reg_rs1_rdata = reg_rd_wdata2;
     else if(reg_rd_wen && (reg_rs1_raddr == reg_rd_waddr))//旁路 Port1
         reg_rs1_rdata = reg_rd_wdata;
-    else if(reg_rd_wen2 && (reg_rs1_raddr == reg_rd_waddr2))//旁路 Port2
-        reg_rs1_rdata = reg_rd_wdata2;
     else
         reg_rs1_rdata = regs[reg_rs1_raddr];
 end
@@ -44,10 +44,10 @@ always_comb begin
         reg_rs2_rdata = 'h0;
     else if(reg_rs2_raddr == 5'h0)
         reg_rs2_rdata = 'h0;
+    else if(reg_rd_wen2 && (reg_rs2_raddr == reg_rd_waddr2))//旁路 Port2（OITF退休优先）
+        reg_rs2_rdata = reg_rd_wdata2;
     else if(reg_rd_wen && (reg_rs2_raddr == reg_rd_waddr))//旁路 Port1
         reg_rs2_rdata = reg_rd_wdata;
-    else if(reg_rd_wen2 && (reg_rs2_raddr == reg_rd_waddr2))//旁路 Port2
-        reg_rs2_rdata = reg_rd_wdata2;
     else
         reg_rs2_rdata = regs[reg_rs2_raddr];
 end
@@ -59,11 +59,17 @@ always_ff @(posedge clk or negedge rst_n) begin
         end
     end
     else begin
-        // Port2 先写（OITF 退休），Port1 后写（WB），同地址时 Port1 覆盖
+        // Port2（OITF 退休）优先：同地址时 Port2 覆盖 Port1。
+        // 修复：oitf_stall 期间 MEM_WB 被保持，旧指令（如 li）持续驱动 Port1；
+        // 当 OITF 退休写回同寄存器时（如 divu 结果），Port1 的陈旧值会覆盖
+        // Port2 的正确值。OITF 的 WAW 检查保证正常情况不会出现"更年轻的
+        // 指令在 Port1 与 OITF 退休的 Port2 同拍写同地址"，因此同地址时
+        // Port2 一定是程序序更晚的指令，应优先。
+        if(reg_rd_wen && (reg_rd_waddr != 5'h0)
+           && !(reg_rd_wen2 && (reg_rd_waddr == reg_rd_waddr2)))
+            regs[reg_rd_waddr] <= #1 reg_rd_wdata;
         if(reg_rd_wen2 && (reg_rd_waddr2 != 5'h0))
             regs[reg_rd_waddr2] <= #1 reg_rd_wdata2;
-        if(reg_rd_wen && (reg_rd_waddr != 5'h0))
-            regs[reg_rd_waddr] <= #1 reg_rd_wdata;
     end
 end
 endmodule

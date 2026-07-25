@@ -51,7 +51,7 @@ localparam CLK_PERIOD = 10;
 // parameter    ITCM_FILE    =  "rv32um-p-div.dat";
 // parameter    ITCM_FILE    =  "rv32um-p-divu.dat";
 // parameter    ITCM_FILE    =  "rv32um-p-rem.dat";
-parameter    ITCM_FILE    =  "rv32um-p-remu.dat";
+// parameter    ITCM_FILE    =  "rv32um-p-remu.dat";
 
 // parameter    ITCM_FILE    =  "rv32ui-p-sb.dat";
 // parameter    ITCM_FILE    =  "rv32ui-p-sh.dat";
@@ -66,7 +66,8 @@ parameter    ITCM_FILE    =  "rv32um-p-remu.dat";
 // parameter    ITCM_FILE    =  "rv32ui-p-fence_i.dat";
 // parameter    ITCM_FILE    =  "rv32ui-p-simple.dat";
 // parameter    ITCM_FILE    =  "m_extension_stress.dat";
-
+parameter    ITCM_FILE    =  "o3_pipeline_stress.dat";
+parameter    DTCM_FILE    =  "o3_pipeline_stress.dat";
  
 logic   clk;
 logic   rst_n;
@@ -113,14 +114,56 @@ initial begin
     software_int = 1'b0;
     timer_int = 1'b0;
     mtime_shadow = 'h0;
+`ifndef BUS_LATENCY
     bus_ready       = 1'b1;
     bus_rdata       = 'h0;
     bus_resp        = 'h0;
     bus_tran_done   = 'h0;
+`endif
     #50;
     rst_n   = 1'b1;
     #30;
 end
+
+`ifdef BUS_LATENCY
+// ============================================================================
+// Bus latency model: simulates AXI slave with wait states.
+// When bus_transfer asserts, bus_ready deasserts for BUS_WAIT_CYCLES,
+// then bus_tran_done pulses for 1 cycle and bus_ready reasserts.
+// This reproduces the ~bus_ready → id_ex_flush bug in Pipeline_Ctrl.
+// ============================================================================
+localparam BUS_WAIT_CYCLES = 3;
+logic [3:0] bus_wait_cnt;
+logic       bus_busy_q;
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        bus_wait_cnt  <= '0;
+        bus_busy_q    <= 1'b0;
+        bus_ready     <= 1'b1;
+        bus_tran_done <= 1'b0;
+        bus_rdata     <= 32'hCAFE_BABE;
+        bus_resp      <= 2'b00;
+    end else begin
+        bus_tran_done <= 1'b0;  // default: single-cycle pulse
+        if (bus_transfer && !bus_busy_q) begin
+            // New bus access detected: start wait period
+            bus_busy_q    <= 1'b1;
+            bus_ready     <= 1'b0;
+            bus_wait_cnt  <= BUS_WAIT_CYCLES;
+        end else if (bus_busy_q) begin
+            if (bus_wait_cnt == 1) begin
+                // Wait complete: signal done, reassert ready
+                bus_tran_done <= 1'b1;
+                bus_ready     <= 1'b1;
+                bus_busy_q    <= 1'b0;
+            end else begin
+                bus_wait_cnt <= bus_wait_cnt - 1;
+            end
+        end
+    end
+end
+`endif
 initial  begin
     forever begin
         test = x3;
@@ -160,7 +203,7 @@ end
 
 RISC_V_Core #(
     .ITCM_FILE      (ITCM_FILE      ),
-    .DTCM_FILE      (ITCM_FILE      ),
+    .DTCM_FILE      (DTCM_FILE      ),
     .ADDR_WIDTH     (ADDR_WIDTH     ),
     .DATA_WIDTH     (DATA_WIDTH     ),
     .REGFILE_NUM    (REGFILE_NUM    ),

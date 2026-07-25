@@ -230,6 +230,129 @@ initial begin
     $display("============================================================\n");
 
 end
+`ifdef RESET_REDOWNLOAD_TEST
+// =====================================================================
+// 复位后重新下载测试（RESET_REDOWNLOAD_TEST）
+// =====================================================================
+// 测试流程：
+//   Phase 1: 正常 UART 下载 hello.uartbin，程序运行
+//   Phase 2: 按下复位（rst_n=0），保持一段时间后释放
+//   Phase 3: MROM 应重新进入 download_mode，TB 再次发送程序
+//   判定：若 Phase 3 中 download_en 未置位 → MROM 未进入下载模式 → BUG 复现
+// =====================================================================
+localparam RESET_HOLD_NS   = 1000;      // 复位保持时间 1us
+localparam RUN_BEFORE_RST  = 5_000_000; // 复位前程序运行时间 5ms
+localparam DOWNLOAD_TIMEOUT = 15_000_000; // 第二次下载等待超时 2ms
+
+integer reset_phase;  // 0=第一次启动, 1=复位后第二次启动
+
+initial begin
+    reset_phase = 0;
+    @(posedge rst_n);
+    #50;
+
+    // === Phase 1: 第一次下载 ===
+    $display("\n============================================================");
+    $display("  [RESET_REDOWNLOAD] Phase 1: First UART Download");
+    $display("============================================================");
+    wait(tb_soc_top.u_SoC_top.u_apb_uart.download_en);
+    $display("[%0t] download_en asserted, starting download...", $time);
+    #50;
+    uart_download_program(ITCM_FULL_PATH);
+
+    // 等下载完成
+    wait(download_done);
+    $display("[%0t] First download DONE. Program running in ITCM...", $time);
+    #(RUN_BEFORE_RST);
+
+    // === Phase 2: 复位 ===
+    $display("\n============================================================");
+    $display("  [RESET_REDOWNLOAD] Phase 2: Asserting RESET");
+    $display("============================================================");
+    $display("[%0t] rst_n = 0 (reset asserted)", $time);
+    reset_phase = 1;
+    rst_n = 1'b0;
+    #(RESET_HOLD_NS);
+    rst_n = 1'b1;
+    $display("[%0t] rst_n = 1 (reset released)", $time);
+    #50;
+
+    // === Phase 3: 等待第二次下载 ===
+    $display("\n============================================================");
+    $display("  [RESET_REDOWNLOAD] Phase 3: Waiting for 2nd download_en");
+    $display("============================================================");
+
+    fork
+        begin : wait_download
+            wait(tb_soc_top.u_SoC_top.u_apb_uart.download_en);
+            $display("[%0t] SUCCESS: download_en asserted after reset!", $time);
+            $display("  MROM correctly entered download_mode.");
+        end
+        begin : timeout_guard
+            #(DOWNLOAD_TIMEOUT);
+            $display("\n[%0t] *** FAILURE: TIMEOUT ***", $time);
+            $display("  download_en NOT asserted within %0d ns after reset.", DOWNLOAD_TIMEOUT);
+            $display("  MROM failed to enter download_mode after soft reset.");
+            $display("  This reproduces the hardware bug.");
+            $display("");
+            $display("  Debug info at timeout:");
+            $display("    PC (inst_addr_if) = 0x%08x", tb_soc_top.u_SoC_top.u_RISC_V_Core.inst_addr_if);
+            $display("    gpio_io[0]     = %b", gpio_io[0]);
+            $display("    download_en(tb)= %b", download_en);
+            $display("    uart dl state  = %0d", tb_soc_top.u_SoC_top.u_apb_uart.u_uart_download.current_state);
+            $display("    OITF empty     = %b", tb_soc_top.u_SoC_top.u_RISC_V_Core.u_OITF.empty);
+            $finish;
+        end
+    join_any
+    disable fork;
+
+    // 第二次下载
+    #50;
+    uart_download_program(ITCM_FULL_PATH);
+    wait(download_done);
+    $display("\n[%0t] Second download DONE. === TEST PASSED ===", $time);
+    #(RUN_BEFORE_RST);
+    $finish;
+end
+
+// --- 复位后 MROM 执行跟踪 ---
+// 记录复位后 MROM 的每条指令 PC，帮助定位卡死/跑飞位置
+integer mrom_trace_fd;
+logic   prev_rst_n;
+logic   in_mrom_range;
+
+initial begin
+    mrom_trace_fd = $fopen("mrom_trace_after_reset.log", "w");
+    $fwrite(mrom_trace_fd, "# PC trace after 2nd reset (reset_phase==1)\n");
+end
+
+always @(posedge clk) begin
+    prev_rst_n <= #1 rst_n;
+    // 复位释放后，跟踪 MROM 地址范围内的 PC
+    if (reset_phase == 1 && rst_n) begin
+        in_mrom_range = (tb_soc_top.u_SoC_top.u_RISC_V_Core.inst_addr_if < 32'h0000_1000);
+        if (in_mrom_range && tb_soc_top.u_SoC_top.u_RISC_V_Core.reg_rd_wen) begin
+            $fwrite(mrom_trace_fd, "[%0t] PC=0x%08x  rd=x%0d  wdata=0x%08x\n",
+                $time,
+                tb_soc_top.u_SoC_top.u_RISC_V_Core.inst_addr_wb,
+                tb_soc_top.u_SoC_top.u_RISC_V_Core.reg_rd_waddr,
+                tb_soc_top.u_SoC_top.u_RISC_V_Core.reg_rd_wdata);
+        end
+    end
+end
+
+// --- 关键信号实时打印（复位后） ---
+always @(posedge clk) begin
+    if (reset_phase == 1 && rst_n && ~prev_rst_n) begin
+        // 复位刚释放的第一拍
+        $display("[%0t] Reset released. Monitoring MROM boot...", $time);
+    end
+end
+
+`else
+// =====================================================================
+// 普通模式：单次 UART 下载（原始行为）
+// =====================================================================
 initial  begin
     @(posedge rst_n);
     #50;
@@ -247,6 +370,7 @@ initial  begin
 `endif
     #200;
 end
+`endif
 
 // =====================================================================
 // UART Echo 测试：模拟用户输入，验证回显
@@ -331,6 +455,25 @@ SoC_top #(
     .gpio_io     	(gpio_io    ),
     .timer_channel_io   (timer_channel_io )
 );
+
+// ------------------------ Write-back Trace (debug) ------------------------
+// 记录所有"逻辑写回"：Port1(WB) + Port2(OITF retire)。
+// forwarding 只是提前使用，最终值仍会写回 RegFile，故这里能捕获所有最终写回。
+// 格式：PC rd data（带 PC 信息，便于定位出错指令）
+`ifdef WB_TRACE
+integer wb_fd;
+initial begin
+    wb_fd = $fopen("wb_trace.log", "w");
+end
+always @(posedge clk) begin
+    if (u_SoC_top.u_RISC_V_Core.reg_rd_wen && (u_SoC_top.u_RISC_V_Core.reg_rd_waddr != 0))
+        $fwrite(wb_fd, "%08x %2d %08x\n", u_SoC_top.u_RISC_V_Core.inst_addr_wb, 
+                u_SoC_top.u_RISC_V_Core.reg_rd_waddr, u_SoC_top.u_RISC_V_Core.reg_rd_wdata);
+    if (u_SoC_top.u_RISC_V_Core.oitf_retire_valid && u_SoC_top.u_RISC_V_Core.oitf_retire_rd_wen && (u_SoC_top.u_RISC_V_Core.oitf_retire_rd_addr != 0))
+        $fwrite(wb_fd, "%08x %2d %08x\n", u_SoC_top.u_RISC_V_Core.inst_addr_wb, 
+                u_SoC_top.u_RISC_V_Core.oitf_retire_rd_addr, u_SoC_top.u_RISC_V_Core.oitf_retire_rd_data);
+end
+`endif
 
 
 endmodule

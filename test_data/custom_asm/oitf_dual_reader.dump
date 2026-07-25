@@ -1,0 +1,79 @@
+
+D:\Desktop\OpenClaw_Workspace\Working\test_data\custom_asm\oitf_dual_reader.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
+   10008:	00000193          	li	gp,0
+   1000c:	7ffff7b7          	lui	a5,0x7ffff
+   10010:	06400593          	li	a1,100
+   10014:	0c800613          	li	a2,200
+   10018:	02c587b3          	mul	a5,a1,a2
+   1001c:	4047d813          	srai	a6,a5,0x4
+   10020:	4087d893          	srai	a7,a5,0x8
+   10024:	4e200693          	li	a3,1250
+   10028:	08d81e63          	bne	a6,a3,100c4 <fail>
+   1002c:	04e00713          	li	a4,78
+   10030:	08e89a63          	bne	a7,a4,100c4 <fail>
+   10034:	123457b7          	lui	a5,0x12345
+   10038:	00700593          	li	a1,7
+   1003c:	00900613          	li	a2,9
+   10040:	02c587b3          	mul	a5,a1,a2
+   10044:	4017d813          	srai	a6,a5,0x1
+   10048:	4037d893          	srai	a7,a5,0x3
+   1004c:	01f00693          	li	a3,31
+   10050:	06d81a63          	bne	a6,a3,100c4 <fail>
+   10054:	00700713          	li	a4,7
+   10058:	06e89663          	bne	a7,a4,100c4 <fail>
+   1005c:	abcde7b7          	lui	a5,0xabcde
+   10060:	00b00593          	li	a1,11
+   10064:	00d00613          	li	a2,13
+   10068:	02c587b3          	mul	a5,a1,a2
+   1006c:	4007d813          	srai	a6,a5,0x0
+   10070:	4017d893          	srai	a7,a5,0x1
+   10074:	4027d293          	srai	t0,a5,0x2
+   10078:	08f00693          	li	a3,143
+   1007c:	04d81463          	bne	a6,a3,100c4 <fail>
+   10080:	04700713          	li	a4,71
+   10084:	04e89063          	bne	a7,a4,100c4 <fail>
+   10088:	02300793          	li	a5,35
+   1008c:	02f29c63          	bne	t0,a5,100c4 <fail>
+   10090:	555557b7          	lui	a5,0x55555
+   10094:	03200593          	li	a1,50
+   10098:	00300613          	li	a2,3
+   1009c:	02c587b3          	mul	a5,a1,a2
+   100a0:	00f78833          	add	a6,a5,a5
+   100a4:	40b788b3          	sub	a7,a5,a1
+   100a8:	12c00693          	li	a3,300
+   100ac:	00d81c63          	bne	a6,a3,100c4 <fail>
+   100b0:	06400713          	li	a4,100
+   100b4:	00e89863          	bne	a7,a4,100c4 <fail>
+   100b8:	00100d93          	li	s11,1
+   100bc:	00100d13          	li	s10,1
+
+000100c0 <p>:
+   100c0:	0000006f          	j	100c0 <p>
+
+000100c4 <fail>:
+   100c4:	00000d93          	li	s11,0
+   100c8:	00100d13          	li	s10,1
+
+000100cc <fl>:
+   100cc:	0000006f          	j	100cc <fl>
+
+000100d0 <begin_signature>:
+   100d0:	00000013          	nop
+   100d4:	00000013          	nop
+   100d8:	00000013          	nop
+   100dc:	00000013          	nop
+   100e0:	00000013          	nop
+   100e4:	00000013          	nop
+   100e8:	00000013          	nop
+   100ec:	00000013          	nop
+   100f0:	00000013          	nop
+   100f4:	00000013          	nop
+   100f8:	00000013          	nop
+   100fc:	00000013          	nop

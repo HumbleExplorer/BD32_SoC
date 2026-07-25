@@ -1,0 +1,191 @@
+
+D:\Desktop\OpenClaw_Workspace\Working\test_data\custom_asm\div_rem_mul_oitf.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
+   10008:	00100193          	li	gp,1
+   1000c:	06400893          	li	a7,100
+   10010:	00700613          	li	a2,7
+   10014:	abcd1837          	lui	a6,0xabcd1
+   10018:	23480813          	addi	a6,a6,564 # abcd1234 <_end+0xabcc01ec>
+   1001c:	567807b7          	lui	a5,0x56780
+   10020:	02c8d533          	divu	a0,a7,a2
+   10024:	01081693          	slli	a3,a6,0x10
+   10028:	0106d693          	srli	a3,a3,0x10
+   1002c:	0107d713          	srli	a4,a5,0x10
+   10030:	02c8f8b3          	remu	a7,a7,a2
+   10034:	02a685b3          	mul	a1,a3,a0
+   10038:	00000013          	nop
+   1003c:	00000013          	nop
+   10040:	00000013          	nop
+   10044:	00000013          	nop
+   10048:	00000013          	nop
+   1004c:	00000013          	nop
+   10050:	00000013          	nop
+   10054:	00000013          	nop
+   10058:	00000013          	nop
+   1005c:	00000013          	nop
+   10060:	00e00e13          	li	t3,14
+   10064:	23c51e63          	bne	a0,t3,102a0 <fail>
+   10068:	00200193          	li	gp,2
+   1006c:	00200e13          	li	t3,2
+   10070:	23c89863          	bne	a7,t3,102a0 <fail>
+   10074:	00300193          	li	gp,3
+   10078:	00010e37          	lui	t3,0x10
+   1007c:	e18e0e13          	addi	t3,t3,-488 # fe18 <_start-0x1e8>
+   10080:	23c59063          	bne	a1,t3,102a0 <fail>
+   10084:	00400193          	li	gp,4
+   10088:	00001e37          	lui	t3,0x1
+   1008c:	234e0e13          	addi	t3,t3,564 # 1234 <_start-0xedcc>
+   10090:	21c69863          	bne	a3,t3,102a0 <fail>
+   10094:	0c800713          	li	a4,200
+   10098:	00d00613          	li	a2,13
+   1009c:	dead57b7          	lui	a5,0xdead5
+   100a0:	67878793          	addi	a5,a5,1656 # dead5678 <_end+0xdeac4630>
+   100a4:	00500693          	li	a3,5
+   100a8:	02c755b3          	divu	a1,a4,a2
+   100ac:	01079793          	slli	a5,a5,0x10
+   100b0:	0107d793          	srli	a5,a5,0x10
+   100b4:	02c77733          	remu	a4,a4,a2
+   100b8:	02b686b3          	mul	a3,a3,a1
+   100bc:	00000013          	nop
+   100c0:	00000013          	nop
+   100c4:	00000013          	nop
+   100c8:	00000013          	nop
+   100cc:	00000013          	nop
+   100d0:	00000013          	nop
+   100d4:	00000013          	nop
+   100d8:	00000013          	nop
+   100dc:	00000013          	nop
+   100e0:	00000013          	nop
+   100e4:	00f00e13          	li	t3,15
+   100e8:	1bc59c63          	bne	a1,t3,102a0 <fail>
+   100ec:	00500e13          	li	t3,5
+   100f0:	1bc71863          	bne	a4,t3,102a0 <fail>
+   100f4:	04b00e13          	li	t3,75
+   100f8:	1bc69463          	bne	a3,t3,102a0 <fail>
+   100fc:	ffff08b7          	lui	a7,0xffff0
+   10100:	00010637          	lui	a2,0x10
+   10104:	00160613          	addi	a2,a2,1 # 10001 <_start+0x1>
+   10108:	00300813          	li	a6,3
+   1010c:	000f48b7          	lui	a7,0xf4
+   10110:	24088893          	addi	a7,a7,576 # f4240 <_end+0xe31f8>
+   10114:	15100613          	li	a2,337
+   10118:	00700813          	li	a6,7
+   1011c:	02c8d533          	divu	a0,a7,a2
+   10120:	00080693          	mv	a3,a6
+   10124:	02c8f8b3          	remu	a7,a7,a2
+   10128:	02a685b3          	mul	a1,a3,a0
+   1012c:	00000013          	nop
+   10130:	00000013          	nop
+   10134:	00000013          	nop
+   10138:	00000013          	nop
+   1013c:	00000013          	nop
+   10140:	00000013          	nop
+   10144:	00000013          	nop
+   10148:	00000013          	nop
+   1014c:	00000013          	nop
+   10150:	00000013          	nop
+   10154:	00001e37          	lui	t3,0x1
+   10158:	b97e0e13          	addi	t3,t3,-1129 # b97 <_start-0xf469>
+   1015c:	15c51263          	bne	a0,t3,102a0 <fail>
+   10160:	07900e13          	li	t3,121
+   10164:	13c89e63          	bne	a7,t3,102a0 <fail>
+   10168:	00005e37          	lui	t3,0x5
+   1016c:	121e0e13          	addi	t3,t3,289 # 5121 <_start-0xaedf>
+   10170:	13c59863          	bne	a1,t3,102a0 <fail>
+   10174:	3e700893          	li	a7,999
+   10178:	37800713          	li	a4,888
+   1017c:	01100613          	li	a2,17
+   10180:	0000b837          	lui	a6,0xb
+   10184:	bcd80813          	addi	a6,a6,-1075 # abcd <_start-0x5433>
+   10188:	123407b7          	lui	a5,0x12340
+   1018c:	02c8d533          	divu	a0,a7,a2
+   10190:	01081693          	slli	a3,a6,0x10
+   10194:	0106d693          	srli	a3,a3,0x10
+   10198:	0107d713          	srli	a4,a5,0x10
+   1019c:	02c8f8b3          	remu	a7,a7,a2
+   101a0:	02a685b3          	mul	a1,a3,a0
+   101a4:	00000013          	nop
+   101a8:	00000013          	nop
+   101ac:	00000013          	nop
+   101b0:	00000013          	nop
+   101b4:	00000013          	nop
+   101b8:	00000013          	nop
+   101bc:	00000013          	nop
+   101c0:	00000013          	nop
+   101c4:	03a00e13          	li	t3,58
+   101c8:	0dc51c63          	bne	a0,t3,102a0 <fail>
+   101cc:	00d00e13          	li	t3,13
+   101d0:	0dc89863          	bne	a7,t3,102a0 <fail>
+   101d4:	0026fe37          	lui	t3,0x26f
+   101d8:	ef2e0e13          	addi	t3,t3,-270 # 26eef2 <_end+0x25deaa>
+   101dc:	0dc59263          	bne	a1,t3,102a0 <fail>
+   101e0:	02c755b3          	divu	a1,a4,a2
+   101e4:	01079793          	slli	a5,a5,0x10
+   101e8:	0107d793          	srli	a5,a5,0x10
+   101ec:	02c77733          	remu	a4,a4,a2
+   101f0:	02b686b3          	mul	a3,a3,a1
+   101f4:	00000013          	nop
+   101f8:	00000013          	nop
+   101fc:	00000013          	nop
+   10200:	00000013          	nop
+   10204:	00000013          	nop
+   10208:	00000013          	nop
+   1020c:	00000013          	nop
+   10210:	00000013          	nop
+   10214:	11200e13          	li	t3,274
+   10218:	09c59463          	bne	a1,t3,102a0 <fail>
+   1021c:	00200e13          	li	t3,2
+   10220:	09c71063          	bne	a4,t3,102a0 <fail>
+   10224:	00b7ee37          	lui	t3,0xb7e
+   10228:	57ae0e13          	addi	t3,t3,1402 # b7e57a <_end+0xb6d532>
+   1022c:	07c69a63          	bne	a3,t3,102a0 <fail>
+   10230:	800008b7          	lui	a7,0x80000
+   10234:	00300613          	li	a2,3
+   10238:	fff00813          	li	a6,-1
+   1023c:	02c8d533          	divu	a0,a7,a2
+   10240:	00000013          	nop
+   10244:	00000013          	nop
+   10248:	00000013          	nop
+   1024c:	02c8f8b3          	remu	a7,a7,a2
+   10250:	02a835b3          	mulhu	a1,a6,a0
+   10254:	00000013          	nop
+   10258:	00000013          	nop
+   1025c:	00000013          	nop
+   10260:	00000013          	nop
+   10264:	00000013          	nop
+   10268:	00000013          	nop
+   1026c:	00000013          	nop
+   10270:	00000013          	nop
+   10274:	2aaabe37          	lui	t3,0x2aaab
+   10278:	aaae0e13          	addi	t3,t3,-1366 # 2aaaaaaa <_end+0x2aa99a62>
+   1027c:	03c51263          	bne	a0,t3,102a0 <fail>
+   10280:	00200e13          	li	t3,2
+   10284:	01c89e63          	bne	a7,t3,102a0 <fail>
+   10288:	2aaabe37          	lui	t3,0x2aaab
+   1028c:	aa9e0e13          	addi	t3,t3,-1367 # 2aaaaaa9 <_end+0x2aa99a61>
+   10290:	01c59863          	bne	a1,t3,102a0 <fail>
+   10294:	00100d93          	li	s11,1
+   10298:	00100d13          	li	s10,1
+
+0001029c <p>:
+   1029c:	0000006f          	j	1029c <p>
+
+000102a0 <fail>:
+   102a0:	00000d93          	li	s11,0
+   102a4:	00100d13          	li	s10,1
+
+000102a8 <fl>:
+   102a8:	0000006f          	j	102a8 <fl>
+   102ac:	00000013          	nop
+
+000102b0 <begin_signature>:
+   102b0:	00000013          	nop
+   102b4:	00000013          	nop
+   102b8:	00000013          	nop
+   102bc:	00000013          	nop

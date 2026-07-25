@@ -1,0 +1,47 @@
+
+D:\Desktop\OpenClaw_Workspace\Working\test_data\custom_asm\oitf_disp_retire_collision.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	00000d13          	li	s10,0
+   10004:	00000d93          	li	s11,0
+   10008:	00300093          	li	ra,3
+   1000c:	00400113          	li	sp,4
+   10010:	00500193          	li	gp,5
+   10014:	00600313          	li	t1,6
+   10018:	00700393          	li	t2,7
+   1001c:	022082b3          	mul	t0,ra,sp
+   10020:	00308533          	add	a0,ra,gp
+   10024:	003105b3          	add	a1,sp,gp
+   10028:	00208633          	add	a2,ra,sp
+   1002c:	02730333          	mul	t1,t1,t2
+   10030:	001186b3          	add	a3,gp,ra
+   10034:	00218733          	add	a4,gp,sp
+   10038:	003087b3          	add	a5,ra,gp
+   1003c:	00310833          	add	a6,sp,gp
+   10040:	002088b3          	add	a7,ra,sp
+   10044:	00318933          	add	s2,gp,gp
+   10048:	02a00e13          	li	t3,42
+   1004c:	01c31c63          	bne	t1,t3,10064 <fail>
+   10050:	00c00e93          	li	t4,12
+   10054:	01d29863          	bne	t0,t4,10064 <fail>
+   10058:	00100d93          	li	s11,1
+   1005c:	00100d13          	li	s10,1
+
+00010060 <p>:
+   10060:	0000006f          	j	10060 <p>
+
+00010064 <fail>:
+   10064:	00000d93          	li	s11,0
+   10068:	00100d13          	li	s10,1
+
+0001006c <fl>:
+   1006c:	0000006f          	j	1006c <fl>
+
+00010070 <begin_signature>:
+   10070:	00000013          	nop
+   10074:	00000013          	nop
+   10078:	00000013          	nop
+   1007c:	00000013          	nop

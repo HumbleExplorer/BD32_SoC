@@ -1,482 +1,358 @@
-# BD32 RISC-V SoC 构建与仿真脚本
+# BD32 — RV32IM Pipelined RISC-V SoC
 
-> 路径：`Working/script/`（仿真脚本） + `Working/SDK/tools/`（构建工具）
->
-> 环境：Windows 10/11，ModelSim SE-64，Python 3，RISC-V GCC 工具链
+BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采用经典 5 级流水线架构并配备乱序退休机制（OITF），支持乘法/除法指令与短指令并行执行。项目包含完整的 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
 
----
+## 特性
 
-## 目录
+- RV32IM 指令集（含 M 扩展乘除法）
+- 5 级流水线：IF → ID → EX → MEM → WB
+- OITF（Out-of-order Instruction Termination Facility）：深度 4 的 FIFO，允许多周期乘除法指令乱序退休
+- 3 级流水 Booth-4 乘法器（3 拍出结果）
+- 32 周期迭代恢复除法器
+- 动态分支预测器 + 返回地址栈（RAS）
+- AXI-Lite 总线 + APB 外设子系统
+- 外设：UART（含 NCO 波特率发生器）、CLINT（mtime/mtip）、PLIC 中断控制器、APB Timer（PWM）、GPIO
+- CoreMark 验证通过（-O2 和 -O3 均通过 CRC 校验）
 
-- [1. 依赖与环境](#1-依赖与环境)
-- [2. SDK 构建工具（SDK/tools/）](#2-sdk-构建工具sdktools)
-  - [2.1 build.py — 主构建脚本](#21-buildpy--主构建脚本)
-  - [2.2 build_riscv_tests.py — RISC-V 兼容性测试编译](#22-build_riscv_testspy--risc-v-兼容性测试编译)
-  - [2.3 LLVM/Clang 集成（--clang）](#23-llvmclang-集成clang)
-- [3. MROM 构建](#3-mrom-构建)
-- [4. 仿真脚本（script/）](#4-仿真脚本script)
-  - [4.1 各测试子目录一览](#41-各测试子目录一览)
-  - [4.2 运行仿真](#42-运行仿真)
-  - [4.3 run_all_riscv_tests.py — 批量 RISC-V 指令测试](#43-run_all_riscv_testspy--批量-risc-v-指令测试)
-- [5. 输出产物说明](#5-输出产物说明)
-- [6. 常见问题](#6-常见问题)
+## 目录结构
 
----
-
-## 1. 依赖与环境
-
-### 工具链
-
-BD32 目前使用 **xPack RISC-V GCC 15.2.0** 工具链。代码路径中硬编码：
-
-| 组件 | 路径 |
-|------|------|
-| GCC 工具链 | `D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin` |
-| CC | `riscv-none-elf-gcc` |
-| OBJCOPY | `riscv-none-elf-objcopy` |
-| OBJDUMP | `riscv-none-elf-objdump` |
-| **Clang（可选前端）** | `D:/RISCV_Tool/llvm-22.1.8/bin/clang`（官方 LLVM 22.1.8） |
-
-> **Clang 集成（可选）：** 通过 `build.py` / `build_riscv_tests.py` 的 `--clang` 开关，可用官方 LLVM/clang 替代 GCC 做 `.c` 代码生成，链接仍复用 xPack 的 `libgcc` 与 `link.ld`。详见 [2.3 LLVM/Clang 集成](#23-llvmclang-集成clang)。
-
-### 仿真器
-
-ModelSim SE-64 2020.4，路径 `D:\modeltech64_2020.4\win64`。
-
-### 运行时参数
-
-| 架构 | march | mabi |
-|------|-------|------|
-| RV32IM | `rv32im_zicsr` | `ilp32` |
-
----
-
-## 2. SDK 构建工具（SDK/tools/）
-
-### 2.1 build.py — 主构建脚本
-
-**路径：** `Working/SDK/tools/build.py`
-
-一键编译应用 demo，生成 ELF、反汇编、ITCM/DTCM 内存初始化文件和 UART 下载镜像。
-
-#### 基本用法
-
-```bash
-cd Working/SDK
-
-# 自动查找 demos/nolibc/breathing/src/main.c 并编译
-python tools/build.py demos/nolibc/breathing
-
-# 其他 demo
-python tools/build.py demos/nolibc/blink
-python tools/build.py demos/nolibc/uart_echo
-python tools/build.py demos/nolibc/cpuinfo
+```
+Working/
+├── rtl/                        # RTL 源码
+│   ├── SoC_Config.sv          # 全局配置（宏定义、内存映射、仿真文件路径）
+│   ├── RV32_Inst_Define.sv    # 指令编码定义
+│   ├── SoC_top.sv             # SoC 顶层（纯数字 IP）
+│   ├── Core/                  # CPU 核
+│   │   ├── RISC_V_Core.sv    # 核顶层（流水线连线）
+│   │   ├── Pipeline_Ctrl.sv  # 流水线控制（stall/flush/OITF 调度）
+│   │   ├── RegFile.sv        # 32×32 寄存器堆（双写端口 + 旁路）
+│   │   ├── OITF.sv           # 乱序退休 FIFO
+│   │   ├── Decoder.sv        # 指令译码
+│   │   ├── Executer.sv       # ALU 执行单元
+│   │   ├── Data_Hazard_Forward.sv  # 数据前递
+│   │   ├── Dynamic_Branch_Predictor.sv  # 分支预测
+│   │   ├── Mem_Access.sv     # 访存控制
+│   │   ├── CSR_Reg_Access.sv # CSR 读写
+│   │   ├── IF_ID/ID_EX/EX_MEM/MEM_WB.sv  # 流水级寄存器
+│   │   ├── ITCM.sv / DTCM.sv / BootROM.sv  # 片上存储
+│   │   └── Mul_Div/          # 乘法器 + 除法器
+│   ├── Bus/                   # AXI-Lite 总线基础设施
+│   ├── Periph/               # 外设
+│   │   ├── CLINT.sv          # Core-Local Interruptor
+│   │   ├── apb_gpio.sv       # GPIO
+│   │   ├── plic/             # 中断控制器
+│   │   ├── timer/            # APB Timer / PWM
+│   │   └── uart/             # UART（TX/RX/FIFO/Download）
+│   └── Common/               # 时钟/复位工具模块
+├── sim/                       # Testbench
+│   ├── tb_core_top.sv        # 核级 TB（x26/x27 判定，加载 .dat）
+│   └── tb_soc_top.sv         # SoC 级 TB（UART 输出、WB_TRACE、PWM 监测）
+├── script/                    # 仿真脚本
+│   ├── core_test/            # 核级仿真（filelist.f, run.do）
+│   ├── soc_test/             # SoC 级仿真
+│   ├── uart_test/ gpio_test/ plic_test/ timer_test/  # 外设独立仿真
+│   ├── run_one.py            # 运行单个 custom_asm 测试
+│   ├── run_all_custom_asm.py # custom_asm 全回归（36 个测试）
+│   └── run_all_riscv_tests.py # riscv-tests 全回归（rv32ui + rv32um）
+├── test_data/
+│   ├── custom_asm/           # 36 个自定义流水线压力测试（.S + .dat）
+│   ├── riscv-tests/          # 标准 riscv-tests（rv32ui 48个 + rv32um 8个）
+│   └── soc/c/                # CoreMark 内存文件（.mem）
+├── SDK/
+│   ├── tools/                # 构建工具（build.py, build_asm.py, build_riscv_tests.py）
+│   ├── demos/nolibc/         # 裸机 demo（breathing, blink, uart_echo, cpuinfo）
+│   ├── demos/newlib/coremark/ # CoreMark 基准测试（build_O2/ + build_O3/）
+│   └── isa/env/p/            # riscv_test.h + link.ld
+├── BD32_SoC/                  # Vivado FPGA 工程（Xilinx）
+├── ip_repo/                   # 自定义 AXI IP 仓库
+└── doc/                       # 文档
 ```
 
-#### 参数
+## 微架构
+
+### 流水线概览
+
+```
+┌────┐   ┌────┐   ┌────┐   ┌────┐   ┌────┐
+│ IF │──▶│ ID │──▶│ EX │──▶│MEM │──▶│ WB │──▶ Port1 写回
+└────┘   └────┘   └────┘   └────┘   └────┘
+                       │                              ▲
+                       ▼                              │
+                 ┌──────────┐    retire               │
+                 │   OITF   │────────────────────────▶ Port2 写回
+                 │ (depth=4)│
+                 └──────────┘
+                   ▲       ▲
+                   │       │
+              ┌────┴┐  ┌──┴───┐
+              │ MUL │  │ DIV  │
+              │3-cyc│  │32-cyc│
+              └─────┘  └──────┘
+```
+
+- 短指令（ALU/Load/Store/Branch）走正常 5 级流水，从 Port1 写回
+- 长指令（MUL/DIV/REM）在 EX 阶段分发到 OITF，由独立功能单元执行，完成后从 Port2 乱序退休写回
+- OITF 维护 RAW/WAW 冒险检测，必要时 stall 整条流水线
+
+### 寄存器堆双写端口
+
+- Port1：正常 WB 路径（短指令）
+- Port2：OITF 退休路径（长指令结果）
+- 同地址冲突时 Port2 优先（OITF WAW 检查保证不会产生合法的同地址同时写）
+- 旁路读取优先级：Port2 > Port1 > 寄存器阵列
+
+### 关键配置宏（SoC_Config.sv）
+
+| 宏 | 功能 |
+|---|---|
+| `DIRECT_LOAD` | 从 .mem 文件直接加载程序（否则走 UART 下载） |
+| `CORE_TEST` | 核级测试模式 |
+| `CUSTOM_ASM` | 使用 custom_asm 测试路径 |
+| `MULT_PIPELINE` | 启用 3 级流水乘法器（默认状态机 4 拍） |
+| `XILINX` | FPGA 综合模式 |
+| `WB_TRACE` | 使能写回追踪输出 |
+
+## 构建与仿真
+
+### 环境依赖
+
+| 组件 | 路径/版本 |
+|------|-----------|
+| RISC-V GCC | xPack riscv-none-elf-gcc 15.2.0（`D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin`） |
+| Clang（可选） | LLVM 22.1.8（`D:/RISCV_Tool/llvm-22.1.8/bin/clang`） |
+| ModelSim | SE-64 2020.4（`D:\modeltech64_2020.4\win64`） |
+| Python | 3.x |
+| Vivado | 2023.1（FPGA 综合） |
+
+目标架构：`-march=rv32im_zicsr -mabi=ilp32`
+
+### 构建自定义汇编测试
+
+```bash
+cd test_data/custom_asm
+python build_asm.py <test_name>    # 单个测试
+python build_asm.py all            # 全部 36 个测试
+```
+
+编译参数：`-march=rv32im -mabi=ilp32 -O0 -mno-relax -nostdlib -static`
+产物：`.elf`、`.dump`、`.dat`（readmemh 格式）
+
+### 构建 C 程序 / CoreMark
+
+```bash
+cd SDK
+
+# 裸机 demo
+python tools/build.py demos/nolibc/breathing
+python tools/build.py demos/nolibc/breathing --newlib    # 链接 newlib-nano
+python tools/build.py demos/nolibc/breathing --clang     # 用 Clang 前端
+
+# CoreMark（产物含优化等级后缀：coremark_o2_*.mem / coremark_o3_*.mem）
+python tools/build.py demos/newlib/coremark --newlib --opt O2
+python tools/build.py demos/newlib/coremark --newlib --opt O3
+```
+
+产物：`.elf`、`.dump`、`*_itcm.mem`、`*_dtcm.mem`、`.uartbin`（CoreMark 文件名含 `_o2`/`_o3` 后缀）
+
+### 内存布局
+
+```
+BootROM:  0x0000_0000 ~ 0x0000_0FFF (4KB, 启动代码)
+ITCM:     0x0001_0000 ~ 0x0001_FFFF (64KB, 代码段)
+DTCM:     0x0002_0000 ~ 0x0002_FFFF (64KB, 数据段)
+UART:     0xE001_0000
+CLINT:    0xE000_0000
+PLIC:     0xE100_0000
+Timer:    0xE002_0000
+GPIO:     0xE003_0000
+```
+
+### 运行仿真
+
+#### 核级测试（tb_core_top）
+
+```bash
+cd script
+python run_one.py <test_name>              # 单个测试
+python run_all_custom_asm.py               # custom_asm 全回归
+python run_all_riscv_tests.py              # riscv-tests ISA 兼容性
+```
+
+判定约定：x26=1 表示完成，x27=1 表示通过；x3(gp) 记录失败的子测试编号。
+
+#### SoC 级测试（tb_soc_top）
+
+```bash
+cd script/soc_test
+# 编译
+vlog -f filelist.f +define+DIRECT_LOAD
+# 运行（CoreMark 需要 ~55ms 完成 UART 输出）
+vsim -c -voptargs=+acc tb_soc_top -do "run 55ms; quit -f"
+```
+
+UART 输出通过 TB 中的 `$write("%c", ...)` 打印到控制台。
+添加 `+define+WB_TRACE` 可启用写回追踪（输出到 `wb_trace.log`）。
+
+#### 外设独立仿真
+
+各 `script/xxx_test/` 目录下双击 `top_tb.bat` 或命令行运行：
+```bash
+cd script/uart_test
+D:\modeltech64_2020.4\win64\modelsim -do run.do
+```
+
+### CoreMark 基准
+
+CoreMark 源码位于 `SDK/demos/newlib/coremark/`，分别以 -O2 和 -O3 编译验证。
+
+```bash
+cd SDK
+python tools/build.py demos/newlib/coremark --newlib --opt O2   # → build_O2/
+python tools/build.py demos/newlib/coremark --newlib --opt O3   # → build_O3/
+```
+
+产物命名规则（含优化等级后缀，避免相互覆盖）：
+
+| 优化等级 | 文件 |
+|---------|------|
+| -O2 | `coremark_o2.elf`、`coremark_o2_itcm.mem`、`coremark_o2_dtcm.mem`、`coremark_o2.uartbin` |
+| -O3 | `coremark_o3.elf`、`coremark_o3_itcm.mem`、`coremark_o3_dtcm.mem`、`coremark_o3.uartbin` |
+
+`test_data/soc/c/` 中同时保留两套 .mem 文件，通过 `SoC_Config.sv` 的 `ITCM_FILE`/`DTCM_FILE` 切换加载哪一套。
+
+预期正确输出（2K 规模，标准种子）：
+```
+CoreMark Size    : 666
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xe714
+Correct operation validated
+```
+
+仿真配置：修改 `SoC_Config.sv` 中 `ITCM_FILE`/`DTCM_FILE` 为 `"coremark_o3_itcm.mem"`/`"coremark_o3_dtcm.mem"`（或 o2），仿真时长设为 55ms（80MHz CPU + 115200 baud UART）。
+
+### Spike Diff-Test（差分测试）
+
+使用 Spike ISA 模拟器作为黄金参考，与 RTL 仿真结果逐条对比写回序列，定位流水线功能 bug。
+
+#### 环境
+
+Spike 安装于 WSL：`/home/bluedream/.local/spike/bin/spike`
+dtc（设备树编译器）：`/home/bluedream/.local/usr/bin/dtc`
+
+#### 运行 Spike 获取参考 trace
+
+```bash
+# WSL 中执行
+spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
+  --log-commits <program>.elf 2> spike_trace.txt
+```
+
+参数说明：`-m` 指定内存区域（ITCM+DTCM 192KB，UART MMIO 4KB），`--log-commits` 输出每条指令的寄存器写回。
+
+注意事项：
+- 自定义 CSR（如 0xbc6 性能计数器）会导致 Spike 触发 illegal instruction trap，trap 之前的 trace 仍然有效
+- 若固件含 UART polling 循环（等待 TX ready），Spike 会死循环。解决方法：用 ELF patch 将 polling 分支替换为 NOP（`0x00000013`）
+- WSL 输出为 UTF-16LE 编码，处理时需 `iconv -f UTF-16LE -t UTF-8`
+
+#### 获取 RTL 写回 trace
+
+在 vlog 编译时添加 `+define+WB_TRACE`，仿真结束后生成 `wb_trace.log`，格式为 `PC rd data`（十六进制 PC，十进制 rd，十六进制 data），记录 Port1（正常 WB）和 Port2（OITF 退休）的所有写回事件。
+
+#### 对比方法
+
+1. **预处理**：RTL trace 中流水线 stall 会导致同一条写回重复记录多个周期，需先去除连续重复项
+2. **对齐**：RTL 会执行 BootROM 代码（Spike 不执行），需跳过 RTL trace 开头的 boot 段
+3. **乱序处理**：OITF 使长指令（MUL/DIV）乱序退休，RTL trace 中写回顺序与 Spike 不完全一致。使用 lookahead 窗口（8~16 条）进行模糊匹配
+4. **定位**：第一个无法匹配的写回即为 bug 的入口点，后续所有差异都是连锁反应
+
+#### 典型调试流程
+
+```
+1. 复现：O2 通过 / O3 失败 → 确认是流水线冒险 bug
+2. 静态分析：解析 objdump，找 MUL/DIV 的 RAW 依赖链
+3. Trace 对比：Spike vs RTL 写回序列，定位第一个 divergence
+4. 关联：将 divergence 对应的 PC 映射回反汇编，确认是哪条指令拿到错误值
+5. 根因：检查该时刻的流水线状态（stall/forward/write-port 冲突）
+6. 修复 + 定向测试 + 回归验证
+```
+
+## FPGA 原型验证
+
+Vivado 工程位于 `BD32_SoC/`，目标平台为 Xilinx FPGA。
+
+- 板级顶层：`bd32_board_top`（含 clk_wiz、BUFG、CDC 同步）
+- 约束文件：`BD32_SoC.srcs/constrs_1/new/BD32_SoC.xdc`
+- IP：clk_wiz_0（时钟生成）、imem/dmem/mrom（Block Memory Generator）
+- 支持 ILA 在线调试（`mark_debug` 属性标注关键信号）
+- 支持 UART 下载模式（MROM 自动计算波特率并配置 UART）
+
+## SDK 构建工具详细说明
+
+### build.py — 主构建脚本
+
+路径：`SDK/tools/build.py`
 
 | 参数 | 说明 |
 |------|------|
 | `source` | demo 目录或 .c 文件路径 |
-| `--newlib` | 链接 newlib-nano（`-specs=nano.specs`，支持 printf / malloc 等标准库） |
-| `--no-bin` | 跳过 .mem / .uartbin 生成（仅生成 ELF） |
+| `--newlib` | 链接 newlib-nano（支持 printf/malloc） |
+| `--no-bin` | 跳过 .mem/.uartbin 生成 |
 | `--opt O2` | 优化等级（默认 Os） |
-| `--extra "-DBAR"` | 追加额外 GCC 编译标志 |
+| `--clang` | 用 Clang 做前端代码生成（链接仍走 GCC） |
+| `--extra "-DFLAG"` | 追加编译标志 |
 
-#### 编译流程
+编译流程：AS start.S → CC board/init.c → CC drivers → CC trap → CC main.c → LD → OBJDUMP → 生成 .mem/.uartbin
 
-```
-AS start.S                      ← 启动汇编（设 SP、清零 bss）
-CC board/init.c                 ← 板级初始化（测主频、设 mtvec）
-CC drivers/bd32_uart.c          ← UART 驱动
-CC trap/trap_handler.c          ← 中断/异常处理
-AS startup/vector_table.S       ← 中断向量表
-AS drivers/bd32_clint_asm.S     ← CLINT 汇编接口
-CC main.c                       ← 用户主程序
-LD → breathing.elf              ← 链接（link.ld 指定内存布局）
-OBJDUMP → out.dump              ← 反汇编
-→ breathing_itcm.mem            ← ITCM 初始化（$readmemh 格式）
-→ breathing_dtcm.mem            ← DTCM 初始化
-→ breathing.uartbin             ← UART 下载镜像
-→ test_data/custom/*            ← 同步到仿真目录
-```
-
-#### --newlib 模式
-
-当应用需要 `printf`, `malloc` 等标准库函数时使用（基于 **newlib-nano**，链接 `-specs=nano.specs`）：
+### build_riscv_tests.py — riscv-tests 编译
 
 ```bash
-python tools/build.py demos/nolibc/breathing --newlib
+cd SDK
+python tools/build_riscv_tests.py          # GCC
+python tools/build_riscv_tests.py --clang  # Clang 汇编
 ```
 
-> **注意：** `--newlib` 模式会额外编译 `porting/syscalls.c` 与 `utils/printf_fixed.c`，
-> 并链接 `-lc -lm -lgcc`（C 库 / 数学库 / GCC 运行时）。**无需任何外部 picolibc 安装**，
-> 头文件与库直接来自 xPack 工具链自带的新版 newlib-nano。
+产物输出到 `test_data/riscv-tests/`（.dat 格式）。
 
-#### 输出产物
+### LLVM/Clang 集成
 
-编译完成后，产物位于 `demos/<name>/build/`：
+通过 `--clang` 开关启用。设计原则：Clang 只负责 `.c`/`.S` 的代码生成，链接始终由 xPack GCC 完成（因为官方 LLVM Windows 包不含 RISC-V compiler-rt builtins）。
 
-| 文件 | 格式 | 用途 |
-|------|------|------|
-| `breathing.elf` | ELF | 调试/分析 |
-| `out.dump` | 文本 | 反汇编（调试用） |
-| `breathing_itcm.mem` | 十六进制文本 | ITCM 初始化（ModelSim `$readmemh`） |
-| `breathing_dtcm.mem` | 十六进制文本 | DTCM 初始化 |
-| `breathing.uartbin` | 二进制 | UART 下载镜像（含 START_FRAME 头） |
-
-`.uartbin` 和 `.mem` 同时自动同步到 `test_data/custom/`，供仿真脚本直接使用。
-
-#### 内存布局
-
-```
-ITCM: 0x0001_0000 ~ 0x0001_FFFF (64KB, 代码段)
-DTCM: 0x0002_0000 ~ 0x0002_FFFF (64KB, 数据段)
-```
-
-- **ITCM**：`.text`（含 `.init`、`.trap.vector`）
-- **DTCM**：`.data` + `.rodata` + `.bss` + `.heap` + `.stack`
-
-### 2.2 build_riscv_tests.py — RISC-V 兼容性测试编译
-
-**路径：** `Working/SDK/tools/build_riscv_tests.py`
-
-从 `riscv-tests` 源码编译官方 RISC-V 指令兼容性测试。
-
-#### 依赖
-
-- 上游 riscv-tests 源码（`D:\Desktop\毕业设计\参考资料和工具\RISC-V软件\riscv-tests`）
-- tinyriscv 的 isa 补充环境（`Ref/tinyriscv-master/tests/isa`）
-
-#### 用法
+## MROM 构建
 
 ```bash
-cd Working/SDK
-
-# 默认：gcc 一步编链所有 riscv-tests
-python tools/build_riscv_tests.py
-
-# 可选：用 clang 汇编 .S，gcc 链接（详见 2.3）
-python tools/build_riscv_tests.py --clang
+bash test_data/build_mrom.sh
 ```
 
-产物输出到 `Working/test_data/riscv-tests/`（.dat 格式，供 `$readmemh` 加载）。
+MROM（0x00000000，4KB）负责：设置 mcounteren → 测量 CPU 主频 → 计算 UART NCO 系数 → 跳转 ITCM 执行用户程序。
 
-### 2.3 LLVM/Clang 集成（--clang）
-
-**涉及脚本：** `Working/SDK/tools/build.py`、`Working/SDK/tools/build_riscv_tests.py`
-
-BD32 在默认 xPack GCC 工具链之外，额外支持官方 **LLVM/Clang 22.1.8** 作为前端代码生成器。
-启用方式是在两个构建脚本上加 `--clang` 开关；**默认仍用 GCC**，现有行为完全不变。
-
-#### 设计原则
-
-| 阶段 | 默认（无 `--clang`） | 加 `--clang` 后 |
-|------|---------------------|----------------|
-| `.c` 编译（build.py） | xpack gcc | **clang**（`--target=riscv32-unknown-elf`） |
-| `.S` 启动文件汇编 | xpack gcc | xpack gcc（**始终 gcc**：保证 `.option norelax` / `%pcrel_hi` 等 GNU 语法正确） |
-| riscv-tests `.S`（build_riscv_tests.py） | xpack gcc | **clang** 汇编 |
-| 链接 | xpack gcc | xpack gcc（**始终 gcc**：复用 `link.ld` + `libgcc`） |
-
-> **为什么链接仍走 gcc？** 官方 LLVM 22.1.8 的 Windows 包**不含 RISC-V 的 compiler-rt builtins**
-> （`libclang_rt.builtins.a`）。若用纯 clang 链接会报找不到该库。因此 clang 只负责生成 `.o`，
-> 最终链接统一交给 xpack gcc（自带 `libgcc` / newlib / crt0），产物与纯 GCC 流程二进制等价。
-
-#### 工具链路径
-
-| 组件 | 路径 |
-|------|------|
-| Clang | `D:/RISCV_Tool/llvm-22.1.8/bin/clang` |
-| newlib 头/库（sysroot，`--newlib` + `--clang` 时用） | `D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/riscv-none-elf` |
-
-#### 用法示例
-
-```bash
-cd Working/SDK
-
-# build.py：用 clang 编译 .c，gcc 链接（默认 medlow / Os）
-python tools/build.py demos/nolibc/breathing --clang
-
-# build.py：clang + newlib-nano（clang 额外 --sysroot 找 newlib 头）
-python tools/build.py demos/nolibc/uart_echo --newlib --clang
-
-# build_riscv_tests.py：用 clang 汇编 riscv-tests .S，gcc 链接
-python tools/build_riscv_tests.py --clang
-```
-
-#### 验证状态
-
-- `build.py --clang`：在 `nolibc/empty`、`newlib/hello`（printf）下通过，
-  反汇编（`out.dump`）与 ITCM/DTCM `.mem` 与纯 GCC 流程一致。
-- `build_riscv_tests.py --clang`：rv32ui（48 个）+ rv32um（8 个）全部编链通过，
-  后续 `run_all_riscv_tests.py` 仿真 PASS/FAIL 结果与纯 GCC 流程一致。
-
----
-
-## 3. MROM 构建
-
-**路径：** `Working/test_data/build_mrom.sh`
-
-MROM（Mask ROM / Boot ROM）是 SoC 上电后第一条指令所在位置，
-负责 CPU 主频测量和 UART NCO 系数计算。
-
-#### 用法
-
-```bash
-# Git Bash
-bash Working/test_data/build_mrom.sh
-```
-
-#### 输入/输出
-
-| 文件 | 说明 |
-|------|------|
-| `test_data/mrom.s` | MROM 汇编源码（手写） |
-| `test_data/mrom.elf` | 链接产物 |
-| `test_data/mrom.dump` | 反汇编（用于人工验证） |
-| `test_data/mrom.dat` | Hex 格式初始化文件（`$readmemh`，80 words） |
-
-#### MROM 功能
-
-1. 设置 `mcounteren[0]=1`（用户态可读 mcycle）
-2. 读取 mtime（1MHz 基准）和 mcycle
-3. 等待 10000 个 mtime ticks（10ms）
-4. 计算 `freq_hz = Δmcycle × 100`
-5. 存储频率到 DTCM 预留地址
-6. 若为 Download 模式：计算 UART DLL + NCO FCW 并写入 UART 寄存器
-7. 跳转到 ITCM 0x10000 执行用户程序
-
-> **注意：** MROM 地址固定在 0x00000000，大小限制为 1K words (4096 bytes)。
-
-## 4. 仿真脚本（script/）
-
-### 4.1 各测试子目录一览
-
-| 目录 | 用途 |
-|------|------|
-| `core_test/` | CPU 核级仿真（riscv-tests 指令兼容性测试） |
-| `soc_test/` | SoC 系统级仿真（CPU + 总线 + 外设） |
-| `uart_test/` | UART 模块独立仿真 |
-| `gpio_test/` | GPIO 模块独立仿真 |
-| `plic_test/` | PLIC 中断控制器仿真（含 XSim Tcl） |
-| `timer_test/` | APB Timer 模块仿真 |
-
-### 4.2 运行仿真
-
-每个子目录结构统一：
-
-```
-xxx_test/
-├── filelist.f       # 文件列表（Verilog 源文件）
-├── run.do           # ModelSim 运行脚本（编译 + 加载波形）
-├── top_tb.bat       # 一键启动（双击运行）
-└── work/            # 编译输出（自动生成）
-```
-
-#### 方式一：双击运行
-
-```bash
-# 进入对应的测试目录，双击
-Working/script/soc_test/top_tb.bat
-```
-
-#### 方式二：命令行
-
-```bash
-cd Working/script/soc_test
-D:\modeltech64_2020.4\win64\modelsim -do run.do
-```
-
-#### 仿真的波形信号
-
-| 测试 | 关注信号 |
-|------|---------|
-| `core_test` | clk, rst_n, itcm_addr, itcm_rdata, pc, instr, reg_waddr, reg_wdata |
-| `soc_test` | sys_clk, sys_rst_n, uart_tx, gpio_io, timer_clk |
-| `uart_test` | uart_clk, tx, rx, lsr, fcw |
-| `plic_test` | irq_src, claim, eip |
-
-#### soc_test 特殊说明
-
-`soc_test` 的仿真顶层直接例化 `SoC_top`（纯数字 IP），
-TB 中需提供：
-
-| 信号 | 频率 | 生成方式 |
-|------|------|----------|
-| `sys_clk` | 90MHz | `always #5555 clk = ~clk` |
-| `timer_clk` | 1MHz | `always #500 timer_clk = ~timer_clk` |
-| `sys_rst_n` | 复位 | `initial` 块中拉低再释放 |
-
-`SoC_top` 为纯数字 IP，不包含 clk_wiz/clk_div/BUFG/Cdc_Sync——这些在 FPGA 板级顶层 `bd32_board_top` 中。
-
-### 4.3 run_all_riscv_tests.py — 批量 RISC-V 指令测试
-
-**路径：** `Working/script/run_all_riscv_tests.py`
-
-利用 ModelSim 批量运行 RISC-V 指令兼容性测试，输出 PASS/FAIL 汇总报告。由于暂不支持非对齐访存和自修改代码，因此会有2个测试失败，这是正常情况。
-
-#### 用法
-
-```bash
-cd Working/script
-python run_all_riscv_tests.py
-```
-
-#### 工作流程
-
-1. 清理 `core_test/work/` 目录
-2. 编译所有 RTL（带 `+define+CORE_TEST +define+DIRECT_LOAD`）
-3. 遍历 `../test_data/rv32*.dat` 逐个跑仿真
-4. 收集结果 → 汇总表格
-
-#### 测试文件匹配规则
-
-- `rv32ui-p-*.dat` — RV32I 用户级指令测试（add, sub, lw, sw, jal, beq 等）
-- `rv32um-p-*.dat` — RV32M 乘除法扩展测试（mul, div, rem 等）
-
-#### 配置项（脚本顶部可修改）
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `VSIM_PATH` | ModelSim vsim 所在目录 | `D:\modeltech64_2020.4\win64` |
-| `SIM_TIME_US` | 每测试仿真时长（微秒） | `50` |
-| `TIMEOUT_SEC` | 每测试超时（秒） | `60` |
-
-#### 输出示例
-
-```
-╔══════════════════════════╗
-║  批量测试运行器            ║
-╚══════════════════════════╝
-
-  Found 48 test files
-
-============================================================
-  Step 1: Compiling RTL with +define+CORE_TEST ...
-============================================================
-  [OK] Compilation successful
-
-============================================================
-  Step 2: Running 48 tests
-============================================================
-
-  [ 1/48] rv32ui-p-add ... PASS (2.4s)
-  ...
-
-============================================================
-  RISC-V Tests Summary
-============================================================
-  Passed:  48
-  Total:   48  (elapsed: 112.3s)
-============================================================
-```
-
----
-
-## 5. 输出产物说明
-
-### 流程图
-
-```
-SDK/tools/build.py (GCC, 可选 --clang)   test_data/build_mrom.sh (Nuclei LLVM)
-        │                                      │
-        ▼                                      ▼
-  breathing.elf  ← ELF 可执行文件         mrom.elf  ← MROM ELF
-        │                                      │
-        ▼                                      ▼
-  *.itcm.mem ← 内存初始化（$readmemh）    mrom.dat ← 内存初始化
-  *.dtcm.mem                                       （$readmemh）
-  *.uartbin ← UART 下载镜像
-        │
-        ▼
-  test_data/custom/*  ← 同步到仿真目录
-
-SDK/tools/build_riscv_tests.py (GCC, 可选 --clang)
-        │
-        ▼
-  test_data/riscv-tests/*.dat  ← 指令兼容性测试 (.dat)
-        │
-        ▼
-  script/run_all_riscv_tests.py  ← ModelSim 批量仿真 (PASS/FAIL)
-```
-
-> 注：`--clang` 仅改变 `.c` / `.S` 的**前端代码生成器**（clang 替代 gcc），
-> 链接阶段始终由 xpack gcc 完成。
-
-### 各产物的使用场景
-
-| 产物 | 使用场景 |
-|------|---------|
-| `.elf` | GDB 调试、objdump 分析 |
-| `.dump` | 反汇编人工审查 |
-| `.itcm.mem` | ModelSim `$readmemh` 加载指令内存 |
-| `.dtcm.mem` | ModelSim `$readmemh` 加载数据内存 |
-| `.uartbin` | UART 下载到 FPGA（MROM + Download 模式） |
-| `mrom.dat` | 仿真时 MROM 初始化 |
-
-### uartbin 格式
+## uartbin 下载格式
 
 ```
 +---------------+----------------+---------------------+----------+
-| START_FRAME   | ITCM word count | ITCM data (N words) | DTCM ... |
+| START_FRAME   | ITCM word count| ITCM data (N words) | DTCM ... |
 | 0xBBAABBAA    | uint32_t       | uint32_t[]          | ...      |
 +---------------+----------------+---------------------+----------+
 ```
 
----
+## 常见问题
 
-## 6. 常见问题
+**Q: 编译报错 `riscv-none-elf-gcc: command not found`**
+检查 xPack 工具链路径 `D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin/` 是否存在。
 
-### Q: 编译报错 `riscv-none-elf-gcc: command not found`
+**Q: ModelSim 找不到 `vsim`**
+确认 ModelSim 安装在 `D:\modeltech64_2020.4\win64`，或修改脚本顶部的 `VSIM_PATH`。
 
-xPack 工具链未安装或路径不正确。检查 `D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin/` 是否存在。
+**Q: 仿真时 ITCM 全 X，CPU 不运行**
+确保 vlog 编译时传入 `+define+DIRECT_LOAD`。
 
-### Q: ModelSim 找不到 `vsim`
+**Q: CoreMark 仿真输出不完整**
+仿真时长需设为 55ms（不是 15ms），否则 UART 来不及打印完 CRC 结果。
 
-确保 ModelSim 安装在 `D:\modeltech64_2020.4\win64`，或修改 `run_all_riscv_tests.py` 顶部的 `VSIM_PATH`。
+**Q: 修改 SoC_Config.sv 后其他测试异常**
+`ITCM_FILE`/`DTCM_FILE` 是全局宏，改完后记得恢复默认值。
 
-### Q: 仿真时 ITCM 全 X，CPU 不运行
-
-`run_all_riscv_tests.py` 需传入 `+define+DIRECT_LOAD`。旧版脚本漏了此宏，已修复。
-
-### Q: 仿真时 UART 没有输出/FCW 为 0
-
-程序可能是用旧 BSP 编译的（缺少 FCW 写入）。用最新 BSP 重新编译 demo：
-
-```bash
-cd Working/SDK
-python tools/build.py demos/nolibc/breathing
-```
-
-### Q: 如何在 SoC 仿真中加载自定义程序？
-
-```bash
-# 1. 编译程序
-cd Working/SDK
-python tools/build.py demos/nolibc/my_demo
-
-# 2. 产物自动同步到 test_data/custom/
-#    修改 soc_test 的 run.do 或 TB，加载 custom/my_demo_itcm.mem
-
-# 3. 运行仿真
-cd Working/script/soc_test
-top_tb.bat
-```
-
-### Q: 用 `--clang` 时报 `'string.h' file not found`（仅 --newlib 场景）
-
-clang 默认不带 newlib 头，需通过 `--sysroot` 指向 xPack 的 newlib。`build.py` 在
-`--newlib --clang` 时已自动追加 `--sysroot=D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/riscv-none-elf`。
-若手动调用 clang，请确认该 sysroot 路径存在。
-
-### Q: 用 `--clang` 时链接报错找不到 `libclang_rt.builtins.a`
-
-这是预期行为。官方 LLVM 22.1.8 Windows 包不含 RISC-V 的 compiler-rt builtins，
-因此**链接阶段一律走 xpack gcc**（提供 `libgcc`）。`build.py` / `build_riscv_tests.py`
-已硬编码此策略，无需手动处理；除非你自行引入 compiler-rt，否则不要加 `-fuse-ld=lld`。
-
-### Q: 如何对比 GCC 与 Clang 产物是否一致？
-
-分别用两种流程编同一 demo / 同一批 riscv-tests，再用 `llvm-objdump`（或
-`riscv-none-elf-objdump`）反汇编 `.elf` 对比，或直接跑 `run_all_riscv_tests.py`
-看 PASS/FAIL 汇总是否一致。两者生成的 ITCM/DTCM `.mem` 内容应等价。
+**Q: `--clang` 链接报错找不到 `libclang_rt.builtins.a`**
+预期行为。链接阶段一律走 xPack GCC，不要加 `-fuse-ld=lld`。
