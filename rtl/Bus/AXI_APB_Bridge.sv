@@ -88,6 +88,7 @@ module AXI_APB_Bridge #(
     logic [STRB_WIDTH-1:0]     apb_wmask;
     logic [DATA_WIDTH-1:0]     apb_rdata;
     logic                      apb_tran_done;
+    logic                      apb_timeout;   // 从机超时无响应
 
     // 锁存的事务信息
     logic [ID_WIDTH-1:0]       trans_id;
@@ -249,19 +250,21 @@ end
                 trans_id <= s_arid;
             
             if (apb_tran_done)
-                trans_error <= PSLVERR;
+                trans_error <= PSLVERR | apb_timeout;
         end
     end
 
     // AXI 响应信号
+    // s_bresp/s_rresp 直接用 PSLVERR|apb_timeout（同周期有效），
+    // 避免 trans_error 寄存器延迟一拍导致超时当拍响应为 OKAY。
     assign s_bvalid = (state == APB_WRITE && apb_tran_done);
     assign s_bid    = trans_id;
-    assign s_bresp  = {trans_error, 1'b0};
+    assign s_bresp  = {PSLVERR | apb_timeout, 1'b0};
 
     assign s_rvalid = (state == APB_READ && apb_tran_done);
     assign s_rid    = trans_id;
     assign s_rdata  = apb_rdata;
-    assign s_rresp  = {trans_error, 1'b0};
+    assign s_rresp  = {PSLVERR | apb_timeout, 1'b0};
     assign s_rlast  = 1'b1;
 
     // 例化 APB Master
@@ -287,7 +290,8 @@ end
         .o_PWDATA     (PWDATA),
         .i_PRDATA     (PRDATA),
         .i_PREADY     (PREADY),
-        .i_PSLVERR    (PSLVERR)
+        .i_PSLVERR    (PSLVERR),
+        .o_timeout    (apb_timeout)
     );
 
 endmodule

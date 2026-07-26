@@ -73,6 +73,9 @@ logic   [DATA_WIDTH-2:0]    exception_code_ex;
 logic   [DATA_WIDTH-1:0]    exception_val_if;
 logic   [DATA_WIDTH-1:0]    exception_val_id;
 logic   [DATA_WIDTH-1:0]    exception_val_ex;
+// Executer 原始异常输出（总线错误覆盖前）
+logic   [DATA_WIDTH-2:0]    exception_code_ex_raw;
+logic   [DATA_WIDTH-1:0]    exception_val_ex_raw;
 
 (* MAX_FANOUT = 16 *) logic                       pc_stall;
 logic                       ctrl_jump_en;
@@ -210,6 +213,34 @@ always_ff @(posedge clk or negedge rst_n) begin
     else if (bus_transfer)
         bus_load_waddr <= #1 reg_rd_waddr_ex;
 end
+
+// Bus 访问方向/地址锁存：bus_transfer 时刻锁存，解决总线 stall 期间
+// ex_mem_flush 清掉 access_wr_ex/access_addr_ex 后，返回时无法判断读写方向和地址的问题
+logic                       bus_write_q;
+logic   [ADDR_WIDTH-1:0]    bus_addr_q;
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        bus_write_q <= #1 1'b0;
+        bus_addr_q  <= #1 '0;
+    end else if (bus_transfer) begin
+        bus_write_q <= #1 access_wr_ex;
+        bus_addr_q  <= #1 access_addr_ex;
+    end
+end
+
+// 总线错误检测：bus_tran_done 时 bus_resp 非 OKAY(2'b00) 即为错误
+// （DECERR=2'b11 来自超时/无响应，SLVERR=2'b10 来自从机）
+logic bus_error;
+assign bus_error = bus_tran_done && (bus_resp != 2'b00);
+
+// 异常码覆盖：总线错误时注入 load/store access fault（读=5，写=7），
+// mtval 填锁存的访问地址；否则透传 Executer 的原始异常输出。
+// mepc 天然正确：总线 stall 期间 ID_EX 保留 inst_addr_ex（=肇事指令地址）。
+assign exception_code_ex = bus_error ? (bus_write_q ? {{DATA_WIDTH-5{1'b0}}, 3'd7}
+                                                    : {{DATA_WIDTH-5{1'b0}}, 3'd5})
+                                     : exception_code_ex_raw;
+assign exception_val_ex  = bus_error ? bus_addr_q : exception_val_ex_raw;
 
 
 // WB
@@ -589,8 +620,8 @@ Executer #(
     .access_wdata_temp 	(access_wdata_temp  ),
     .branch_jump_en     (branch_jump_en_ex  ),
     .branch_jump_addr   (branch_jump_addr_ex),
-    .exception_code  	(exception_code_ex  ),
-    .exception_val   	(exception_val_ex   ),
+    .exception_code  	(exception_code_ex_raw  ),
+    .exception_val   	(exception_val_ex_raw   ),
     .id_ex_flush        (id_ex_flush),
     .id_ex_stall        (id_ex_stall),
     .lp_valid           (lp_valid           ),
@@ -735,7 +766,8 @@ DTCM #(
 assign reg_rd_wdata_selected_mem = (dtcm_rvalid || bus_rvalid) ? func3_expanded_data : reg_rd_wdata_mem;
 
 // MEM/WB reg_rd_wen/reg_rd_waddr bypass: bus loads skip EX/MEM, DTCM/ALU go through EX/MEM
-assign reg_rd_wen_selected_mem   = (dtcm_rvalid || bus_rvalid) ? 1'b1 : reg_rd_wen_mem;
+// 总线错误（bus_error）时禁止写回，避免把超时返回的垃圾数据写入寄存器
+assign reg_rd_wen_selected_mem   = (dtcm_rvalid || (bus_rvalid && ~bus_error)) ? 1'b1 : reg_rd_wen_mem;
 assign reg_rd_waddr_selected_mem = bus_rvalid ? bus_load_waddr : reg_rd_waddr_mem;
 
 MEM_WB #(

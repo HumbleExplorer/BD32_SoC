@@ -26,7 +26,8 @@ module APB_Master #(
     output  logic   [DATA_WIDTH-1:0]    o_PWDATA,// 写数据总线
     input   logic   [DATA_WIDTH-1:0]    i_PRDATA,// 读数据总线
     input   logic                       i_PREADY,// 准备就绪信号
-    input   logic                       i_PSLVERR// 错误信号
+    input   logic                       i_PSLVERR,// 错误信号
+    output  logic                       o_timeout  // 从机超时无响应
 );
 
 
@@ -54,6 +55,29 @@ logic   [ALIGN_BYTES-1:0]   PSTRB      ;
 logic   [DATA_WIDTH-1:0]    PRDATA     ;
 logic                       tran_done  ;
 
+/********************APB 超时保护*********************/
+// 从机挂死（PREADY 恒 0）时，ACCESS 态会在 BUS_TIMEOUT/2 周期后强制完成，
+// 避免桥锁死导致后续所有从机不可访问。阈值取 AXI 层 BUS_TIMEOUT 的一半，
+// 保证桥先于 AXI_Lite_Master 的超时恢复，返回 SLVERR 而非 DECERR。
+localparam int unsigned APB_TO_VAL   = `BUS_TIMEOUT / 2;
+localparam int unsigned APB_TO_WIDTH = $clog2(APB_TO_VAL + 1);
+
+logic [APB_TO_WIDTH-1:0] apb_to_cnt;
+logic                    apb_timeout;
+
+always_ff @(posedge i_sys_clk or negedge i_rst_n) begin
+    if (!i_rst_n)
+        apb_to_cnt <= '0;
+    else if (current_state == ACCESS)
+        apb_to_cnt <= apb_to_cnt + 1'b1;
+    else
+        apb_to_cnt <= '0;
+end
+
+assign apb_timeout = (current_state == ACCESS)
+                  && (apb_to_cnt >= APB_TO_VAL[APB_TO_WIDTH-1:0]);
+assign o_timeout   = apb_timeout;
+
 
 
 always_ff @(posedge i_sys_clk or negedge i_rst_n) begin
@@ -67,125 +91,126 @@ end
 
 
 `ifndef APB_ACCESS_DELAYED_DONE
-        // 传统APB：ACCESS见PREADY即可离开（backward compatible）
-        
-        always_comb begin
-            next_state = IDLE;
-            if(i_rst_n) begin
-                case(current_state)
-                    IDLE: begin
-                        if(i_transfer)
-                            next_state = SETUP;
-                        else
-                            next_state = IDLE;
-                    end
-                    SETUP: begin
-                        next_state = ACCESS;
-                    end
-                    ACCESS: begin
-                        if(i_PREADY)
-                            next_state = i_transfer ? SETUP : IDLE;
-                        else
-                            next_state = ACCESS;
-                    end
-                    default: begin
+    // 传统APB：ACCESS见PREADY即可离开（backward compatible）
+    
+    always_comb begin
+        next_state = IDLE;
+        if(i_rst_n) begin
+            case(current_state)
+                IDLE: begin
+                    if(i_transfer)
+                        next_state = SETUP;
+                    else
                         next_state = IDLE;
-                    end
-                endcase
-            end
+                end
+                SETUP: begin
+                    next_state = ACCESS;
+                end
+                ACCESS: begin
+                    if (apb_timeout)
+                        next_state = IDLE;          // 超时强制回 IDLE，不启动新事务
+                    else if(i_PREADY)
+                        next_state = i_transfer ? SETUP : IDLE;
+                    else
+                        next_state = ACCESS;
+                end
+                default: begin
+                    next_state = IDLE;
+                end
+            endcase
         end
+    end
 
-        always_comb begin
-            PADDR     = 'h0;
-            PWDATA    = 'h0;
-            PWRITE    = 1'b0;
-            PSEL      = 1'b0;
-            PENABLE   = 1'b0;
-            PSTRB     = 'h0;
-            PRDATA    = 'h0;
-            tran_done = 1'b0;
-            if (i_rst_n) begin
-                case(current_state)
-                    SETUP:
-                        begin
-                            PADDR     = i_addr   ;
-                            PWDATA    = i_wdata  ;
-                            PSTRB     = i_wmask  ;
-                            PWRITE    = i_write  ;
-                            PSEL      = 1'b1     ;
-                            PENABLE   = 1'b0     ;
-                        end
-                    ACCESS:
-                        begin
-                            PADDR     = i_addr;
-                            PWDATA    = i_write ? i_wdata : 'h0;
-                            PSTRB     = i_write ? i_wmask : 'h0;
-                            PWRITE    = i_write ;
-                            PSEL      = 1'b1;
-                            PENABLE   = 1'b1;
-                            PRDATA    = i_PRDATA;
-                            tran_done = i_PREADY;   // PREADY时即完成
-                        end
-                    default:;
-                endcase
-            end
+    always_comb begin
+        PADDR     = 'h0;
+        PWDATA    = 'h0;
+        PWRITE    = 1'b0;
+        PSEL      = 1'b0;
+        PENABLE   = 1'b0;
+        PSTRB     = 'h0;
+        PRDATA    = 'h0;
+        tran_done = 1'b0;
+        if (i_rst_n) begin
+            case(current_state)
+                SETUP:
+                    begin
+                        PADDR     = i_addr   ;
+                        PWDATA    = i_wdata  ;
+                        PSTRB     = i_wmask  ;
+                        PWRITE    = i_write  ;
+                        PSEL      = 1'b1     ;
+                        PENABLE   = 1'b0     ;
+                    end
+                ACCESS:
+                    begin
+                        PADDR     = i_addr;
+                        PWDATA    = i_write ? i_wdata : 'h0;
+                        PSTRB     = i_write ? i_wmask : 'h0;
+                        PWRITE    = i_write ;
+                        PSEL      = 1'b1;
+                        PENABLE   = 1'b1;
+                        PRDATA    = i_PRDATA;
+                        tran_done = i_PREADY | apb_timeout;   // PREADY 或超时均完成
+                    end
+                default:;
+            endcase
         end
+    end
 `else
-        always_comb begin
-            next_state = IDLE;
-            if(i_rst_n) begin
-                case(current_state)
-                    IDLE: begin
-                        if(i_transfer)
-                            next_state = SETUP;
-                        else
-                            next_state = IDLE;
-                    end
-                    SETUP: begin
-                        next_state = ACCESS;
-                    end
-                    ACCESS: begin
-                        if(i_PREADY)
-                            next_state = IDLE;
-                        else
-                            next_state = ACCESS;
-                    end
-                    default: begin
+    always_comb begin
+        next_state = IDLE;
+        if(i_rst_n) begin
+            case(current_state)
+                IDLE: begin
+                    if(i_transfer)
+                        next_state = SETUP;
+                    else
                         next_state = IDLE;
-                    end
-                endcase
-            end
+                end
+                SETUP: begin
+                    next_state = ACCESS;
+                end
+                ACCESS: begin
+                    if(i_PREADY)
+                        next_state = IDLE;
+                    else
+                        next_state = ACCESS;
+                end
+                default: begin
+                    next_state = IDLE;
+                end
+            endcase
         end
-        always_comb begin
-            PADDR     = 'h0;
-            PWDATA    = 'h0;
-            PWRITE    = 1'b0;
-            PSEL      = 1'b0;
-            PENABLE   = 1'b0;
-            PSTRB     = 'h0;
-            if (i_rst_n) begin
-                case(current_state)
-                    SETUP:
-                        begin
-                            PADDR     = i_addr   ;
-                            PWDATA    = i_wdata  ;
-                            PSTRB     = i_wmask  ;
-                            PWRITE    = i_write  ;
-                            PSEL      = 1'b1     ;
-                            PENABLE   = 1'b0     ;
-                        end
-                    ACCESS:
-                        begin
-                            PADDR     = i_addr;
-                            PWDATA    = i_write ? i_wdata : 'h0;
-                            PSTRB     = i_write ? i_wmask : 'h0;
-                            PWRITE    = i_write ;
-                            PSEL      = 1'b1;
-                            PENABLE   = 1'b1;
-                        end
-                    default:;
-                endcase
-            end
+    end
+    always_comb begin
+        PADDR     = 'h0;
+        PWDATA    = 'h0;
+        PWRITE    = 1'b0;
+        PSEL      = 1'b0;
+        PENABLE   = 1'b0;
+        PSTRB     = 'h0;
+        if (i_rst_n) begin
+            case(current_state)
+                SETUP:
+                    begin
+                        PADDR     = i_addr   ;
+                        PWDATA    = i_wdata  ;
+                        PSTRB     = i_wmask  ;
+                        PWRITE    = i_write  ;
+                        PSEL      = 1'b1     ;
+                        PENABLE   = 1'b0     ;
+                    end
+                ACCESS:
+                    begin
+                        PADDR     = i_addr;
+                        PWDATA    = i_write ? i_wdata : 'h0;
+                        PSTRB     = i_write ? i_wmask : 'h0;
+                        PWRITE    = i_write ;
+                        PSEL      = 1'b1;
+                        PENABLE   = 1'b1;
+                    end
+                default:;
+            endcase
         end
     end
 

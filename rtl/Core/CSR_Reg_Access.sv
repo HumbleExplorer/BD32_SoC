@@ -212,8 +212,8 @@ always_ff @(posedge clk or negedge rst_n) begin
         mip                 <= #1 'h0;
     end else begin//优先级：异常>外部中断>软件中断>定时器中断
         mip     <= #1 {mip[31:12],external_int,mip[10:8],timer_int,mip[6:4],software_int,mip[2:0]};
-        mcause  <= #1 mcause_n;//写入异常原因
         if (exception_trap) begin//进入异常
+            mcause      <= #1 mcause_n;//写入异常原因（仅陷入时更新，否则保持）
             mstatus[7]  <= #1 mstatus[3];//MPIE <- MIE
             mstatus[3]  <= #1 1'b0;//禁用全局中断
             mepc        <= #1 exception_inst_addr;//保存异常PC值
@@ -222,6 +222,7 @@ always_ff @(posedge clk or negedge rst_n) begin
             mstatus[3]  <= #1 mstatus[7];//MIE <- MPIE
             mstatus[7]  <= #1 1'b1;
         end else if(int_trap_jump_n) begin//int_trap_jump前一周期判断，防止长周期指令和跳转指令间的相关性导致next_inst_addr错误
+            mcause      <= #1 mcause_n;//写入中断原因（仅陷入时更新，否则保持）
             mepc        <= #1 next_inst_addr;
             mstatus[7]  <= #1 mstatus[3];
             mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus

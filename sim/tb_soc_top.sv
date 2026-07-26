@@ -230,7 +230,88 @@ initial begin
     $display("============================================================\n");
 
 end
-`ifdef RESET_REDOWNLOAD_TEST
+`ifdef BUS_TIMEOUT_TEST
+// =====================================================================
+// 总线访问超时测试（BUS_TIMEOUT_TEST）
+// =====================================================================
+// 测试流程：
+//   1. UART 下载 bus_timeout.uartbin，程序运行
+//   2. force apb_pready[4]=0，挂死 Timer 从机
+//   3. 程序向 Timer (0xE0020000) 写寄存器 → 总线无响应
+//   4. APB_Master 在 BUS_TIMEOUT/2 周期后强制完成，桥返回 SLVERR
+//      → CPU 触发 store access fault (mcause=7) → serr_handler
+//   5. handler 记录 mcause/mepc 到 DTCM 0x28000/0x28004，跳过故障指令
+//   6. main 继续，向 GPIO out_reg 写 PASS 签名 0x05
+//   判定：DTCM[0x28000]==7 且 DTCM[0x28004]==0x000105bc 且 GPIO==0x05
+// =====================================================================
+localparam BT_TIMEOUT_NS   = 30_000_000; // 等待 PASS 签名超时 30ms
+localparam BT_EXPECT_MCAUSE = 32'd7;     // store access fault
+localparam BT_EXPECT_MEPC   = 32'h0001_05bc; // 故障 store 指令地址
+localparam BT_PASS_SIG      = 32'h05;    // GPIO[2]|[0]，避开 BootROM 的 0x18
+
+// DTCM 暂存字索引（字节地址 0x28000/0x28004/0x28008 → 字索引 = addr[15:2] = 0x2000/0x2001/0x2002）
+localparam BT_IDX_MCAUSE = 14'h2000;
+localparam BT_IDX_MEPC   = 14'h2001;
+localparam BT_IDX_DONE   = 14'h2002;
+
+logic [31:0] bt_mcause, bt_mepc, bt_done;
+logic bt_pass;
+
+initial begin
+    @(posedge rst_n);
+    wait(tb_soc_top.u_SoC_top.u_apb_uart.download_en);
+    #50;
+    uart_download_program(ITCM_FULL_PATH);
+    wait(download_done);
+    $display("\n============================================================");
+    $display("  [BUS_TIMEOUT] Download done. Hanging Timer slave (PREADY=0)");
+    $display("============================================================\n");
+    #2000;
+
+    // 挂死 Timer 从机：PREADY 恒 0 → AXI 主设备等待 → 超时
+    force tb_soc_top.u_SoC_top.apb_pready[4] = 1'b0;
+
+    // 等 PASS 签名（GPIO out_reg == 0x18），带超时保护
+    fork
+        begin : bt_wait_pass
+            wait(tb_soc_top.u_SoC_top.u_apb_gpio.out_reg == BT_PASS_SIG);
+        end
+        begin : bt_timeout_guard
+            #(BT_TIMEOUT_NS);
+        end
+    join_any
+    disable fork;
+
+    #2000;
+    bt_mcause = tb_soc_top.u_SoC_top.u_RISC_V_Core.u_DTCM.gen_reg.ram_mem[BT_IDX_MCAUSE];
+    bt_mepc   = tb_soc_top.u_SoC_top.u_RISC_V_Core.u_DTCM.gen_reg.ram_mem[BT_IDX_MEPC];
+    bt_done   = tb_soc_top.u_SoC_top.u_RISC_V_Core.u_DTCM.gen_reg.ram_mem[BT_IDX_DONE];
+
+    $display("\n============================================================");
+    $display("  [BUS_TIMEOUT] Result Check");
+    $display("    GPIO out_reg = 0x%08x (expect 0x%08x)",
+             tb_soc_top.u_SoC_top.u_apb_gpio.out_reg, BT_PASS_SIG);
+    $display("    DTCM[0x28000] mcause = %0d (expect %0d)", bt_mcause, BT_EXPECT_MCAUSE);
+    $display("    DTCM[0x28004] mepc   = 0x%08x (expect 0x%08x)", bt_mepc, BT_EXPECT_MEPC);
+    $display("    DTCM[0x28008] done   = 0x%08x", bt_done);
+    $display("============================================================");
+
+    bt_pass = (tb_soc_top.u_SoC_top.u_apb_gpio.out_reg == BT_PASS_SIG)
+           && (bt_mcause == BT_EXPECT_MCAUSE)
+           && (bt_mepc   == BT_EXPECT_MEPC)
+           && (bt_done   == 32'hA5A5_A5A5);
+
+    if (bt_pass)
+        $display("\n  [BUS_TIMEOUT] === TEST PASSED ===\n");
+    else
+        $display("\n  [BUS_TIMEOUT] *** TEST FAILED ***\n");
+
+    release tb_soc_top.u_SoC_top.apb_pready[4];
+    #1000;
+    $finish;
+end
+
+`elsif RESET_REDOWNLOAD_TEST
 // =====================================================================
 // 复位后重新下载测试（RESET_REDOWNLOAD_TEST）
 // =====================================================================

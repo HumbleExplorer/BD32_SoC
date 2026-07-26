@@ -31,15 +31,22 @@
 // 启用后自动关闭 DIRECT_LOAD，走 UART 下载路径，使用 blink.uartbin
 // `define RESET_REDOWNLOAD_TEST
 
+// 总线访问超时测试：模拟「Timer 从机挂死 (apb_pready[4]=0)」场景
+// 启用后自动关闭 DIRECT_LOAD，走 UART 下载路径，使用 bus_timeout.uartbin
+// CPU 向 Timer 写寄存器 → 总线无响应 → BUS_TIMEOUT 后触发 store access
+// fault (mcause=7)，验证 AXI 超时保护 + 异常上报链路
+// `define BUS_TIMEOUT_TEST
+
 `define DIRECT_LOAD  // 注释掉则走 UART 下载
 // `define CUSTOM_ASM
 // `define XILINX
 // `define SIMULATION
-`define RESET_REDOWNLOAD_TEST
-// RESET_REDOWNLOAD_TEST 需要 UART 下载路径，强制关闭 DIRECT_LOAD
+// `define BUS_TIMEOUT_TEST  // 由 run_bus_timeout_test.do 的 +define+ 注入
+// RESET_REDOWNLOAD_TEST / BUS_TIMEOUT_TEST 需要 UART 下载路径，强制关闭 DIRECT_LOAD
 `ifdef RESET_REDOWNLOAD_TEST
     `undef DIRECT_LOAD
 `endif
+
 
 `ifdef DIRECT_LOAD
     `ifdef CORE_TEST
@@ -56,7 +63,10 @@
     `define DTCM_FILE "coremark_o2_dtcm.mem"
 `else
     `define PATH "../../test_data/soc/c/"
-    `ifdef RESET_REDOWNLOAD_TEST
+    `ifdef BUS_TIMEOUT_TEST
+        `define ITCM_FILE "bus_timeout.uartbin"
+        `define DTCM_FILE "bus_timeout.uartbin"
+    `elsif RESET_REDOWNLOAD_TEST
         `define ITCM_FILE "blink.uartbin"
         `define DTCM_FILE "blink.uartbin"
     `else
@@ -119,6 +129,11 @@
 
 // 总线地址阈值（16位标签）：地址高16位 >= 此值则走 AXI 总线
 `define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000
+
+// AXI 总线访问超时阈值（时钟周期数）：从机若在此周期内无响应，
+// AXI_Lite_Master 强制完成事务并返回 DECERR，触发 load/store access fault，
+// 防止从机挂死导致 CPU 永久卡死。80MHz 下 1024 周期 ≈ 12.8us。
+`define BUS_TIMEOUT  1024
 
 // 兼容旧代码的 16 位设备标签（APB 内部偏移计算用）
 `define CLINT_BASE_TAG  `DEVICE_TAG_WIDTH'hF200

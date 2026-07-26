@@ -140,6 +140,37 @@ module AXI_Lite_Master #(
     assign r_hs  = m_rvalid && m_rready;
 
     // =========================================================================
+    // 总线超时检测
+    // =========================================================================
+    // 从机挂死（永不拉 ready/valid）时，FSM 会卡在等待态。计数器在等待态累加，
+    // 超过 BUS_TIMEOUT 阈值则触发 bus_timeout，强制完成事务并返回 DECERR，
+    // 避免 CPU 因 ~bus_ready 永久 stall。
+    localparam int unsigned TIMEOUT_VAL   = `BUS_TIMEOUT;
+    // 计数器位宽必须能表示 TIMEOUT_VAL 本身。$clog2(1024)=10 只能存 0~1023，
+    // 会使 TIMEOUT_VAL[TIMEOUT_WIDTH-1:0] 把 1024 截成 0，导致 timeout_cnt>=0 恒成立、
+    // 每个总线等待态首拍即误触发 DECERR（所有 GPIO/UART 访问都被当成超时）。
+    // 用 $clog2(TIMEOUT_VAL+1) 保证位宽容纳阈值（1024 → 11 位）。
+    localparam int unsigned TIMEOUT_WIDTH = $clog2(TIMEOUT_VAL + 1);
+
+    logic [TIMEOUT_WIDTH-1:0] timeout_cnt;
+    logic                     bus_timeout;
+
+    logic in_wait_state;
+    assign in_wait_state = (state == WAIT_W_AW) || (state == WAIT_B)
+                        || (state == WAIT_AR)   || (state == WAIT_R);
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            timeout_cnt <= '0;
+        else if (in_wait_state)
+            timeout_cnt <= timeout_cnt + 1'b1;
+        else
+            timeout_cnt <= '0;
+    end
+
+    assign bus_timeout = in_wait_state && (timeout_cnt >= TIMEOUT_VAL[TIMEOUT_WIDTH-1:0]);
+
+    // =========================================================================
     // CPU 侧输入寄存器
     // =========================================================================
     logic                      req_write_i;
@@ -157,6 +188,7 @@ module AXI_Lite_Master #(
     end
 
     // ── 状态转移（纯组合）──
+    // bus_timeout 优先级最高：从机挂死时强制跳到 DONE 解除卡死
     always_comb begin
         next_state = state;
         case (state)
@@ -169,6 +201,7 @@ module AXI_Lite_Master #(
                        else                next_state = IDLE;
             default:   next_state = IDLE;
         endcase
+        if (bus_timeout) next_state = DONE;
     end
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -216,8 +249,11 @@ module AXI_Lite_Master #(
             m_rready  <= (next_state == WAIT_R);
             req_ready <= (next_state == DONE) || (next_state == IDLE);
             rsp_valid <= (next_state == DONE);
-            // 进入 DONE 前锁存响应数据
-            if (state == WAIT_B && b_hs) begin
+            // 进入 DONE 前锁存响应数据；总线超时则强制 DECERR（从机无响应）
+            if (bus_timeout) begin
+                rsp_error <= 2'b11;          // DECERR：从机挂死/超时无响应
+                rsp_rdata <= '0;
+            end else if (state == WAIT_B && b_hs) begin
                 rsp_error <= m_bresp;
             end else if (state == WAIT_R && r_hs) begin
                 rsp_error <= m_rresp;
