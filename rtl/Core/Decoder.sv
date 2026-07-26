@@ -14,7 +14,6 @@ module Decoder #(
     input   logic   [DATA_WIDTH-1:0]        reg_rs1_rdata,
     input   logic   [DATA_WIDTH-1:0]        reg_rs2_rdata,
 
-    input   logic   [1:0]                   priv_mode,
     //to register
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr,
     output  logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr,
@@ -34,8 +33,9 @@ module Decoder #(
     output  logic                           pop_ras,          // ret
 
     //to Ctrl
-    output  logic   [DATA_WIDTH-2:0]        exception_code,
-    output  logic   [DATA_WIDTH-1:0]        exception_val,
+    output  logic                           id_illegal_inst, // 非法指令
+    output  logic                           id_ecall,        // 环境调用
+    output  logic                           id_ebreak,       // 环境断点
     output  logic   [2:0]                   inst_type           // 0:OTHER 1:ALU 2:LOAD 3:STORE 4:BR 5:JMP 6:MULDIV
 );
 
@@ -88,8 +88,9 @@ assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
 assign  rs1_eq_rd = (inst[19:15] == rd);
 
 assign  is_nop = (inst == `INST_NOP);
-assign  exception_code = invalid_inst ? 'h2 : ecall_req ? ((priv_mode == 2'b00) ? 'h8 : 'h11): ebreak_req ? 'h3 : {(DATA_WIDTH-1){1'b1}};
-assign  exception_val  = invalid_inst ? inst : 'h0;
+assign  id_illegal_inst = invalid_inst;
+assign  id_ecall        = ecall_req;
+assign  id_ebreak       = ebreak_req;
 
 always_comb begin
     inst_type = 3'd0;

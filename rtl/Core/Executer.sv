@@ -27,7 +27,6 @@ module Executer #(
     input   logic                           id_ex_stall,
     // from CSR
     input   logic   [DATA_WIDTH-1:0]        csr_rdata,
-    input   logic                           illegal_inst_csr,
     // from data_hazard (register values + addresses)
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op1,
     (*MAX_FANOUT=32*)input   logic   [DATA_WIDTH-1:0]        alu_op2,
@@ -39,8 +38,8 @@ module Executer #(
     // to ctrl
     output  logic                           branch_jump_en,//实际上是否跳转
     output  logic   [ADDR_WIDTH-1:0]        branch_jump_addr,//实际跳转地址
-    output  logic   [DATA_WIDTH-2:0]        exception_code,
-    output  logic   [DATA_WIDTH-1:0]        exception_val,
+    output  logic                           ex_access_illegal,   // 访存地址不在 DTCM 范围
+    output  logic                           ex_addr_misalign,    // 访存地址未对齐
     // to OITF（长周期指令派发）
     output  logic                           lp_valid,           // EX 阶段确认长周期指令
     output  logic                           lp_is_div,          // 1=DIV  0=MUL
@@ -102,8 +101,8 @@ assign  access_func3 = func3;
 assign  lp_is_div = func3[2];
 
 assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG): 1'b0;
-assign exception_code = access_illegal ? (access_wr ? 4'd7 : 4'd5) : access_addr_misalign ? (access_wr ? 4'd6 : 4'd4) : (illegal_inst_csr) ? 4'd2 : {DATA_WIDTH-1{1'b1}};
-assign exception_val = (access_illegal || access_addr_misalign) ? access_addr : illegal_inst_csr ? inst : 'h0;
+assign ex_access_illegal = access_illegal;
+assign ex_addr_misalign  = access_addr_misalign;
 assign branch_predict_success = ((predict_taken && branch_taken) && (predict_target == branch_target)) 
                             || (~predict_taken && ~branch_taken);
 assign branch_jump_addr = branch_taken ? branch_target : inst_addr_plus_4;

@@ -15,16 +15,17 @@ module PC_counter #(
     input   logic   [DATA_WIDTH-1:0]    predict_target,
     input   logic                       stall,
     (* MAX_FANOUT = 16 *)output  logic   [ADDR_WIDTH-1:0]    pc,          // 下一条指令地址（给 ROM/RAM，提前一拍送地址）
-    output  logic   [DATA_WIDTH-2:0]    exception_code,
-    output  logic   [DATA_WIDTH-1:0]    exception_val,
+    output  logic                       if_addr_misalign,  // 指令地址未对齐
+    output  logic                       if_access_fault,   // 指令访问错误（地址不在合法范围）
     (* MAX_FANOUT = 16 *)output  logic   [ADDR_WIDTH-1:0]    inst_addr_o  // 当前指令地址（给流水线，= 上一拍 pc）
 );
 logic [ADDR_WIDTH-1:0] inst_addr;
 
-// 异常检查基于 inst_addr（已寄存器化的当前取指地址），避免与 pc 形成组合回路
-assign exception_code = (inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_TAG || inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_TAG) ?
-    (inst_addr[ALIGN_WIDTH-1:0] == 0 ? {DATA_WIDTH-1{1'b1}} : 'd0) : 'd1;//指令地址未对齐
-assign exception_val = inst_addr;
+// 异常条件（纯 1-bit，编码由 RISC_V_Core 统一完成）
+logic inst_addr_legal;
+assign inst_addr_legal  = (inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_TAG || inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_TAG);
+assign if_addr_misalign = inst_addr_legal && (inst_addr[ALIGN_WIDTH-1:0] != 0);
+assign if_access_fault  = ~inst_addr_legal;
 assign inst_addr_o = inst_addr;
 always_comb begin
     pc = inst_addr + 4;

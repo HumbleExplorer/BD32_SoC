@@ -67,15 +67,23 @@ logic                               oitf_retire_rd_wen;
 logic                               lp_valid;
 logic                               lp_is_div;
 
+// 子模块异常条件线（1-bit，编码在本模块统一完成）
+logic                       if_addr_misalign;
+logic                       if_access_fault;
+logic                       id_illegal_inst;
+logic                       id_ecall;
+logic                       id_ebreak;
+logic                       ex_access_illegal;
+logic                       ex_addr_misalign;
+logic                       ex_illegal_csr;
+
+// 编码后的异常码/值（送 Pipeline_Ctrl 仲裁）
 logic   [DATA_WIDTH-2:0]    exception_code_if;
 logic   [DATA_WIDTH-2:0]    exception_code_id;
 logic   [DATA_WIDTH-2:0]    exception_code_ex;
 logic   [DATA_WIDTH-1:0]    exception_val_if;
 logic   [DATA_WIDTH-1:0]    exception_val_id;
 logic   [DATA_WIDTH-1:0]    exception_val_ex;
-// Executer 原始异常输出（总线错误覆盖前）
-logic   [DATA_WIDTH-2:0]    exception_code_ex_raw;
-logic   [DATA_WIDTH-1:0]    exception_val_ex_raw;
 
 (* MAX_FANOUT = 16 *) logic                       pc_stall;
 logic                       ctrl_jump_en;
@@ -183,7 +191,6 @@ logic                       csr_en;
 logic   [CSR_ADDR_WIDTH-1:0]csr_addr;
 logic   [DATA_WIDTH-1:0]    csr_rdata;
 logic   [DATA_WIDTH-1:0]    csr_wdata;
-logic                       illegal_inst_csr;
 
 // MEM
 logic   [ADDR_WIDTH-1:0]    inst_addr_mem;
@@ -234,13 +241,37 @@ end
 logic bus_error;
 assign bus_error = bus_tran_done && (bus_resp != 2'b00);
 
-// 异常码覆盖：总线错误时注入 load/store access fault（读=5，写=7），
-// mtval 填锁存的访问地址；否则透传 Executer 的原始异常输出。
-// mepc 天然正确：总线 stall 期间 ID_EX 保留 inst_addr_ex（=肇事指令地址）。
-assign exception_code_ex = bus_error ? (bus_write_q ? {{DATA_WIDTH-5{1'b0}}, 3'd7}
-                                                    : {{DATA_WIDTH-5{1'b0}}, 3'd5})
-                                     : exception_code_ex_raw;
-assign exception_val_ex  = bus_error ? bus_addr_q : exception_val_ex_raw;
+// =========================================================================
+// 异常编码（统一在顶层完成，子模块只报 1-bit 条件）
+// 约定：无异常 = {31{1'b1}}（bit[30]=1 为哨兵），有效异常码 bit[30]=0
+// =========================================================================
+// IF 级：指令访问错误 > 指令地址未对齐
+assign exception_code_if = if_access_fault  ? {{DATA_WIDTH-5{1'b0}}, 4'd1}
+                         : if_addr_misalign ? {{DATA_WIDTH-5{1'b0}}, 4'd0}
+                         : {DATA_WIDTH-1{1'b1}};
+assign exception_val_if  = inst_addr_if;
+
+// ID 级：非法指令 > ecall > ebreak
+assign exception_code_id = id_illegal_inst ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
+                         : id_ecall        ? {{DATA_WIDTH-5{1'b0}}, (priv_mode == 2'b00) ? 4'd8 : 4'd11}
+                         : id_ebreak       ? {{DATA_WIDTH-5{1'b0}}, 4'd3}
+                         : {DATA_WIDTH-1{1'b1}};
+assign exception_val_id  = id_illegal_inst ? inst_id : 'h0;
+
+// EX 级：bus_error > 访存非法 > 访存未对齐 > 非法 CSR
+// bus_error 时 mtval 填锁存地址 bus_addr_q；访存异常填 access_addr_ex；非法 CSR 填 inst_ex
+assign exception_code_ex = bus_error        ? (bus_write_q ? {{DATA_WIDTH-5{1'b0}}, 4'd7}
+                                                           : {{DATA_WIDTH-5{1'b0}}, 4'd5})
+                         : ex_access_illegal ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, 4'd7}
+                                                             : {{DATA_WIDTH-5{1'b0}}, 4'd5})
+                         : ex_addr_misalign  ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, 4'd6}
+                                                             : {{DATA_WIDTH-5{1'b0}}, 4'd4})
+                         : ex_illegal_csr    ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
+                         : {DATA_WIDTH-1{1'b1}};
+assign exception_val_ex  = bus_error                    ? bus_addr_q
+                         : (ex_access_illegal | ex_addr_misalign) ? access_addr_ex
+                         : ex_illegal_csr               ? inst_ex
+                         : 'h0;
 
 
 // WB
@@ -392,8 +423,8 @@ PC_counter #(
     .predict_target (predict_target_if),
     .stall          (pc_stall),
     .pc             (pc),               // 下一条指令地址，给 BootROM/ITCM 读地址
-    .exception_code (exception_code_if),
-    .exception_val  (exception_val_if),
+    .if_addr_misalign (if_addr_misalign),
+    .if_access_fault  (if_access_fault),
     .inst_addr_o    (inst_addr_if)      // 当前指令地址，给流水线
 );
 
@@ -478,7 +509,6 @@ Decoder #(
     .inst           (inst_id),
     .reg_rs1_raddr  (reg_rs1_raddr),
     .reg_rs2_raddr  (reg_rs2_raddr),
-    .priv_mode      (priv_mode),
     .reg_rs1_rdata  (reg_rs1_rdata),
     .reg_rs2_rdata  (reg_rs2_rdata),
     .alu_op1        (alu_op1_id),
@@ -494,8 +524,9 @@ Decoder #(
     .branch_req     (branch_req_id),
     .push_ras       (push_ras_id),
     .pop_ras        (pop_ras_id),
-    .exception_code (exception_code_id),
-    .exception_val  (exception_val_id),
+    .id_illegal_inst (id_illegal_inst),
+    .id_ecall       (id_ecall),
+    .id_ebreak      (id_ebreak),
     .inst_type      (inst_type_id)
 );
 
@@ -608,7 +639,6 @@ Executer #(
     .is_nop           	(is_nop_ex          ),
     .is_fence_i         (is_fence_i_ex      ),
     .csr_rdata        	(csr_rdata          ),
-    .illegal_inst_csr   (illegal_inst_csr   ),
     .access_en          (access_en_ex       ),
     .access_wr         	(access_wr_ex       ),
     .alu_op1          	(alu_op1_forward    ),
@@ -620,8 +650,8 @@ Executer #(
     .access_wdata_temp 	(access_wdata_temp  ),
     .branch_jump_en     (branch_jump_en_ex  ),
     .branch_jump_addr   (branch_jump_addr_ex),
-    .exception_code  	(exception_code_ex_raw  ),
-    .exception_val   	(exception_val_ex_raw   ),
+    .ex_access_illegal  (ex_access_illegal  ),
+    .ex_addr_misalign   (ex_addr_misalign   ),
     .id_ex_flush        (id_ex_flush),
     .id_ex_stall        (id_ex_stall),
     .lp_valid           (lp_valid           ),
@@ -677,7 +707,7 @@ CSR_Reg_Access #(
     .software_int   	(software_int       ),
     .timer_int      	(timer_int          ),
     .mtime_shadow   	(mtime_shadow       ),
-    .illegal_inst_csr   (illegal_inst_csr   ),
+    .ex_illegal_csr     (ex_illegal_csr     ),
     .priv_mode      	(priv_mode          ),
     .trap_jump      	(trap_jump          ),
     .trap_jump_addr 	(trap_jump_addr     ),

@@ -46,7 +46,9 @@
 `ifdef RESET_REDOWNLOAD_TEST
     `undef DIRECT_LOAD
 `endif
-
+`ifdef BUS_TIMEOUT_TEST
+    `undef DIRECT_LOAD
+`endif
 
 `ifdef DIRECT_LOAD
     `ifdef CORE_TEST

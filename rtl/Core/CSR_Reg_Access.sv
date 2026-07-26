@@ -32,7 +32,7 @@ module CSR_Reg_Access #(
     input                                   timer_int,
     input   logic   [2*DATA_WIDTH-1:0]      mtime_shadow,// 只读影子
 // to EX
-    output  logic                           illegal_inst_csr,
+    output  logic                           ex_illegal_csr,
 // to ctrl
     output  logic   [1:0]                   priv_mode,//特权模式 0：U；  1：S；  3：M
     (* MAX_FANOUT = 16 *)output  logic                           trap_jump,
@@ -45,6 +45,8 @@ module CSR_Reg_Access #(
 // to CLINT
 );
 
+logic   illegal_inst_csr;
+assign  ex_illegal_csr = illegal_inst_csr;
 //机器陷阱配置
 logic   [DATA_WIDTH-1:0]    mstatus;//状态0x300
 logic   [DATA_WIDTH-1:0]    mie;//中断使能0x304
