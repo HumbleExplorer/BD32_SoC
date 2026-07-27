@@ -21,9 +21,19 @@ module bd32_board_top #(
     parameter TIMER_CHANNEL_NUM  = `TIMER_CHANNEL_NUM
 )(
     input  logic                                     sys_clk,           // 板载晶振 50MHz
-    input  logic                                     sys_rst_n,         // 板载复位按键
+    input  logic                                     sys_rst_n,         // 板载复位按键（低有效）
+
+    // --- Sipeed RV-Debugger 接口 ---
+    input  logic                                     dbg_rst,           // 调试器复位（高有效，FTDI ADBUS5）
+    input  logic                                     dbg_tck,           // JTAG TCK（预留，接 Debug Module）
+    input  logic                                     dbg_tdi,           // JTAG TDI
+    input  logic                                     dbg_tms,           // JTAG TMS
+    output logic                                     dbg_tdo,           // JTAG TDO
+
+    // --- 板载 UART ---
     input  logic                                     uart_rx,
     output logic                                     uart_tx,
+
     inout  [GPIO_NUM-1:0]                            gpio_io,
     inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0]         timer_channel_io
 );
@@ -48,7 +58,8 @@ clk_wiz_0 u_clk_wiz_0 (
 logic rst_async_n;
 logic rst_n_bufg;
 
-assign rst_async_n = sys_rst_n && clk_wiz_locked;
+// 按键(低有效) && ~调试器(高有效) && MMCM锁定 → 任一触发即复位
+assign rst_async_n = sys_rst_n && (~dbg_rst) && clk_wiz_locked;
 BUFG u_rst_bufg (
     .I  (rst_async_n),
     .O  (rst_n_bufg)
@@ -104,5 +115,11 @@ SoC_top #(
     .gpio_io          (gpio_io    ),
     .timer_channel_io (timer_channel_io)
 );
+
+// =========================================================================
+// JTAG TDO：Debug Module 实现前暂拉低
+// TODO: 接入 Debug Module 的 tdo 输出
+// =========================================================================
+assign dbg_tdo = 1'b0;
 
 endmodule

@@ -1,3 +1,15 @@
+// =============================================================================
+// SoC_Config.sv — BD32 SoC 全局配置
+// =============================================================================
+// 使用方式：
+//   ModelSim 仿真：不定义 XILINX，默认 DIRECT_LOAD（从 .mem 加载）
+//   Vivado 综合：  定义 XILINX（由 Vivado 自动注入），强制 UART 下载模式
+//   Vivado 仿真：  定义 XILINX + SIMULATION
+// =============================================================================
+
+// ============================================================
+// 1. 基础参数（所有环境通用）
+// ============================================================
 `define ADDR_WIDTH 32
 `define DATA_WIDTH 32
 `define REGFILE_NUM 32
@@ -7,64 +19,101 @@
 `define ALIGN_WIDTH 2
 `define DEVICE_TAG_WIDTH 16
 
-// 取消注释下行启用 3 级流水线乘法器（默认状态机，4 拍一结果）
+`define ITCM_DEPTH 16*1024
+`define DTCM_DEPTH 16*1024
+`define MROM_DEPTH 1*1024
+
+`define ITCM_LENGTH (`ITCM_DEPTH * `ALIGN_BYTES)  // 16K×4 = 64KB
+`define DTCM_LENGTH (`DTCM_DEPTH * `ALIGN_BYTES)
+
+// ============================================================
+// 2. 功能开关
+// ============================================================
+// 3 级流水线乘法器（默认状态机 4 拍，启用后 3 拍）
 `define MULT_PIPELINE
 
-
-// 访存地址快速加法：用 12 位加法+高位条件调整代替 32 位 CARRY4×8 链，
-// 减少 mem_addr 关键路径的时序压力。启用后可改善 EX 阶段时序。
-// 取消注释下行以启用：
+// 访存地址快速加法（减少 EX 阶段关键路径）
 // `define ADDR_GEN_FAST
 
-// Load→Store 前递转发（forward_C）
-// 启用后：Load 后紧跟 Store 时不需停顿（通过 forward_C 转发 wr_reg_data_mem）
-// 关闭后：Load→Store 会产生 load-use stall（转发回退到 forward_B）
-// 关闭可减少 wr_reg_data_mem 扇出，改善时序
-// 取消注释下行启用：
+// Load→Store 前递转发 forward_C（增加扇出，改善 Load-Store 停顿）
 // `define FORWARD_C_EN
 
+// APB 延迟响应模拟
 // `define APB_ACCESS_DELAYED_DONE
-// `define GPIO_SIM
-// `define TIMER_SIM
 
-// 复位后重新下载测试：模拟「下载程序→复位→再次下载」场景
-// 启用后自动关闭 DIRECT_LOAD，走 UART 下载路径，使用 blink.uartbin
-// `define RESET_REDOWNLOAD_TEST
+// ============================================================
+// 3. 测试模式（互斥，仿真时通过 +define+ 注入）
+// ============================================================
+// `define CORE_TEST               // riscv-tests / custom_asm 裸核测试
+// `define CUSTOM_ASM              // 配合 CORE_TEST 使用自定义汇编
+// `define BUS_TIMEOUT_TEST        // 总线超时异常测试
+// `define RESET_REDOWNLOAD_TEST   // 复位后重新下载测试
+// `define GPIO_SIM                // GPIO 仿真模型
+// `define TIMER_SIM               // Timer 仿真模型
 
-// 总线访问超时测试：模拟「Timer 从机挂死 (apb_pready[4]=0)」场景
-// 启用后自动关闭 DIRECT_LOAD，走 UART 下载路径，使用 bus_timeout.uartbin
-// CPU 向 Timer 写寄存器 → 总线无响应 → BUS_TIMEOUT 后触发 store access
-// fault (mcause=7)，验证 AXI 超时保护 + 异常上报链路
-// `define BUS_TIMEOUT_TEST
+// ============================================================
+// 4. 加载模式
+// ============================================================
+// DIRECT_LOAD = 从 .mem 文件初始化 BRAM（仿真快速加载）
+// 关闭后走 BootROM → UART 下载路径（FPGA 板级运行）
+//
+// 注意：Vivado 综合时强制关闭（见下方 `ifdef XILINX）
+// 注意：BUS_TIMEOUT_TEST / RESET_REDOWNLOAD_TEST 强制关闭
+`define DIRECT_LOAD
 
-`define DIRECT_LOAD  // 注释掉则走 UART 下载
-// `define CUSTOM_ASM
-// `define XILINX
-// `define SIMULATION
-// `define BUS_TIMEOUT_TEST  // 由 run_bus_timeout_test.do 的 +define+ 注入
-// RESET_REDOWNLOAD_TEST / BUS_TIMEOUT_TEST 需要 UART 下载路径，强制关闭 DIRECT_LOAD
-`ifdef RESET_REDOWNLOAD_TEST
-    `undef DIRECT_LOAD
-`endif
 `ifdef BUS_TIMEOUT_TEST
     `undef DIRECT_LOAD
 `endif
+`ifdef RESET_REDOWNLOAD_TEST
+    `undef DIRECT_LOAD
+`endif
 
-`ifdef DIRECT_LOAD
-    `ifdef CORE_TEST
-        
-        `ifdef CUSTOM_ASM
-            `define PATH "../../test_data/custom_asm/"
-        `else
-            `define PATH "../../test_data/riscv-tests/"
-        `endif
+// ============================================================
+// 5. 环境适配（路径 + 存储类型）
+// ============================================================
+`ifdef XILINX
+    // --- Vivado 环境 ---
+    `define TCM_Reg_or_BRAM "BRAM"
+    `define BOOT_PATH "../../../../../test_data/soc/"
+    `ifdef SIMULATION
+        // Vivado 行为仿真
+        `define PATH "../../../../../test_data/soc/c/"
+        `define DISPLAY_INST_WAVE
     `else
-        `define PATH "../../test_data/soc/c/"
+        // Vivado 综合 → 强制 UART 下载（BRAM 不预加载程序）
+        `undef DIRECT_LOAD
+        `define SYNTHESIS
+        `define PATH "../soc/c/"
     `endif
+`else
+    // --- ModelSim 环境 ---
+    `define TCM_Reg_or_BRAM "Reg"
+    `define BOOT_PATH "../../test_data/soc/"
+    `define PATH "../../test_data/soc/c/"
+    `define DISPLAY_INST_WAVE
+    // `define DEBUG
+`endif
+
+// CORE_TEST 模式下 PATH 指向裸核测试用例
+`ifdef CORE_TEST
+    `ifdef CUSTOM_ASM
+        `undef PATH
+        `define PATH "../../test_data/custom_asm/"
+    `else
+        `undef PATH
+        `define PATH "../../test_data/riscv-tests/"
+    `endif
+`endif
+
+// ============================================================
+// 6. 加载文件选择
+// ============================================================
+`ifdef DIRECT_LOAD
+    // 直接加载：.mem 文件初始化 ITCM/DTCM
     `define ITCM_FILE "coremark_o2_itcm.mem"
     `define DTCM_FILE "coremark_o2_dtcm.mem"
 `else
-    `define PATH "../../test_data/soc/c/"
+    // UART 下载：BootROM 等待串口发送 .uartbin
     `ifdef BUS_TIMEOUT_TEST
         `define ITCM_FILE "bus_timeout.uartbin"
         `define DTCM_FILE "bus_timeout.uartbin"
@@ -77,50 +126,20 @@
     `endif
 `endif
 
-`ifdef XILINX
-    `define BOOT_PATH "../../../../../test_data/soc/"
-    `ifdef SIMULATION
-        `define PATH "../../../../../test_data/soc/c/"
-        `define ITCM_DEPTH 16*1024
-        `define DTCM_DEPTH 16*1024
-        `define TCM_Reg_or_BRAM "BRAM"
-        `define DISPLAY_INST_WAVE
-    `else
-        `define SYNTHESIS
-        `define PATH "../soc/c/"//Vivado路径
-        `define ITCM_DEPTH 16*1024
-        `define DTCM_DEPTH 16*1024
-        `define TCM_Reg_or_BRAM "BRAM"
-    `endif
-`else
-    // `define DEBUG
-    `define ITCM_DEPTH 16*1024
-    `define DTCM_DEPTH 16*1024
-    `define BOOT_PATH "../../test_data/soc/"
-    `define TCM_Reg_or_BRAM "Reg"
-    `define DISPLAY_INST_WAVE
-`endif
+`define MROM_FILE "mrom.dat"
 
-
-`define MROM_DEPTH 1*1024//1K
-
-`define ITCM_LENGTH (`ITCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
-`define DTCM_LENGTH (`DTCM_DEPTH*`ALIGN_BYTES)// 8/16K*4B=32/64KB
 // ============================================================
-// AXI 地址映射（2026-04-24 修订）
+// 7. 地址映射
 // ============================================================
-// AXI_Interconnect 1→4 路由（地址高4位 [31:28] 译码）
-// `define AXI_MROM_BASE_ADDR     32'h8000_0000  // [31:28]=4'h8, 256MB
+// --- AXI Interconnect 路由（地址高 4 位 [31:28] 译码）---
 `define AXI_FLASH_BASE_ADDR    32'h9000_0000  // [31:28]=4'h9/A, 512MB
 `define AXI_DDR_BASE_ADDR      32'hB000_0000  // [31:28]=4'hB/C, 512MB
 `define AXI_APB_BRIDGE_BASE    32'hE000_0000  // [31:28]=4'hE/F, 512MB
 
-// AXI-APB Bridge 内部地址映射（PSEL 解码）
-// 每个 APB 从机占 64KB 地址空间，基址按 [31:16] 匹配
-`define APB_SLAVE_ADDR_WIDTH   16             // [15:0] 为从机内部偏移
-`define APB_NUM_SLAVES         16             // 可配置 APB 从机数量
+// --- AXI-APB Bridge 从机映射（[31:16] 匹配，每个从机 64KB）---
+`define APB_SLAVE_ADDR_WIDTH   16
+`define APB_NUM_SLAVES         16
 
-// APB 从机基址（32位完整地址，Bridge 内部用 [31:16] 匹配）
 `define APB_CLINT_BASE_ADDR    32'hF200_0000  // PSEL[0]
 `define APB_PLIC_BASE_ADDR     32'hFC00_0000  // PSEL[1]
 `define APB_GPIO_BASE_ADDR     32'hE000_0000  // PSEL[2]
@@ -129,51 +148,44 @@
 `define APB_SPI_BASE_ADDR      32'hE003_0000  // PSEL[5]
 `define APB_I2C_BASE_ADDR      32'hE004_0000  // PSEL[6]
 
-// 总线地址阈值（16位标签）：地址高16位 >= 此值则走 AXI 总线
-`define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000
+// --- 总线阈值 ---
+`define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000  // 高16位 >= 此值走 AXI
 
-// AXI 总线访问超时阈值（时钟周期数）：从机若在此周期内无响应，
-// AXI_Lite_Master 强制完成事务并返回 DECERR，触发 load/store access fault，
-// 防止从机挂死导致 CPU 永久卡死。80MHz 下 1024 周期 ≈ 12.8us。
+// AXI 超时（时钟周期）：80MHz 下 1024 周期 ≈ 12.8μs
 `define BUS_TIMEOUT  1024
 
-// 兼容旧代码的 16 位设备标签（APB 内部偏移计算用）
-`define CLINT_BASE_TAG  `DEVICE_TAG_WIDTH'hF200
-`define PLIC_BASE_TAG   `DEVICE_TAG_WIDTH'hFC00
-`define GPIO_BASE_TAG   `DEVICE_TAG_WIDTH'hE000
-`define UART_BASE_TAG   `DEVICE_TAG_WIDTH'hE001
-`define TIMER_BASE_TAG  `DEVICE_TAG_WIDTH'hE002
-`define SPI_BASE_TAG    `DEVICE_TAG_WIDTH'hE003
-`define I2C_BASE_TAG    `DEVICE_TAG_WIDTH'hE004
-
-// CPU 启动地址
+// --- 16 位设备标签（快速地址译码用）---
 `define BOOT_BASE_TAG  `DEVICE_TAG_WIDTH'h0000
+`define CLINT_BASE_TAG `DEVICE_TAG_WIDTH'hF200
+`define PLIC_BASE_TAG  `DEVICE_TAG_WIDTH'hFC00
+`define GPIO_BASE_TAG  `DEVICE_TAG_WIDTH'hE000
+`define UART_BASE_TAG  `DEVICE_TAG_WIDTH'hE001
+`define TIMER_BASE_TAG `DEVICE_TAG_WIDTH'hE002
+`define SPI_BASE_TAG   `DEVICE_TAG_WIDTH'hE003
+`define I2C_BASE_TAG   `DEVICE_TAG_WIDTH'hE004
 
-// ITCM / DTCM
 `ifdef CORE_TEST
     `define ITCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
     `define DTCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
 `else
-    `define ITCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0001
-    `define DTCM_BASE_TAG  `DEVICE_TAG_WIDTH'h0002
+    `define ITCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
+    `define DTCM_BASE_TAG `DEVICE_TAG_WIDTH'h0002
 `endif
 
-// Flash / DDR（AXI 地址空间，当前留空由 err_slave 返回 0）
-`define FLASH_LENGTH 128*1024*1024/8  // 128Mbit/8=16MB
-`define DDR_LENGTH   256*1024*1024*16/8  // 256M*16bit=512MB
-
-`define MAX_SIZE ((`DDR_LENGTH > `FLASH_LENGTH)? `DDR_LENGTH : `FLASH_LENGTH)
-`define GPIO_NUM 5
-`define TIMER_CHANNEL_NUM 4
-`define TIMER_NUM 1
-
-`define MROM_FILE "mrom.dat"
-
+// --- 外部存储容量 ---
+`define FLASH_LENGTH 128*1024*1024/8       // 128Mbit / 8 = 16MB
+`define DDR_LENGTH   256*1024*1024*16/8    // 256M × 16bit = 512MB
+`define MAX_SIZE ((`DDR_LENGTH > `FLASH_LENGTH) ? `DDR_LENGTH : `FLASH_LENGTH)
 
 // ============================================================
-// AXI 总线配置 - BIU 架构（2026-04-24）
-// CPU 通过 AXI_Lite_Master → AXI_Interconnect → 各 AXI 从机
-// 端口保留 AXI-Full 信号，内部按 AXI-Lite 运行
+// 8. 外设数量
+// ============================================================
+`define GPIO_NUM 5
+`define TIMER_NUM 1
+`define TIMER_CHANNEL_NUM 4
+
+// ============================================================
+// 9. AXI 总线位宽
 // ============================================================
 `define AXI_ID_WIDTH     4
 `define AXI_LEN_WIDTH    8
@@ -184,4 +196,4 @@
 `define AXI_QOS_WIDTH    4
 `define AXI_REGION_WIDTH 4
 `define AXI_RESP_WIDTH   2
-`define AXI_STRB_WIDTH   `ALIGN_BYTES  // 4 bytes
+`define AXI_STRB_WIDTH   `ALIGN_BYTES
