@@ -1,19 +1,69 @@
-.gitignore
-BD32_SoC/
-ip_repo/
+# =============================================================================
+# BD32 SoC .gitignore
+# =============================================================================
+
+# --- ModelSim / 仿真产物 ---
 **/work/
-**/*.ini
 **/transcript
-**/*.vstf
 **/*.wlf
+**/*.vstf
 **/wlft*
+**/modelsim.ini
+sim/sim_output.txt
+
+# --- Vivado 工程（保留 .xpr + 约束 + IP .xci，忽略生成产物）---
+BD32_SoC/BD32_SoC.cache/
+BD32_SoC/BD32_SoC.gen/
+BD32_SoC/BD32_SoC.hw/
+BD32_SoC/BD32_SoC.ip_user_files/
+BD32_SoC/BD32_SoC.runs/
+BD32_SoC/BD32_SoC.sim/
+BD32_SoC/incremental_file/
+BD32_SoC/reports/
+BD32_SoC/*.jou
+BD32_SoC/*.log
+BD32_SoC/*.backup.*
+BD32_SoC/vivado*
+# IP 生成产物（保留 .xci 定义，可重新 generate output products）
+BD32_SoC/BD32_SoC.srcs/sources_1/ip/*/*
+!BD32_SoC/BD32_SoC.srcs/sources_1/ip/*/*.xci
+# 实现工具文件（.dcp checkpoint / .rqs）
+BD32_SoC/BD32_SoC.srcs/utils_1/
+
+# --- IP 仓库（外部 IP，不纳入版本管理）---
+ip_repo/
+
+# --- OpenOCD 二进制发行版（保留 .cfg 配置文件）---
+SDK/tools/xpack-openocd-*/
+SDK/tools/*.zip
+
+# --- 调试会话临时日志 ---
+SDK/tools/ocd_*.txt
+
+# --- riscv-tests 源码（外部仓库；编译产物 .dat 在 test_data/ 中跟踪）---
 **/isa/*
-.history/
-archive/
+
+# --- Python ---
+**/__pycache__/
+*.pyc
+
+# --- 本地编译产物（仅忽略名为 build/ 的目录，不影响 build_O2/ 等已跟踪产物）---
+**/build/
+**/picolibc_install/
+
+# --- 编辑器 / OS 临时文件 ---
 **/~$*
-**/*.log
-*.xlsx
-**/__pycache__
-**/picolibc_install
-**/build/*
+.history/
 .workbuddy/
+Thumbs.db
+desktop.ini
+*.swp
+
+# --- 日志 ---
+**/*.log
+
+# --- 二进制文档（按需 git add -f 强制跟踪）---
+*.xlsx
+
+# --- 归档 ---
+archive/

@@ -14,6 +14,8 @@ module PC_counter #(
     input   logic                       predict_taken,
     input   logic   [DATA_WIDTH-1:0]    predict_target,
     input   logic                       stall,
+    input   logic                       dbg_load_en,    // resume 时加载 dpc
+    input   logic   [ADDR_WIDTH-1:0]    dbg_load_addr,  // dpc 值
     (* MAX_FANOUT = 16 *)output  logic   [ADDR_WIDTH-1:0]    pc,          // 下一条指令地址（给 ROM/RAM，提前一拍送地址）
     output  logic                       if_addr_misalign,  // 指令地址未对齐
     output  logic                       if_access_fault,   // 指令访问错误（地址不在合法范围）
@@ -45,6 +47,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     `else
         inst_addr <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}}-4;
     `endif
+    else if (dbg_load_en)
+        inst_addr <= #1 dbg_load_addr;
     else
         inst_addr <= #1 pc;
 end

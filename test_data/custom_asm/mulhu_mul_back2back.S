@@ -10,6 +10,9 @@
 
   RVTEST_CODE_BEGIN
 
+  # 初始化 sp 到 DTCM 有效地址（复位后 x2=0，sub-test 11 的 sw/lw 需要）
+  li   x2, 0x00019000
+
   # ============================================================
   # Test 1: MULHU -> MUL back-to-back (exact O3 pattern)
   # s2 = 0x00010000, a0 = 0x00010000
@@ -193,6 +196,7 @@
   # verify stored value
   li   x3, 13
   lw   x29, 0(x2)
+  li   x28, 666
   bne  x29, x28, fail_x28_666
 
   # ============================================================

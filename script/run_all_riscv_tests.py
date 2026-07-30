@@ -166,6 +166,7 @@ def run_single_test(vsim_exe, test_name, sim_time_us=SIM_TIME_US, timeout=TIMEOU
     cmd = [
         vsim_exe, "-c", "-voptargs=+acc", "tb_core_top",
         "-G", f"ITCM_FILE={test_name}",
+        "-G", f"DTCM_FILE={test_name}",
         "-do", do_cmd,
     ]
 
@@ -181,7 +182,9 @@ def run_single_test(vsim_exe, test_name, sim_time_us=SIM_TIME_US, timeout=TIMEOU
             detail = f"test[{m.group(1)}]" if m else "unknown"
             return ("FAIL", detail)
         else:
-            if "Fatal" in output or "Error" in output:
+            has_real_error = any("** Error" in line or "** Fatal" in line
+                                 for line in output.split("\n"))
+            if has_real_error:
                 return ("CRASH", output[-200:].strip())
             elif result.returncode != 0:
                 return ("CRASH", f"exit code {result.returncode}")

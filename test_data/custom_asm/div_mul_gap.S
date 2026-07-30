@@ -66,7 +66,7 @@
   li   x28, 14
   bne  x10, x28, fail
   li   x3, 2
-  li   x28, 0xFE18
+  li   x28, 0xFED8
   bne  x11, x28, fail
 
   # Test 2: DIVU → 40 NOP → MUL (long gap, divider definitely done)
@@ -134,7 +134,7 @@
   li   x28, 14
   bne  x10, x28, fail
   li   x3, 4
-  li   x28, 0xFE18
+  li   x28, 0xFED8
   bne  x11, x28, fail
 
   # All passed

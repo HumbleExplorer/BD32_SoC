@@ -18,6 +18,9 @@
 
   RVTEST_CODE_BEGIN
 
+  # 初始化 sp 到 DTCM 有效地址（复位后 x2=0，直接使用会 access fault）
+  li   x2, 0x00019000
+
   # ============================================================
   # Test 1: Load → 1 gap → Use (MEM forwarding)
   # Store 0xDEAD to stack, load it back, use with 1 gap

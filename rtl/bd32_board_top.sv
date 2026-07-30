@@ -91,6 +91,36 @@ clk_div_static #(
 );
 
 // =========================================================================
+// Debug Module 信号
+// =========================================================================
+`ifdef BD32_DEBUG_EN
+logic                       dbg_halt_req;
+logic                       dbg_halted;
+logic                       dbg_resume_req;
+logic                       dbg_step;
+logic                       dbg_ebreakm;
+logic                       dbg_reg_we;
+logic [4:0]                 dbg_reg_addr;
+logic [31:0]                dbg_reg_wdata;
+logic [31:0]                dbg_reg_rdata;
+logic [31:0]                dbg_dpc;
+logic [31:0]                dbg_pc_wdata;
+// SBA 总线
+logic                       sba_req_valid;
+logic [31:0]                sba_addr;
+logic [31:0]                sba_wdata;
+logic                       sba_write;
+logic [2:0]                 sba_size;
+logic                       sba_rsp_valid;
+logic [31:0]                sba_rdata;
+logic                       sba_error;
+// Trigger（硬件断点）
+logic                       trigger_en;
+logic [31:0]                trigger_addr;
+logic                       trigger_hit;
+`endif
+
+// =========================================================================
 // SoC_top — 纯数字 SoC IP（接收已同步释放的干净复位）
 // =========================================================================
 SoC_top #(
@@ -113,13 +143,101 @@ SoC_top #(
     .uart_rx          (uart_rx    ),
     .uart_tx          (uart_tx    ),
     .gpio_io          (gpio_io    ),
-    .timer_channel_io (timer_channel_io)
+    .timer_channel_io (timer_channel_io),
+    // Debug Module 接口
+`ifdef BD32_DEBUG_EN
+    .dbg_halt_req     (dbg_halt_req   ),
+    .dbg_halted       (dbg_halted     ),
+    .dbg_resume_req   (dbg_resume_req ),
+    .dbg_step         (dbg_step       ),
+    .dbg_ebreakm      (dbg_ebreakm    ),
+    .dbg_reg_we       (dbg_reg_we     ),
+    .dbg_reg_addr     (dbg_reg_addr   ),
+    .dbg_reg_wdata    (dbg_reg_wdata  ),
+    .dbg_reg_rdata    (dbg_reg_rdata  ),
+    .dbg_dpc          (dbg_dpc        ),
+    .dbg_pc_wdata     (dbg_pc_wdata   ),
+    // SBA
+    .sba_req_valid    (sba_req_valid  ),
+    .sba_addr         (sba_addr       ),
+    .sba_wdata        (sba_wdata      ),
+    .sba_write        (sba_write      ),
+    .sba_size         (sba_size       ),
+    .sba_rsp_valid    (sba_rsp_valid  ),
+    .sba_rdata        (sba_rdata      ),
+    .sba_error        (sba_error      ),
+    // Trigger
+    .trigger_en       (trigger_en     ),
+    .trigger_addr     (trigger_addr   ),
+    .trigger_hit      (trigger_hit    )
+`else
+    .dbg_halt_req     (1'b0           ),
+    .dbg_halted       (               ),
+    .dbg_resume_req   (1'b0           ),
+    .dbg_step         (1'b0           ),
+    .dbg_ebreakm      (1'b0           ),
+    .dbg_reg_we       (1'b0           ),
+    .dbg_reg_addr     (5'b0           ),
+    .dbg_reg_wdata    (32'b0          ),
+    .dbg_reg_rdata    (               ),
+    .dbg_dpc          (               ),
+    .dbg_pc_wdata     (32'b0          ),
+    .sba_req_valid    (1'b0           ),
+    .sba_addr         (32'b0          ),
+    .sba_wdata        (32'b0          ),
+    .sba_write        (1'b0           ),
+    .sba_size         (3'b0           ),
+    .sba_rsp_valid    (               ),
+    .sba_rdata        (               ),
+    .sba_error        (               ),
+    .trigger_en       (1'b0           ),
+    .trigger_addr     (32'b0          ),
+    .trigger_hit      (               )
+`endif
 );
 
 // =========================================================================
-// JTAG TDO：Debug Module 实现前暂拉低
-// TODO: 接入 Debug Module 的 tdo 输出
+// Debug Module（JTAG TAP + DM）
 // =========================================================================
+`ifdef BD32_DEBUG_EN
+debug_top u_debug_top (
+    .clk              (clk_cpu        ),
+    .rst_n            (rst_n_sync     ),
+    // JTAG 引脚
+    .tck              (dbg_tck        ),
+    .tms              (dbg_tms        ),
+    .tdi              (dbg_tdi        ),
+    .tdo              (dbg_tdo        ),
+    // CPU 寄存器堆
+    .dbg_reg_we       (dbg_reg_we     ),
+    .dbg_reg_addr     (dbg_reg_addr   ),
+    .dbg_reg_wdata    (dbg_reg_wdata  ),
+    .dbg_reg_rdata    (dbg_reg_rdata  ),
+    // CPU 流水线控制
+    .dbg_halt_req     (dbg_halt_req   ),
+    .dbg_halted       (dbg_halted     ),
+    .dbg_resume_req   (dbg_resume_req ),
+    .dbg_step         (dbg_step       ),
+    .dbg_ebreakm      (dbg_ebreakm    ),
+    // Debug CSR
+    .dbg_dpc          (dbg_dpc        ),
+    .dbg_pc_wdata     (dbg_pc_wdata   ),
+    // SBA 总线
+    .sba_req_valid    (sba_req_valid  ),
+    .sba_addr         (sba_addr       ),
+    .sba_wdata        (sba_wdata      ),
+    .sba_write        (sba_write      ),
+    .sba_size         (sba_size       ),
+    .sba_rsp_valid    (sba_rsp_valid  ),
+    .sba_rdata        (sba_rdata      ),
+    .sba_error        (sba_error      ),
+    // Trigger（硬件断点）
+    .trigger_en       (trigger_en     ),
+    .trigger_addr     (trigger_addr   ),
+    .trigger_hit      (trigger_hit    )
+);
+`else
 assign dbg_tdo = 1'b0;
+`endif
 
 endmodule

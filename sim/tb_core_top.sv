@@ -232,8 +232,32 @@ RISC_V_Core #(
     .bus_access_write   (bus_access_write),
     .bus_access_addr    (bus_access_addr ),
     .bus_access_wstrb   (bus_access_wstrb),
-    .bus_access_wdata   (bus_access_wdata)
-
+    .bus_access_wdata   (bus_access_wdata),
+    // Debug — 裸核测试不接调试模块，全部 tie off
+    .dbg_halt_req       (1'b0        ),
+    .dbg_halted         (            ),
+    .dbg_resume_req     (1'b0        ),
+    .dbg_step           (1'b0        ),
+    .dbg_ebreakm        (1'b0        ),
+    .dbg_reg_we         (1'b0        ),
+    .dbg_reg_addr       (5'b0        ),
+    .dbg_reg_wdata      (32'b0       ),
+    .dbg_reg_rdata      (            ),
+    .dbg_dpc            (            ),
+    .dbg_pc_wdata       (32'b0       ),
+    // SBA — 不接系统总线访问
+    .sba_req_valid      (1'b0        ),
+    .sba_addr           (32'b0       ),
+    .sba_wdata          (32'b0       ),
+    .sba_write          (1'b0        ),
+    .sba_size           (3'b0        ),
+    .sba_rsp_valid      (            ),
+    .sba_rdata          (            ),
+    .sba_error          (            ),
+    // Trigger — 不接硬件断点
+    .trigger_en         (1'b0        ),
+    .trigger_addr       (32'b0       ),
+    .trigger_hit        (            )
 );
 
 

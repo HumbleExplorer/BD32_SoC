@@ -5,3 +5,4 @@
 ../../rtl/Common/Clock/*.sv
 ../../rtl/Core/*.sv
 ../../rtl/Core/Mul_Div/*.sv
+../../rtl/Debug/*.sv

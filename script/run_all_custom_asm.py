@@ -131,6 +131,7 @@ def run_single_test(vsim_exe, test_name, sim_time_us=SIM_TIME_US, timeout=TIMEOU
     cmd = [
         vsim_exe, "-c", "-voptargs=+acc", "tb_core_top",
         "-G", f"ITCM_FILE={test_name}",
+        "-G", f"DTCM_FILE={test_name}",
         "-do", do_cmd,
     ]
 

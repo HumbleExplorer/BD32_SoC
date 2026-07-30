@@ -30,7 +30,7 @@
   # ============================================================
   # a7=100, a2=7 → divu a0=14, remu a7=2
   # a6=0xABCD1234 → slli+srli → a3=0x1234
-  # mul a1 = a3 * a0 = 0x1234 * 14 = 0xFE18
+  # mul a1 = a3 * a0 = 0x1234 * 14 = 0xFED8
   li   x3, 1             # test number
   li   x17, 100          # a7 = dividend
   li   x12, 7            # a2 = divisor
@@ -43,7 +43,7 @@
   srli x13, x13, 16     # a3 = 0x1234
   srli x14, x15, 16     # a4 = 0x5678
   remu x17, x17, x12    # a7 = 100%7 = 2
-  mul  x11, x13, x10    # a1 = 0x1234 * 14 = 0xFE18
+  mul  x11, x13, x10    # a1 = 0x1234 * 14 = 0xFED8
 
   # let pipeline settle
   nop
@@ -66,9 +66,9 @@
   li   x28, 2
   bne  x17, x28, fail
 
-  # check a1 = 0xFE18 (mul result = DIV_result * a3)
+  # check a1 = 0xFED8 (mul result = DIV_result * a3)
   li   x3, 3
-  li   x28, 0xFE18
+  li   x28, 0xFED8
   bne  x11, x28, fail
 
   # check a3 = 0x1234
@@ -174,13 +174,13 @@
   li   x15, 0x12340000   # for a5
 
   # First: 999/17=58, 999%17=13, mul=0xABCD*58
-  # 0xABCD = 43981, 43981*58 = 2550898 = 0x26EEF2
+  # 0xABCD = 43981, 43981*58 = 2550898 = 0x26EC72
   divu x10, x17, x12    # a0 = 58
   slli x13, x16, 16     # independent
   srli x13, x13, 16     # a3 = 0xABCD
   srli x14, x15, 16     # a4 = 0x1234 (overwrites second dividend!)
   remu x17, x17, x12    # a7 = 13
-  mul  x11, x13, x10    # a1 = 0xABCD * 58 = 0x26EEF2
+  mul  x11, x13, x10    # a1 = 0xABCD * 58 = 0x26EC72
 
   nop
   nop
@@ -197,7 +197,7 @@
   li   x28, 13
   bne  x17, x28, fail
 
-  li   x28, 0x26EEF2
+  li   x28, 0x26EC72
   bne  x11, x28, fail
 
   # Second: use a4=0x1234 (from srli above), divisor=17
@@ -225,8 +225,8 @@
   li   x28, 2
   bne  x14, x28, fail
 
-  # 0xABCD * 274 = 43981 * 274 = 12050794 = 0xB7E57A
-  li   x28, 0xB7E57A
+  # 0xABCD * 274 = 43981 * 274 = 12050794 = 0xB7E16A
+  li   x28, 0xB7E16A
   bne  x13, x28, fail
 
   # ============================================================

@@ -13,6 +13,9 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：UART（含 NCO 波特率发生器）、CLINT（mtime/mtip）、PLIC 中断控制器、APB Timer（PWM）、GPIO
 - CoreMark 验证通过（-O2 和 -O3 均通过 CRC 校验）
+- RISC-V Debug Module（Spec 0.13）：JTAG 在线调试，支持 halt/resume、单步、GPR/CSR 访问、SBA
+- 硬件断点：Trigger Module（mcontrol type=2），支持地址匹配断点（OpenOCD `hbreak`）
+- 动态分支预测器调试支持：单步模式下自动门控预测跳转，保证 PC 严格 +4 递增
 
 ## 目录结构
 
@@ -36,6 +39,11 @@ Working/
 │   │   ├── IF_ID/ID_EX/EX_MEM/MEM_WB.sv  # 流水级寄存器
 │   │   ├── ITCM.sv / DTCM.sv / BootROM.sv  # 片上存储
 │   │   └── Mul_Div/          # 乘法器 + 除法器
+│   ├── Debug/                 # 调试模块
+│   │   ├── jtag_tap.sv       # JTAG TAP（IEEE 1149.1 + DTM）
+│   │   ├── debug_dm.sv       # Debug Module（abstract cmd / SBA / trigger）
+│   │   ├── debug_top.sv      # 调试子系统顶层（TAP + DM + CDC）
+│   │   └── debug_cdc.sv      # 跨时钟域同步（JTAG TCK ↔ CPU CLK）
 │   ├── Bus/                   # AXI-Lite 总线基础设施
 │   ├── Periph/               # 外设
 │   │   ├── CLINT.sv          # Core-Local Interruptor
@@ -46,10 +54,12 @@ Working/
 │   └── Common/               # 时钟/复位工具模块
 ├── sim/                       # Testbench
 │   ├── tb_core_top.sv        # 核级 TB（x26/x27 判定，加载 .dat）
-│   └── tb_soc_top.sv         # SoC 级 TB（UART 输出、WB_TRACE、PWM 监测）
+│   ├── tb_soc_top.sv         # SoC 级 TB（UART 输出、WB_TRACE、PWM 监测）
+│   └── tb_debug.sv           # Debug Module TB（DMI 激励、halt/step/GPR/trigger）
 ├── script/                    # 仿真脚本
 │   ├── core_test/            # 核级仿真（filelist.f, run.do）
 │   ├── soc_test/             # SoC 级仿真
+│   ├── debug_test/           # Debug Module 仿真
 │   ├── uart_test/ gpio_test/ plic_test/ timer_test/  # 外设独立仿真
 │   ├── run_one.py            # 运行单个 custom_asm 测试
 │   ├── run_all_custom_asm.py # custom_asm 全回归（36 个测试）
@@ -67,7 +77,9 @@ Working/
 │   │   ├── uart_cmd.py      # UART 发送任意文本/命令
 │   │   ├── uart_recv.py     # UART 接收并打印到终端
 │   │   ├── uart_log.py      # UART 接收并写入日志文件
-│   │   └── auto_coremark.py # CoreMark 自动化测试（复位+下载+解析）
+│   │   ├── auto_coremark.py # CoreMark 自动化测试（复位+下载+解析）
+│   │   └── bd32_openocd.cfg # OpenOCD 配置（FT2232H + BD32 TAP）
+│   ├── bsp/                  # 板级支持包（startup, drivers, trap, linker）
 │   ├── demos/nolibc/         # 裸机 demo（breathing, blink, uart_echo, cpuinfo）
 │   ├── demos/newlib/coremark/ # CoreMark 基准测试（build_O2/ + build_O3/）
 │   └── isa/env/p/            # riscv_test.h + link.ld
@@ -297,6 +309,86 @@ Vivado 工程位于 `BD32_SoC/`，目标平台为 Xilinx FPGA。
 - 支持 ILA 在线调试（`mark_debug` 属性标注关键信号）
 - 支持 UART 下载模式（MROM 自动计算波特率并配置 UART）
 
+## Debug Module（JTAG 在线调试）
+
+BD32 实现了 RISC-V Debug Specification 0.13 的子集，支持通过 JTAG 接口进行在线调试。调试子系统位于 `rtl/Debug/`，由 `bd32_board_top` 在 `BD32_DEBUG_EN` 宏开启时例化。
+
+### 架构
+
+```
+PC (OpenOCD/GDB)
+    │  USB
+    ▼
+FT2232H Channel A (JTAG: TCK/TDI/TDO/TMS)
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│  debug_top                                      │
+│  ┌───────────┐   ┌──────────┐   ┌───────────┐  │
+│  │ jtag_tap  │──▶│ debug_dm │──▶│ debug_cdc │──│──▶ CPU (halt/resume/step)
+│  │ (TAP+DTM) │◀──│ (DM)     │◀──│ (TCK↔CLK)│◀─│──◀ CPU (dbg_halted)
+│  └───────────┘   └──────────┘   └───────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+- **jtag_tap**：IEEE 1149.1 TAP 状态机 + DTM（Debug Transport Module），IDCODE = 0x1BD32003，IR 编码：IDCODE=0x01, DTMCS=0x10, DMI=0x11
+- **debug_dm**：Debug Module 核心，实现 abstract command（GPR/CSR 读写）、SBA（System Bus Access）、halt/resume/step 控制、Trigger Module（mcontrol type=2）
+- **debug_cdc**：JTAG TCK 域与 CPU CLK 域之间的跨时钟域同步（握手协议）
+
+### 支持的调试功能
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| halt / resume | 已验证 | `dmcontrol.haltreq` / `resumereq` |
+| 单步（stepi） | 已验证 | `dcsr.step=1`，门控分支预测保证 PC+4 |
+| GPR 读写 | 已验证 | abstract command, regno 0x1000~0x101F |
+| CSR 读写 | 已验证 | dcsr(0x7B0), dpc(0x7B1), mstatus 等 |
+| SBA | 已验证 | 32-bit 地址/数据，读写内存 |
+| 硬件断点 | RTL 就绪 | tselect/tdata1/tdata2, mcontrol type=2 地址匹配 |
+
+### Trigger Module（硬件断点）
+
+DM 内部实现了一组 trigger 寄存器（tselect, tdata1, tdata2），通过 abstract command 的 CSR 地址空间（0x7A0~0x7A3）访问：
+
+- `tdata1` 复位值 = 0x2800_0000（type=2 mcontrol, dmode=1, action=0 halt, 默认 disabled）
+- OpenOCD 通过 `hbreak *<addr>` 命令编程 tdata2 = 目标地址，置 tdata1[2]（execute match enable）
+- CPU 侧 `trigger_hit = trigger_en & (inst_addr_if == trigger_addr)`，命中后触发 halt
+
+### OpenOCD + GDB 使用
+
+配置文件：`SDK/tools/bd32_openocd.cfg`
+
+```bash
+# 启动 OpenOCD（需要 WinUSB 驱动绑定到 FT2232H Channel A）
+openocd -f SDK/tools/bd32_openocd.cfg
+
+# 另一终端启动 GDB
+riscv64-unknown-elf-gdb program.elf
+(gdb) target extended-remote :3333
+(gdb) monitor halt
+(gdb) monitor reset halt
+(gdb) hbreak *0x10020        # 硬件断点（需 trigger 支持）
+(gdb) continue
+(gdb) info registers
+(gdb) stepi                  # 单步
+```
+
+注意事项：
+- FT2232H Channel A 必须绑定 WinUSB 驱动（用 Zadig 替换 FTDI VCP），否则 libusb 无法访问
+- Vivado hw_server 会占用 JTAG 适配器，使用前需关闭或断开 Hardware Target
+- 强制终止 OpenOCD 后可能需要拔插 USB 释放设备句柄
+- adapter speed 设为 500 kHz（杜邦线连接），正式 PCB 可提高
+
+### Debug 仿真验证
+
+```bash
+cd script/debug_test
+# ModelSim
+vsim -c -do run.do
+```
+
+Testbench `sim/tb_debug.sv` 通过 DMI 接口直接激励 DM，验证 halt/resume、GPR 读写、单步、trigger 匹配等功能，无需 JTAG 物理连接。
+
 ## FPGA 在线控制工具（SDK/tools）
 
 通过 USB 连接 Sipeed RV-Debugger（FTDI FT2232H）和板载 CH340 USB-UART，可以在 PC 端用 Python 脚本完成复位、程序烧录、串口收发等操作，无需手动按复位键或打开串口助手。
@@ -305,7 +397,8 @@ Vivado 工程位于 `BD32_SoC/`，目标平台为 Xilinx FPGA。
 
 | 设备 | 用途 | 驱动 |
 |------|------|------|
-| Sipeed RV-Debugger (FT2232H) | FPGA 复位（ADBUS5 引脚） | D2XX (ftd2xx) |
+| Sipeed RV-Debugger (FT2232H) Ch.A | JTAG 调试（OpenOCD） | WinUSB（Zadig 替换） |
+| Sipeed RV-Debugger (FT2232H) Ch.A | FPGA 复位（ADBUS5 bit-bang） | D2XX (ftd2xx) |
 | 板载 CH340 USB-UART | 程序下载 + 输出接收 | Windows VCP（COM 口） |
 
 Python 依赖：
@@ -314,7 +407,9 @@ Python 依赖：
 pip install ftd2xx pyserial
 ```
 
-注意：Windows 下必须使用 ftd2xx（D2XX 库）控制 FTDI 芯片。pyftdi/libusb 方案会与 VCP 驱动冲突，无法正常工作。
+注意：Windows 下 fpga_reset.py 使用 ftd2xx（D2XX 库）控制 FTDI 芯片，需要 FTDI VCP 驱动；而 OpenOCD 使用 libusb，需要 WinUSB 驱动。两者互斥——同一时刻 Channel A 只能绑定一种驱动。切换方法：用 Zadig 在 WinUSB 和 FTDI VCP（libusbK 也可）之间替换。日常调试建议保持 WinUSB（OpenOCD），复位功能可改用 Vivado 或板载按键。
+
+所有串口工具默认自动检测 CH340（通过 USB VID:PID = 1A86:7523 匹配），无需手动指定 COM 口号。该编号标识的是 CH340 芯片型号而非特定板卡，因此更换任何使用 CH340 的开发板均可自动识别。若同时连接多块 CH340 板，需用 `--port COMx` 手动指定。
 
 ### FPGA 复位（fpga_reset.py）
 

@@ -255,6 +255,7 @@ always_comb begin
     if (csr_en) begin
         case(csr_addr)
             12'h300  : csr_rdata = mstatus;
+            12'h301  : csr_rdata = 32'h4000_1100; // misa: RV32(MXL=01) + I(bit8) + M(bit12)
             12'h304  : csr_rdata = mie;
             12'h305  : csr_rdata = mtvec;
             12'h306  : csr_rdata = mcounteren;

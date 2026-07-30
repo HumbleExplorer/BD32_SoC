@@ -40,7 +40,32 @@ module RISC_V_Core #(
     output  logic                       bus_access_write,
     output  logic   [ADDR_WIDTH-1:0]    bus_access_addr,
     output  logic   [ALIGN_BYTES-1:0]   bus_access_wstrb,
-    output  logic   [DATA_WIDTH-1:0]    bus_access_wdata
+    output  logic   [DATA_WIDTH-1:0]    bus_access_wdata,
+    // Debug Module 接口
+    input   logic                       dbg_halt_req,
+    output  logic                       dbg_halted,
+    input   logic                       dbg_resume_req,
+    input   logic                       dbg_step,
+    input   logic                       dbg_ebreakm,
+    input   logic                       dbg_reg_we,
+    input   logic   [REG_ADDR_WIDTH-1:0] dbg_reg_addr,
+    input   logic   [DATA_WIDTH-1:0]    dbg_reg_wdata,
+    output  logic   [DATA_WIDTH-1:0]    dbg_reg_rdata,
+    output  logic   [DATA_WIDTH-1:0]    dbg_dpc,
+    input   logic   [DATA_WIDTH-1:0]    dbg_pc_wdata,
+    // Trigger（硬件断点）
+    input   logic                       trigger_en,
+    input   logic   [DATA_WIDTH-1:0]    trigger_addr,
+    output  logic                       trigger_hit,
+    // System Bus Access (SBA) — 调试器读写 TCM
+    input   logic                       sba_req_valid,
+    input   logic   [ADDR_WIDTH-1:0]    sba_addr,
+    input   logic   [DATA_WIDTH-1:0]    sba_wdata,
+    input   logic                       sba_write,
+    input   logic   [2:0]               sba_size,
+    output  logic                       sba_rsp_valid,
+    output  logic   [DATA_WIDTH-1:0]    sba_rdata,
+    output  logic                       sba_error
 );
 
 // Pipeline Ctrl
@@ -125,6 +150,8 @@ logic   [DATA_WIDTH-1:0]    reg_rd_wdata;
 // IF
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    pc;
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_if;   // 当前指令地址（延迟一拍的 pc）
+assign dbg_dpc = inst_addr_if;  // Debug：dpc = halted 时的下一条指令地址
+assign trigger_hit = trigger_en & (inst_addr_if == trigger_addr);  // Trigger: 地址匹配
 logic   [DATA_WIDTH-1:0]    inst;
 logic                       predict_taken_if;
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
@@ -313,12 +340,18 @@ Pipeline_Ctrl #(
     .DATA_WIDTH(DATA_WIDTH)
 )u_Pipeline_Ctrl(
     .clk            (clk),
+    .rst_n          (rst_n),
     .branch_jump_en      	(branch_jump_en_ex    ),
     .branch_jump_addr    	(branch_jump_addr_ex  ),
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
     .priv_mode           	(priv_mode            ),
     .waiting_int           	(waiting_int          ),
+    .dbg_halt_req           (dbg_halt_req         ),
+    .dbg_halted             (dbg_halted           ),
+    .dbg_step               (dbg_step             ),
+    .dbg_resume_pulse       (dbg_resume_req       ),
+    .trigger_match          (trigger_hit          ),
     .load_use_flag       	(load_use_flag        ),
     .bus_ready    	        (bus_ready            ),
     .oitf_stall          	(oitf_stall           ),
@@ -419,9 +452,11 @@ PC_counter #(
     .rst_n          (rst_n),
     .jump_en        (ctrl_jump_en),
     .jump_addr      (ctrl_jump_addr),
-    .predict_taken  (predict_taken_if),
+    .predict_taken  (predict_taken_if & ~dbg_step & ~dbg_halt_req),  // debug 模式禁用预测
     .predict_target (predict_target_if),
     .stall          (pc_stall),
+    .dbg_load_en    (dbg_resume_req),
+    .dbg_load_addr  (dbg_pc_wdata),
     .pc             (pc),               // 下一条指令地址，给 BootROM/ITCM 读地址
     .if_addr_misalign (if_addr_misalign),
     .if_access_fault  (if_access_fault),
@@ -449,6 +484,44 @@ BootROM #(
     .inst_o         (bootrom_inst)      // 同步读，下一拍输出
 );
 
+// ============================================================
+// SBA (System Bus Access) 地址译码与 MUX
+// CPU halt 期间调试器通过 SBA 读写 ITCM/DTCM
+// ============================================================
+wire sba_itcm_sel = (sba_addr[31:16] == 16'h0001);  // ITCM: 0x0001_0000~0x0001_FFFF
+wire sba_dtcm_sel = (sba_addr[31:28] == 4'h2);      // DTCM: 0x2000_0000~0x2FFF_FFFF
+
+// ITCM 读地址 mux：SBA 覆盖 PC
+wire [ADDR_WIDTH-1:0] itcm_rd_addr = (sba_req_valid && sba_itcm_sel) ? sba_addr : pc;
+
+// ITCM 写 mux：SBA 复用 download 端口
+wire                    itcm_wr_en_sba   = itcm_download_en | (sba_req_valid & sba_itcm_sel & sba_write);
+wire [ADDR_WIDTH-1:0]  itcm_wr_addr_sba = (sba_req_valid & sba_itcm_sel & sba_write) ? sba_addr : itcm_download_addr;
+wire [DATA_WIDTH-1:0]  itcm_wr_data_sba = (sba_req_valid & sba_itcm_sel & sba_write) ? sba_wdata : itcm_download_data;
+
+// DTCM 访问 mux：SBA 覆盖 EX 级
+wire [ADDR_WIDTH-1:0]  dtcm_addr_sba  = (sba_req_valid & sba_dtcm_sel) ? sba_addr : access_addr_ex;
+wire                    dtcm_wen_sba   = (sba_req_valid & sba_dtcm_sel & sba_write) ? 1'b1 :
+                                          (access_wr_ex && dtcm_sel && ~(ex_mem_stall || ex_mem_flush));
+wire [DATA_WIDTH-1:0]  dtcm_wdata_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_wdata : access_wdata_ex;
+wire [ALIGN_BYTES-1:0] dtcm_wmask_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? {ALIGN_BYTES{1'b1}} : access_wmask_ex;
+
+// SBA 响应流水线（BRAM 同步读 1 拍延迟）
+logic        sba_req_d;
+logic        sba_itcm_d;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        sba_req_d  <= 1'b0;
+        sba_itcm_d <= 1'b0;
+    end else begin
+        sba_req_d  <= sba_req_valid;
+        sba_itcm_d <= sba_itcm_sel;
+    end
+end
+assign sba_rsp_valid = sba_req_d;
+assign sba_rdata     = sba_itcm_d ? itcm_inst : dtcm_rdata;
+assign sba_error     = 1'b0;  // 暂不报错
+
 ITCM #(
     .ITCM_FILE      (ITCM_FILE),
     .ITCM_DEPTH     (`ITCM_DEPTH),
@@ -459,10 +532,10 @@ ITCM #(
 )u_ITCM(
     .clk            (clk),
     .rst_n          (rst_n),
-    .itcm_download_en     (itcm_download_en),
-    .itcm_download_addr   (itcm_download_addr),
-    .itcm_download_data   (itcm_download_data),
-    .inst_addr      (pc),               // 提前一拍送地址
+    .itcm_download_en     (itcm_wr_en_sba),
+    .itcm_download_addr   (itcm_wr_addr_sba),
+    .itcm_download_data   (itcm_wr_data_sba),
+    .inst_addr      (itcm_rd_addr),      // SBA 时覆盖 PC
     .inst_o         (itcm_inst)         // 同步读，下一拍输出
 );
 
@@ -552,7 +625,13 @@ RegFile #(
     //写端口2：OITF 退休路径
     .reg_rd_wen2    (oitf_retire_valid && oitf_retire_rd_wen),
     .reg_rd_waddr2  (oitf_retire_rd_addr),
-    .reg_rd_wdata2  (oitf_retire_rd_data)
+    .reg_rd_wdata2  (oitf_retire_rd_data),
+    //调试端口
+    .dbg_we         (dbg_reg_we),
+    .dbg_waddr      (dbg_reg_addr),
+    .dbg_wdata      (dbg_reg_wdata),
+    .dbg_raddr      (dbg_reg_addr),
+    .dbg_rdata      (dbg_reg_rdata)
 );
 
 ID_EX #(
@@ -781,10 +860,10 @@ DTCM #(
 )u_DTCM(
     .clk        (clk),
     .rst_n      (rst_n),
-    .access_addr(access_addr_ex),
-    .wr_en      (access_wr_ex && dtcm_sel && ~(ex_mem_stall || ex_mem_flush)),
-    .wr_data    (access_wdata_ex),
-    .wr_mask    (access_wmask_ex),
+    .access_addr(dtcm_addr_sba),
+    .wr_en      (dtcm_wen_sba),
+    .wr_data    (dtcm_wdata_sba),
+    .wr_mask    (dtcm_wmask_sba),
     .dtcm_download_en (dtcm_download_en   ),
     .dtcm_download_addr(dtcm_download_addr),
     .dtcm_download_data(dtcm_download_data),

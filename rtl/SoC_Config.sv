@@ -32,6 +32,10 @@
 // 3 级流水线乘法器（默认状态机 4 拍，启用后 3 拍）
 `define MULT_PIPELINE
 
+// RISC-V Debug Module（JTAG TAP + DM，Spec 0.13）
+// 仿真：+define+BD32_DEBUG_EN  综合：Vivado Settings 添加
+`define BD32_DEBUG_EN
+
 // 访存地址快速加法（减少 EX 阶段关键路径）
 // `define ADDR_GEN_FAST
 

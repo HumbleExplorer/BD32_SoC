@@ -36,7 +36,7 @@ Disassembly of section .text.init:
    10070:	23c89863          	bne	a7,t3,102a0 <fail>
    10074:	00300193          	li	gp,3
    10078:	00010e37          	lui	t3,0x10
-   1007c:	e18e0e13          	addi	t3,t3,-488 # fe18 <_start-0x1e8>
+   1007c:	ed8e0e13          	addi	t3,t3,-296 # fed8 <_start-0x128>
    10080:	23c59063          	bne	a1,t3,102a0 <fail>
    10084:	00400193          	li	gp,4
    10088:	00001e37          	lui	t3,0x1
@@ -123,7 +123,7 @@ Disassembly of section .text.init:
    101cc:	00d00e13          	li	t3,13
    101d0:	0dc89863          	bne	a7,t3,102a0 <fail>
    101d4:	0026fe37          	lui	t3,0x26f
-   101d8:	ef2e0e13          	addi	t3,t3,-270 # 26eef2 <_end+0x25deaa>
+   101d8:	c72e0e13          	addi	t3,t3,-910 # 26ec72 <_end+0x25dc2a>
    101dc:	0dc59263          	bne	a1,t3,102a0 <fail>
    101e0:	02c755b3          	divu	a1,a4,a2
    101e4:	01079793          	slli	a5,a5,0x10
@@ -143,7 +143,7 @@ Disassembly of section .text.init:
    1021c:	00200e13          	li	t3,2
    10220:	09c71063          	bne	a4,t3,102a0 <fail>
    10224:	00b7ee37          	lui	t3,0xb7e
-   10228:	57ae0e13          	addi	t3,t3,1402 # b7e57a <_end+0xb6d532>
+   10228:	16ae0e13          	addi	t3,t3,362 # b7e16a <_end+0xb6d122>
    1022c:	07c69a63          	bne	a3,t3,102a0 <fail>
    10230:	800008b7          	lui	a7,0x80000
    10234:	00300613          	li	a2,3

@@ -13,6 +13,7 @@ module Pipeline_Ctrl #(
     parameter DATA_WIDTH = `DATA_WIDTH
 )(
     input   logic                       clk,
+    input   logic                       rst_n,
     // from EX/MEM
     input   logic                       branch_jump_en,
     input   logic   [ADDR_WIDTH-1:0]    branch_jump_addr,
@@ -21,6 +22,12 @@ module Pipeline_Ctrl #(
     input   logic   [ADDR_WIDTH-1:0]    trap_jump_addr,
     input   logic   [1:0]               priv_mode,
     input   logic                       waiting_int,
+    // from Debug Module
+    input   logic                       dbg_halt_req,
+    output  logic                       dbg_halted,
+    input   logic                       dbg_step,          // dcsr.step：单步模式
+    input   logic                       dbg_resume_pulse,  // resume 单拍脉冲
+    input   logic                       trigger_match,     // trigger 地址匹配（硬件断点）
     // from Forward
     input   logic                       load_use_flag,
     // from EX
@@ -160,8 +167,97 @@ end
 assign exception_trap = ~(exception_code_if_m[DATA_WIDTH-2] && exception_code_id_m[DATA_WIDTH-2] && exception_code_ex_m[DATA_WIDTH-2]);
 assign oitf_flush     = exception_trap;
 
+// =========================================================================
+// Single-step 状态机
+// resume with dcsr.step=1 → 执行一条指令 → 重新进入 debug mode
+// =========================================================================
+localparam STEP_IDLE  = 2'b00;
+localparam STEP_RUN   = 2'b01;  // 等待一次 PC 推进（取指）
+localparam STEP_DRAIN = 2'b10;  // PC 已锁定，等指令退休
+localparam STEP_HALT  = 2'b11;  // 重新 halt
+
+logic [1:0] step_state;
+logic [2:0] step_drain_cnt;
+
+wire step_halt         = (step_state == STEP_HALT);
+wire step_run_active   = (step_state == STEP_RUN);
+wire step_drain_active = (step_state == STEP_DRAIN);
+
+// 延迟一拍：BRAM 有 1 拍读延迟，drain 第一拍不能 flush IF/ID
+logic step_drain_d;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) step_drain_d <= 1'b0;
+    else        step_drain_d <= step_drain_active;
+end
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        step_state     <= STEP_IDLE;
+        step_drain_cnt <= 3'd0;
+    end else begin
+        case (step_state)
+            STEP_IDLE: begin
+                if (dbg_resume_pulse && dbg_step) begin
+                    step_state     <= STEP_RUN;
+                    step_drain_cnt <= 3'd0;
+                end
+            end
+            STEP_RUN: begin
+                // 等 1 拍让 ITCM 地址生效（BRAM 下拍出数据）
+                step_state <= STEP_DRAIN;
+                // 如果外部重新 halt，回到 IDLE
+                if (dbg_halt_req)
+                    step_state <= STEP_IDLE;
+            end
+            STEP_DRAIN: begin
+                // 只在总线就绪且 OITF 无阻塞时计数
+                if (bus_ready && !oitf_stall)
+                    step_drain_cnt <= step_drain_cnt + 3'd1;
+                // 6 拍：充足余量确保指令退休
+                if (step_drain_cnt >= 3'd6)
+                    step_state <= STEP_HALT;
+                if (dbg_halt_req)
+                    step_state <= STEP_IDLE;
+            end
+            STEP_HALT: begin
+                // step 完成，CPU 已 halt。等待 DM 下一次操作：
+                if (dbg_resume_pulse && dbg_step) begin
+                    step_state     <= STEP_RUN;   // 再次单步
+                    step_drain_cnt <= 3'd0;
+                end else if (dbg_resume_pulse || dbg_halt_req)
+                    step_state <= STEP_IDLE;  // 正常 resume 或外部 halt 接管
+            end
+        endcase
+    end
+end
+
+// =========================================================================
+// pc_stall：平坦 OR 结构（与 trap_jump / branch_jump_en 解耦）
+// =========================================================================
+// PC_counter 内部 jump_en 优先级高于 stall，因此 trap/branch 跳转期间
+// 即使 pc_stall=1 也不会影响 PC 跳转。这样 pc_stall 不再依赖
+// OITF→ALU→branch→exception→trap 的超长组合路径，打断关键时序路径。
+// 唯一例外：step_drain 第一拍（drain_d=0）必须释放 PC 让 inst_addr 推进。
+// =========================================================================
+wire step_drain_release = step_drain_active & ~step_drain_d;  // drain 第一拍
+
+// 高优先级 stall（仅依赖寄存器信号，路径极短）
+wire hp_stall = (dbg_halt_req | step_halt)
+              | (dbg_resume_pulse & dbg_step)
+              | step_run_active
+              | (step_drain_active & step_drain_d)
+              | waiting_int;
+
+// 低优先级 stall（来自数据通路，但不再被 trap/branch 屏蔽）
+wire lp_stall = oitf_stall | ~bus_ready | load_use_flag;
+
+// step_drain_release 期间强制释放 PC（覆盖 lp_stall）
+assign pc_stall = (hp_stall | lp_stall) & ~step_drain_release;
+
+// =========================================================================
+// 流水线 flush/stall + 跳转：保持优先级结构（无长时序路径问题）
+// =========================================================================
 always_comb begin
-    pc_stall        = 1'b0;
     ctrl_jump_en    = 1'b0;
     if_id_stall     = 1'b0;
     if_id_flush     = 1'b0;
@@ -172,8 +268,22 @@ always_comb begin
     mem_wb_stall    = 1'b0;
     mem_wb_flush    = 1'b0;
     ctrl_jump_addr  = `BOOT_BASE_TAG;
-    if (waiting_int) begin
-        pc_stall        = 1'b1;
+    if (dbg_halt_req || step_halt || trigger_match) begin
+        if_id_stall     = 1'b1;
+        id_ex_stall     = 1'b1;
+        ex_mem_stall    = 1'b1;
+        mem_wb_stall    = 1'b1;
+        if_id_flush     = 1'b1;
+        id_ex_flush     = 1'b1;
+    end else if (dbg_resume_pulse && dbg_step) begin
+        if_id_flush     = 1'b1;
+        id_ex_flush     = 1'b1;
+    end else if (step_run_active) begin
+        if_id_flush     = 1'b1;
+        id_ex_flush     = 1'b1;
+    end else if (step_drain_active) begin
+        if_id_flush     = step_drain_d;
+    end else if (waiting_int) begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
@@ -185,7 +295,6 @@ always_comb begin
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
     end else if (oitf_stall) begin
-        pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
@@ -196,17 +305,16 @@ always_comb begin
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = branch_jump_addr;
     end else if (~bus_ready) begin
-        pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_flush     = 1'b1;
         ex_mem_flush    = 1'b1;
     end else if (load_use_flag) begin
-        pc_stall        = 1'b1;
         if_id_stall     = 1'b1;
         id_ex_flush     = 1'b1;
     end
 end
 
-
+// Debug halted 确认：halt 请求有效（含 step 完成 / trigger 命中）+ OITF 排空 + 总线空闲
+assign dbg_halted = (dbg_halt_req || step_halt || trigger_match) && !oitf_stall && bus_ready;
 
 endmodule

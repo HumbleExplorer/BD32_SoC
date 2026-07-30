@@ -41,7 +41,32 @@ module SoC_top #(
     // GPIO
     inout  [GPIO_NUM-1:0]  gpio_io,
     // Timer
-    inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0] timer_channel_io
+    inout  [TIMER_NUM*TIMER_CHANNEL_NUM-1:0] timer_channel_io,
+    // Debug Module 接口（透传至 RISC_V_Core）
+    input   logic                       dbg_halt_req,
+    output  logic                       dbg_halted,
+    input   logic                       dbg_resume_req,
+    input   logic                       dbg_step,
+    input   logic                       dbg_ebreakm,
+    input   logic                       dbg_reg_we,
+    input   logic   [REG_ADDR_WIDTH-1:0] dbg_reg_addr,
+    input   logic   [DATA_WIDTH-1:0]    dbg_reg_wdata,
+    output  logic   [DATA_WIDTH-1:0]    dbg_reg_rdata,
+    output  logic   [DATA_WIDTH-1:0]    dbg_dpc,
+    input   logic   [DATA_WIDTH-1:0]    dbg_pc_wdata,
+    // SBA 总线（来自 Debug Module）
+    input   logic                       sba_req_valid,
+    input   logic   [ADDR_WIDTH-1:0]    sba_addr,
+    input   logic   [DATA_WIDTH-1:0]    sba_wdata,
+    input   logic                       sba_write,
+    input   logic   [2:0]               sba_size,
+    output  logic                       sba_rsp_valid,
+    output  logic   [DATA_WIDTH-1:0]    sba_rdata,
+    output  logic                       sba_error,
+    // Trigger（硬件断点，透传至 RISC_V_Core）
+    input   logic                       trigger_en,
+    input   logic   [ADDR_WIDTH-1:0]    trigger_addr,
+    output  logic                       trigger_hit
 );
 
 // clk_wiz / clk_div / BUFG / Cdc_Sync 已全部移至 bd32_board_top（FPGA 板级顶层）
@@ -245,8 +270,32 @@ RISC_V_Core #(
     .bus_access_write   (bus_access_write   ),
     .bus_access_addr    (bus_access_addr    ),
     .bus_access_wstrb   (bus_access_wstrb   ),
-    .bus_access_wdata   (bus_access_wdata   )
-
+    .bus_access_wdata   (bus_access_wdata   ),
+    // Debug Module
+    .dbg_halt_req       (dbg_halt_req       ),
+    .dbg_halted         (dbg_halted         ),
+    .dbg_resume_req     (dbg_resume_req     ),
+    .dbg_step           (dbg_step           ),
+    .dbg_ebreakm        (dbg_ebreakm        ),
+    .dbg_reg_we         (dbg_reg_we         ),
+    .dbg_reg_addr       (dbg_reg_addr       ),
+    .dbg_reg_wdata      (dbg_reg_wdata      ),
+    .dbg_reg_rdata      (dbg_reg_rdata      ),
+    .dbg_dpc            (dbg_dpc            ),
+    .dbg_pc_wdata       (dbg_pc_wdata       ),
+    // SBA
+    .sba_req_valid      (sba_req_valid      ),
+    .sba_addr           (sba_addr           ),
+    .sba_wdata          (sba_wdata          ),
+    .sba_write          (sba_write          ),
+    .sba_size           (sba_size           ),
+    .sba_rsp_valid      (sba_rsp_valid      ),
+    .sba_rdata          (sba_rdata          ),
+    .sba_error          (sba_error          ),
+    // Trigger
+    .trigger_en         (trigger_en         ),
+    .trigger_addr       (trigger_addr       ),
+    .trigger_hit        (trigger_hit        )
 );
 
 // =========================================================================

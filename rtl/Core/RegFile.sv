@@ -21,7 +21,13 @@ module RegFile #(
     //写端口2：OITF 退休路径（长指令写回）
     input   logic                           reg_rd_wen2,
     input   logic   [REG_ADDR_WIDTH-1:0]    reg_rd_waddr2,
-    input   logic   [DATA_WIDTH-1:0]        reg_rd_wdata2
+    input   logic   [DATA_WIDTH-1:0]        reg_rd_wdata2,
+    //调试端口：Debug Module 读写（仅 CPU halted 时活跃）
+    input   logic                           dbg_we,
+    input   logic   [REG_ADDR_WIDTH-1:0]    dbg_waddr,
+    input   logic   [DATA_WIDTH-1:0]        dbg_wdata,
+    input   logic   [REG_ADDR_WIDTH-1:0]    dbg_raddr,
+    output  logic   [DATA_WIDTH-1:0]        dbg_rdata
 );
 
 logic [DATA_WIDTH-1:0] regs [0:REGFILE_NUM-1] ;
@@ -52,6 +58,9 @@ always_comb begin
         reg_rs2_rdata = regs[reg_rs2_raddr];
 end
 
+// 调试读端口（CPU halted 时无并发写，无需旁路）
+assign dbg_rdata = (dbg_raddr == 5'h0) ? 'h0 : regs[dbg_raddr];
+
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         for(int i=0;i<REGFILE_NUM;i++) begin
@@ -59,6 +68,9 @@ always_ff @(posedge clk or negedge rst_n) begin
         end
     end
     else begin
+        // 调试写端口（最高优先级，仅 halted 时活跃）
+        if(dbg_we && (dbg_waddr != 5'h0))
+            regs[dbg_waddr] <= #1 dbg_wdata;
         // Port2（OITF 退休）优先：同地址时 Port2 覆盖 Port1。
         // 修复：oitf_stall 期间 MEM_WB 被保持，旧指令（如 li）持续驱动 Port1；
         // 当 OITF 退休写回同寄存器时（如 divu 结果），Port1 的陈旧值会覆盖
