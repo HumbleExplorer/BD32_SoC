@@ -84,6 +84,16 @@ logic                       sba_error;
 logic                       trigger_en;
 logic [31:0]                trigger_addr;
 logic                       trigger_hit;
+// Debug CSR（SoC_top <-> debug_top）
+logic                       dbg_csr_we;
+logic [11:0]                dbg_csr_addr;
+logic [31:0]                dbg_csr_wdata;
+logic [31:0]                dbg_csr_rdata;
+// ndmreset：调试器复位 SoC
+logic                       ndmreset;
+// 板级复位门控（同 bd32_board_top）：SoC 域复位 = 全局复位 & ~ndmreset
+wire                        soc_rst_n;
+assign soc_rst_n = rst_n & ~ndmreset;
 
 // GPIO 浮空上拉
 assign gpio_io = {GPIO_NUM{1'bz}};
@@ -120,7 +130,7 @@ SoC_top #(
     .TIMER_CHANNEL_NUM (`TIMER_CHANNEL_NUM)
 ) u_SoC_top (
     .sys_clk          (sys_clk        ),
-    .sys_rst_n        (rst_n          ),
+    .sys_rst_n        (soc_rst_n      ),
     .timer_clk_i      (timer_clk      ),
     .uart_rx          (uart_rx        ),
     .uart_tx          (uart_tx        ),
@@ -147,7 +157,11 @@ SoC_top #(
     .sba_error        (sba_error      ),
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
-    .trigger_hit      (trigger_hit    )
+    .trigger_hit      (trigger_hit    ),
+    .dbg_csr_we       (dbg_csr_we     ),
+    .dbg_csr_addr     (dbg_csr_addr   ),
+    .dbg_csr_wdata    (dbg_csr_wdata  ),
+    .dbg_csr_rdata    (dbg_csr_rdata  )
 );
 
 // =========================================================================
@@ -181,7 +195,12 @@ debug_top u_debug_top (
     .sba_error        (sba_error      ),
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
-    .trigger_hit      (trigger_hit    )
+    .trigger_hit      (trigger_hit    ),
+    .dbg_csr_we       (dbg_csr_we     ),
+    .dbg_csr_addr     (dbg_csr_addr   ),
+    .dbg_csr_wdata    (dbg_csr_wdata  ),
+    .dbg_csr_rdata    (dbg_csr_rdata  ),
+    .ndmreset         (ndmreset       )
 );
 
 // =========================================================================
@@ -386,6 +405,29 @@ initial begin
     check("x1 readback", rd_data, 32'hDEAD_BEEF);
 
     // ----------------------------------------------------------
+    // Test 5b: CSR 读/写（abstract 通用 CSR 通道）
+    // ----------------------------------------------------------
+    $display("--- Test 5b: CSR read/write ---");
+    // 读 misa：regno=0xC301（0.13 编码）
+    dmi_write(ADDR_COMMAND, 32'h0022_C301);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("misa readback", rd_data, 32'h4000_1100);
+    // 写 mtvec = 0x1234_5000 再读回
+    dmi_write(ADDR_DATA0, 32'h1234_5000);
+    dmi_write(ADDR_COMMAND, 32'h0023_C305);
+    jtag_idle(10);
+    dmi_write(ADDR_COMMAND, 32'h0022_C305);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("mtvec write/readback", rd_data, 32'h1234_5000);
+    // 1.0 编码直读 mstatus：regno=0x300
+    dmi_write(ADDR_COMMAND, 32'h0022_0300);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("mstatus readback (1.0 enc)", rd_data, 32'h0000_1800);
+
+    // ----------------------------------------------------------
     // Test 6: 读 dpc（应为当前 halted PC）
     // ----------------------------------------------------------
     $display("--- Test 6: Read dpc ---");
@@ -545,6 +587,130 @@ initial begin
     // 最终 resume
     dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
     #(CLK_PERIOD * 20);
+
+    // ----------------------------------------------------------
+    // Test 13: reset halt（ndmreset + haltreq 驻留 → 停在复位向量 0x0）
+    // ----------------------------------------------------------
+    $display("--- Test 13: Reset halt ---");
+    // CPU 当前 running（Test 12 最终 resume 后）
+    // dmcontrol: haltreq(31)=1, ndmreset(1)=1, dmactive(0)=1
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0003);
+    #(CLK_PERIOD * 30);   // ndmreset 保持，CPU 复位
+    // 释放 ndmreset，haltreq 保持驻留
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 200);  // 等 PC 收敛 + dpc 捕获
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("reset halt: dmstatus.allhalted", rd_data[9], 1'b1);
+    // 读 dpc：应为复位向量（DIRECT_LOAD=ITCM 0x10000；板级 XILINX=BOOT 0x0）
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+`ifdef DIRECT_LOAD
+    check("reset halt: dpc = ITCM reset vector", rd_data,
+          {`ITCM_BASE_TAG, {(ADDR_WIDTH-`DEVICE_TAG_WIDTH){1'b0}}});
+`else
+    check("reset halt: dpc = BOOT reset vector", rd_data,
+          {`BOOT_BASE_TAG, {(ADDR_WIDTH-`DEVICE_TAG_WIDTH){1'b0}}});
+`endif
+
+    // ----------------------------------------------------------
+    // Test 14: reset halt 后写 dpc 并 resume（验证取指从新 dpc 开始）
+    // ----------------------------------------------------------
+    $display("--- Test 14: reset halt -> set dpc -> resume ---");
+    // SBA 写 0x10200: addi x1, x0, 42 = 0x02A00093；0x10204: NOP
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h02A0_0093);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0204);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0013);
+    #(CLK_PERIOD * 10);
+    // 写 dpc = 0x10200
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);
+    jtag_idle(10);
+    // 变体 A：普通 resume（resumereq + dmactive，无 step 冲刷）
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("reset-halt plain resume: allrunning", rd_data[11], 1'b1);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_COMMAND, 32'h0022_1001);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("reset-halt plain resume: x1 = 42", rd_data, 32'd42);
+
+    // 变体 B：带 step（dcsr.step=1，resume 时冲刷 IF-ID/ID-EX）
+    dmi_write(ADDR_DATA0, 32'h0000_0004);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // dcsr.step=1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // dpc=0x10200
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("reset-halt step resume: allhalted", rd_data[9], 1'b1);
+    dmi_write(ADDR_COMMAND, 32'h0022_1001);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("reset-halt step resume: x1 = 42", rd_data, 32'd42);
+
+    // 变体 C：普通 halt（非 reset）后设 dpc 普通 resume（对照）
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // dcsr.step=0
+    jtag_idle(10);
+    // 先 resume 跑一会再 halt，模拟普通 halt
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 20);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);  // haltreq
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // dpc=0x10200
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // 普通 resume
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_COMMAND, 32'h0022_1001);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("normal-halt plain resume: x1 = 42", rd_data, 32'd42);
+
+    // ----------------------------------------------------------
+    // Test 15: Trigger halt 锁存（清 trigger 后 CPU 应保持 halt）
+    // ----------------------------------------------------------
+    $display("--- Test 15: Trigger halt latch ---");
+    // 0x10200: addi x1,42; 0x10204: NOP（Test 14 已写入）
+    dmi_write(ADDR_DATA0, 32'h2800_0004);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1);  // write tdata1（type2+execute）
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0001_0204);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A2);  // write tdata2=0x10204
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // dpc=0x10200
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume → 命中 0x10204 → halt
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("trigger halt: allhalted", rd_data[9], 1'b1);
+    // 清 trigger（tdata1=0）：锁存后 CPU 应保持 halt
+    dmi_write(ADDR_DATA0, 32'h2800_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1);
+    jtag_idle(10);
+    #(CLK_PERIOD * 20);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("trigger cleared: still allhalted", rd_data[9], 1'b1);
+    // resume → 恢复运行
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 20);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("after resume: allrunning", rd_data[11], 1'b1);
+    // 恢复 halt，等待结束
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
 
     // ----------------------------------------------------------
     // 汇总

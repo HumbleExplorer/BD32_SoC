@@ -13,8 +13,9 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：UART（含 NCO 波特率发生器）、CLINT（mtime/mtip）、PLIC 中断控制器、APB Timer（PWM）、GPIO
 - CoreMark 验证通过（-O2 和 -O3 均通过 CRC 校验）
-- RISC-V Debug Module（Spec 0.13）：JTAG 在线调试，支持 halt/resume、单步、GPR/CSR 访问、SBA
-- 硬件断点：Trigger Module（mcontrol type=2），支持地址匹配断点（OpenOCD `hbreak`）
+- RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写
+- 硬件断点：Trigger Module（mcontrol type=2）地址匹配，OpenOCD `hbreak` / GDB 在线调试实测通过
+- 完整调试回归：DMI 一键测试（10 项）、GDB 全功能套件、真实 demo 符号级在线调试
 - 动态分支预测器调试支持：单步模式下自动门控预测跳转，保证 PC 严格 +4 递增
 
 ## 目录结构
@@ -59,7 +60,7 @@ Working/
 ├── script/                    # 仿真脚本
 │   ├── core_test/            # 核级仿真（filelist.f, run.do）
 │   ├── soc_test/             # SoC 级仿真
-│   ├── debug_test/           # Debug Module 仿真
+│   ├── debug_test/           # Debug Module 仿真（run_msim_debug.bat 一键回归）
 │   ├── uart_test/ gpio_test/ plic_test/ timer_test/  # 外设独立仿真
 │   ├── run_one.py            # 运行单个 custom_asm 测试
 │   ├── run_all_custom_asm.py # custom_asm 全回归（36 个测试）
@@ -74,11 +75,14 @@ Working/
 │   │   ├── build_riscv_tests.py  # riscv-tests 编译
 │   │   ├── fpga_reset.py    # FPGA 远程复位（FTDI ADBUS5）
 │   │   ├── uart_send.py     # UART 程序烧录（发送 .uartbin）
-│   │   ├── uart_cmd.py      # UART 发送任意文本/命令
-│   │   ├── uart_recv.py     # UART 接收并打印到终端
-│   │   ├── uart_log.py      # UART 接收并写入日志文件
+│   │   ├── uart_cmd.py / uart_recv.py / uart_log.py  # UART 交互工具
 │   │   ├── auto_coremark.py # CoreMark 自动化测试（复位+下载+解析）
-│   │   └── bd32_openocd.cfg # OpenOCD 配置（FT2232H + BD32 TAP）
+│   │   ├── bd32_openocd.cfg       # OpenOCD 配置（FT2232H + BD32 TAP）
+│   │   ├── bd32_debug_test.cfg    # DMI 全功能一键测试（OpenOCD TCL 脚本）
+│   │   ├── bd32_debug_test.gdb    # GDB 全功能调试套件
+│   │   ├── run_gdb_debug_test.bat # GDB 套件 runner
+│   │   ├── bd32_demo_debug.gdb    # 真实 demo（breathing）在线调试脚本
+│   │   └── run_demo_debug.bat     # demo 调试 runner
 │   ├── bsp/                  # 板级支持包（startup, drivers, trap, linker）
 │   ├── demos/nolibc/         # 裸机 demo（breathing, blink, uart_echo, cpuinfo）
 │   ├── demos/newlib/coremark/ # CoreMark 基准测试（build_O2/ + build_O3/）
@@ -180,11 +184,15 @@ python tools/build.py demos/newlib/coremark --newlib --opt O3
 BootROM:  0x0000_0000 ~ 0x0000_0FFF (4KB, 启动代码)
 ITCM:     0x0001_0000 ~ 0x0001_FFFF (64KB, 代码段)
 DTCM:     0x0002_0000 ~ 0x0002_FFFF (64KB, 数据段)
-UART:     0xE001_0000
-CLINT:    0xE000_0000
-PLIC:     0xE100_0000
-Timer:    0xE002_0000
-GPIO:     0xE003_0000
+CLINT:    0xF200_0000  (APB PSEL[0])
+PLIC:     0xFC00_0000  (APB PSEL[1])
+GPIO:     0xE000_0000  (APB PSEL[2])
+UART:     0xE001_0000  (APB PSEL[3])
+Timer:    0xE002_0000  (APB PSEL[4])
+SPI:      0xE003_0000  (APB PSEL[5], 预留)
+I2C:      0xE004_0000  (APB PSEL[6], 预留)
+Flash:    0x9000_0000  (AXI 从机, 未实现, 访问返回错误)
+DDR:      0xB000_0000  (AXI 从机, 未实现, 访问返回错误)
 ```
 
 ### 运行仿真
@@ -311,7 +319,12 @@ Vivado 工程位于 `BD32_SoC/`，目标平台为 Xilinx FPGA。
 
 ## Debug Module（JTAG 在线调试）
 
-BD32 实现了 RISC-V Debug Specification 0.13 的子集，支持通过 JTAG 接口进行在线调试。调试子系统位于 `rtl/Debug/`，由 `bd32_board_top` 在 `BD32_DEBUG_EN` 宏开启时例化。
+BD32 实现了 RISC-V Debug Specification 的 0.13 风格子集（dcsr 读回按 1.0 位域），支持通过 JTAG 接口进行在线调试，并经 GDB 完成真实程序符号级调试验证。调试子系统位于 `rtl/Debug/`，由 `bd32_board_top` 在 `BD32_DEBUG_EN` 宏开启时例化。
+
+调试采用 **halt-in-place + 直接端口访问** 架构（与 tinyriscv/Ibex 同类，区别于 E203/CVA6 的 Debug ROM + Park Loop）：
+- halt 后流水线全级 stall + flush，CPU 原地冻结；无需 Debug ROM、不执行任何调试代码
+- GPR/CSR 通过专用调试端口直连（RegFile / CSR_Reg_Access），不经 CPU 执行
+- 内存访问走 SBA（32-bit），在 halt 期间直接读写 ITCM/DTCM
 
 ### 架构
 
@@ -343,51 +356,88 @@ FT2232H Channel A (JTAG: TCK/TDI/TDO/TMS)
 | 单步（stepi） | 已验证 | `dcsr.step=1`，门控分支预测保证 PC+4 |
 | GPR 读写 | 已验证 | abstract command, regno 0x1000~0x101F |
 | CSR 读写 | 已验证 | dcsr(0x7B0), dpc(0x7B1), mstatus 等 |
-| SBA | 已验证 | 32-bit 地址/数据，读写内存 |
-| 硬件断点 | RTL 就绪 | tselect/tdata1/tdata2, mcontrol type=2 地址匹配 |
+| reset halt | 已验证 | `ndmreset` + haltreq 驻留，停在复位向量 |
+| GPR / CSR 读写 | 已验证 | abstract command，regno 0x1000~0x101F / 0xC000\|csr 与 1.0 直接编码 |
+| dcsr / dpc | 已验证 | dcsr 按 1.0 位域读回（debugver/cause/step/ebreakm） |
+| SBA | 已验证 | 32-bit 地址/数据，读写 ITCM/DTCM |
+| 硬件断点 | 已验证 | tdata1/tdata2, mcontrol type=2 地址匹配，OpenOCD `hbreak` + GDB |
+| GDB 在线调试 | 已验证 | 真实 demo（breathing）符号级调试：加载/断点/单步/变量 |
+
+未实现：Debug ROM / Park Loop、ProgBuf（progbufsize=0）、abstract 内存访问（cmdtype=2）、16/8-bit SBA、多 hart。
 
 ### Trigger Module（硬件断点）
 
 DM 内部实现了一组 trigger 寄存器（tselect, tdata1, tdata2），通过 abstract command 的 CSR 地址空间（0x7A0~0x7A3）访问：
 
-- `tdata1` 复位值 = 0x2800_0000（type=2 mcontrol, dmode=1, action=0 halt, 默认 disabled）
+- `tdata1` 复位值 = 0x2000_0000（type=2 mcontrol, dmode=0, 默认 disabled；dmode=0 避免 OpenOCD 0.12 枚举时清零导致 hbreak 失败）
 - OpenOCD 通过 `hbreak *<addr>` 命令编程 tdata2 = 目标地址，置 tdata1[2]（execute match enable）
 - CPU 侧 `trigger_hit = trigger_en & (inst_addr_if == trigger_addr)`，命中后触发 halt
+- **trigger halt 锁存**：命中时 DM 自动拉高 haltreq，删除断点（清 tdata1）不会让 CPU 自动恢复运行，直到调试器发 `resumereq`
 
 ### OpenOCD + GDB 使用
 
-配置文件：`SDK/tools/bd32_openocd.cfg`
+配置文件：`SDK/tools/bd32_openocd.cfg`（gdb 端口 3333，默认开启）
+
+手动流程：
 
 ```bash
-# 启动 OpenOCD（需要 WinUSB 驱动绑定到 FT2232H Channel A）
+# 终端 1：启动 OpenOCD
 openocd -f SDK/tools/bd32_openocd.cfg
 
-# 另一终端启动 GDB
+# 终端 2：启动 GDB（NucleiStudio riscv64-unknown-elf-gdb）
 riscv64-unknown-elf-gdb program.elf
 (gdb) target extended-remote :3333
-(gdb) monitor halt
 (gdb) monitor reset halt
-(gdb) hbreak *0x10020        # 硬件断点（需 trigger 支持）
+(gdb) hbreak *0x10020        # 硬件断点
 (gdb) continue
-(gdb) info registers
 (gdb) stepi                  # 单步
 ```
 
-注意事项：
-- FT2232H Channel A 必须绑定 WinUSB 驱动（用 Zadig 替换 FTDI VCP），否则 libusb 无法访问
-- Vivado hw_server 会占用 JTAG 适配器，使用前需关闭或断开 Hardware Target
+**一键回归脚本**（SDK/tools/，输出统一到工作区 `logs/` 目录）：
+
+| 脚本 | 内容 | 结果文件 |
+|------|------|----------|
+| `bd32_debug_test.cfg`（OpenOCD 直接运行） | DMI 全功能：JTAG、halt/PC、GPR/CSR、单步、SBA、Trigger、reset halt（10 项） | 终端输出 |
+| `run_gdb_debug_test.bat` | GDB 全功能套件：reset halt、寄存器/CSR、单步、内存读写、hbreak | `logs/gdb_test_result.txt` |
+| `run_demo_debug.bat` | 真实 demo（breathing）符号级调试：加载、hbreak main、单步、变量 | `logs/demo_debug_result.txt` |
+| `run_msim_debug.bat`（script/debug_test/） | ModelSim 回归（tb_debug，31 项断言，无需板子） | `logs/msim_out.txt` |
+
+```bash
+# 正常环境直接运行：
+openocd -f Working/SDK/tools/bd32_debug_test.cfg
+Working/SDK/tools/run_gdb_debug_test.bat
+Working/SDK/tools/run_demo_debug.bat
+Working/script/debug_test/run_msim_debug.bat
+```
+
+本机环境说明（Windows exec 环境 Winsock 损坏，进程无法创建 TCP socket / 运行 Node）：
+- 所有涉及 socket 的工具（OpenOCD gdb server、GDB、ModelSim 的 vsim）需通过**任务计划程序**运行：
+  - `schtasks /run /tn BD32_GDB` —— GDB 全功能套件
+  - `schtasks /run /tn GDBDEMO2` —— demo 在线调试
+  - `schtasks /run /tn BD32_MSIM` —— ModelSim 回归（结果 `logs/msim_out.txt`）
+- FT2232H Channel A 必须绑定 WinUSB 驱动（Zadig），否则 libusb 无法访问
+- Vivado hw_server 会占用 JTAG 适配器，使用前需关闭 Hardware Target
 - 强制终止 OpenOCD 后可能需要拔插 USB 释放设备句柄
 - adapter speed 设为 500 kHz（杜邦线连接），正式 PCB 可提高
 
 ### Debug 仿真验证
 
 ```bash
-cd script/debug_test
-# ModelSim
-vsim -c -do run.do
+# 正常环境：
+cd Working/sim
+vsim -c -do run_debug.do
+
+# 本机（exec 环境 Winsock 损坏，走计划任务）：
+schtasks /run /tn BD32_MSIM     # 结果在 logs/msim_out.txt
 ```
 
-Testbench `sim/tb_debug.sv` 通过 DMI 接口直接激励 DM，验证 halt/resume、GPR 读写、单步、trigger 匹配等功能，无需 JTAG 物理连接。
+Testbench `sim/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物理连接，覆盖：
+- Test 1~12：IDCODE、halt/resume、GPR/CSR 读写、SBA、单步
+- Test 13：reset halt（停在复位向量）
+- Test 14：reset halt 后改 dpc 再 resume 的取指对齐（`resume_hold` 回归）
+- Test 15：trigger halt 锁存（清断点后 CPU 保持 halt）
+
+当前回归结果：**31 PASS / 0 FAIL**。
 
 ## FPGA 在线控制工具（SDK/tools）
 

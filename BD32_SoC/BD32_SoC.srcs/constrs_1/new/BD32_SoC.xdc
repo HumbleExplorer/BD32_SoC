@@ -70,3 +70,6 @@ set_property -dict {PACKAGE_PIN U7 IOSTANDARD LVCMOS33} [get_ports {timer_channe
 # =====================================================================
 set_false_path -from [get_cells u_cdc_rst_sync/*]
 set_false_path -from [get_clocks sys_clk] -to [get_clocks clk_cpu_clk_wiz_0]
+# clk_cpu -> sys_clk: CLINT timer divider async reset release path
+set_false_path -from [get_clocks clk_cpu_clk_wiz_0] -to [get_clocks sys_clk]
+

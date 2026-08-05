@@ -23,6 +23,15 @@ module PC_counter #(
 );
 logic [ADDR_WIDTH-1:0] inst_addr;
 
+// 复位释放后第一拍：即使被 debug halt 的 stall 卡住，也要让 PC 推进到复位向量。
+// 否则 reset-halt（haltreq 驻留）时 inst_addr 永远停在 BOOT_BASE-4，dpc 捕获错误。
+logic reset_d;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) reset_d <= 1'b1;
+    else        reset_d <= 1'b0;
+end
+wire first_cycle_after_reset = reset_d;
+
 // 异常条件（纯 1-bit，编码由 RISC_V_Core 统一完成）
 logic inst_addr_legal;
 assign inst_addr_legal  = (inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_TAG || inst_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_TAG);
@@ -33,7 +42,7 @@ always_comb begin
     pc = inst_addr + 4;
     if (jump_en)
         pc = {jump_addr[ADDR_WIDTH-1:ALIGN_WIDTH], {ALIGN_WIDTH{1'b0}}};
-    else if (stall)
+    else if (stall && !first_cycle_after_reset)
         pc = inst_addr;
     else if (predict_taken)
         pc = {predict_target[ADDR_WIDTH-1:ALIGN_WIDTH], {ALIGN_WIDTH{1'b0}}};

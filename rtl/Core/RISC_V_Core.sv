@@ -57,6 +57,11 @@ module RISC_V_Core #(
     input   logic                       trigger_en,
     input   logic   [DATA_WIDTH-1:0]    trigger_addr,
     output  logic                       trigger_hit,
+    // Debug CSR 访问（Abstract 通用 CSR 读写）
+    input   logic                       dbg_csr_we,
+    input   logic   [CSR_ADDR_WIDTH-1:0] dbg_csr_addr,
+    input   logic   [DATA_WIDTH-1:0]    dbg_csr_wdata,
+    output  logic   [DATA_WIDTH-1:0]    dbg_csr_rdata,
     // System Bus Access (SBA) — 调试器读写 TCM
     input   logic                       sba_req_valid,
     input   logic   [ADDR_WIDTH-1:0]    sba_addr,
@@ -793,7 +798,12 @@ CSR_Reg_Access #(
     .waiting_int        (waiting_int        ),
     .hpm_valid          (hpm_valid          ),
     .hpm_inst_type      (hpm_inst_type      ),
-    .hpm_mispredict     (hpm_mispredict)
+    .hpm_mispredict     (hpm_mispredict),
+    // Debug CSR（Abstract 通用 CSR 读写）
+    .dbg_csr_we         (dbg_csr_we         ),
+    .dbg_csr_addr       (dbg_csr_addr       ),
+    .dbg_csr_wdata      (dbg_csr_wdata      ),
+    .dbg_csr_rdata      (dbg_csr_rdata      )
 );
 
 EX_MEM #(

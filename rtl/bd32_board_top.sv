@@ -54,12 +54,41 @@ clk_wiz_0 u_clk_wiz_0 (
 
 // =========================================================================
 // 复位：按键有效 && MMCM 锁定 → BUFG → 异步复位同步释放
+// DM/JTAG 域复位不受 ndmreset 影响（调试器复位 SoC 时 DM 必须存活）
 // =========================================================================
+// ndmreset：调试器复位整个 SoC（DM/JTAG 自身保持）
+logic ndmreset;
+logic rst_dbg_async_n;
+logic rst_n_dbg_bufg;
+logic rst_n_dbg_sync;
+
 logic rst_async_n;
 logic rst_n_bufg;
 
-// 按键(低有效) && ~调试器(高有效) && MMCM锁定 → 任一触发即复位
-assign rst_async_n = sys_rst_n && (~dbg_rst) && clk_wiz_locked;
+// DM 域复位：按键(低有效) && ~调试器(高有效) && MMCM锁定
+assign rst_dbg_async_n = sys_rst_n && (~dbg_rst) && clk_wiz_locked;
+BUFG u_rst_dbg_bufg (
+    .I  (rst_dbg_async_n),
+    .O  (rst_n_dbg_bufg)
+);
+
+Cdc_Sync #(
+    .WIDTH       (1),
+    .RESET_VAL   (0),
+    .DELAY_STAGES(3)
+) u_cdc_rst_dbg_sync (
+    .dst_clk    (clk_cpu),
+    .dst_rst_n  (rst_n_dbg_bufg),
+    .async_sig  (1'b1),
+    .sync_sig   (rst_n_dbg_sync)
+);
+
+// SoC 域复位：DM 域复位 && ~ndmreset（调试器可复位整个 SoC）
+`ifdef BD32_DEBUG_EN
+assign rst_async_n = rst_dbg_async_n && (~ndmreset);
+`else
+assign rst_async_n = rst_dbg_async_n;
+`endif
 BUFG u_rst_bufg (
     .I  (rst_async_n),
     .O  (rst_n_bufg)
@@ -79,14 +108,29 @@ Cdc_Sync #(
 
 // =========================================================================
 // 16MHz → 1MHz CLINT timer 时钟（独立域，供 mtime 计数）
+// 复位：异步置位、同步释放（对齐 sys_clk）。
+// 原来直接接 rst_n_bufg（原始异步复位），释放未对 sys_clk 同步，
+// 产生 ndmreset(clk_cpu) → CLINT 分频器 CLR 的跨域 recovery 违例。
 // =========================================================================
 logic clk_1mhz;
+logic rst_n_clint_sync;
+
+Cdc_Sync #(
+    .WIDTH       (1),
+    .RESET_VAL   (0),
+    .DELAY_STAGES(3)
+) u_cdc_rst_clint_sync (
+    .dst_clk    (sys_clk),
+    .dst_rst_n  (rst_n_bufg),
+    .async_sig  (1'b1),
+    .sync_sig   (rst_n_clint_sync)
+);
 
 clk_div_static #(
     .DIV_NUM (50)
 ) u_clint_timer_div (
     .clk_in  (sys_clk),
-    .rst_n   (rst_n_bufg),
+    .rst_n   (rst_n_clint_sync),
     .clk_out (clk_1mhz)
 );
 
@@ -118,6 +162,12 @@ logic                       sba_error;
 logic                       trigger_en;
 logic [31:0]                trigger_addr;
 logic                       trigger_hit;
+// Debug CSR（Abstract 通用 CSR 读写）
+logic                       dbg_csr_we;
+logic [11:0]                dbg_csr_addr;
+logic [31:0]                dbg_csr_wdata;
+logic [31:0]                dbg_csr_rdata;
+
 `endif
 
 // =========================================================================
@@ -169,7 +219,12 @@ SoC_top #(
     // Trigger
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
-    .trigger_hit      (trigger_hit    )
+    .trigger_hit      (trigger_hit    ),
+    // Debug CSR
+    .dbg_csr_we       (dbg_csr_we     ),
+    .dbg_csr_addr     (dbg_csr_addr   ),
+    .dbg_csr_wdata    (dbg_csr_wdata  ),
+    .dbg_csr_rdata    (dbg_csr_rdata  )
 `else
     .dbg_halt_req     (1'b0           ),
     .dbg_halted       (               ),
@@ -192,7 +247,11 @@ SoC_top #(
     .sba_error        (               ),
     .trigger_en       (1'b0           ),
     .trigger_addr     (32'b0          ),
-    .trigger_hit      (               )
+    .trigger_hit      (               ),
+    .dbg_csr_we       (1'b0           ),
+    .dbg_csr_addr     (12'b0          ),
+    .dbg_csr_wdata    (32'b0          ),
+    .dbg_csr_rdata    (               )
 `endif
 );
 
@@ -202,7 +261,7 @@ SoC_top #(
 `ifdef BD32_DEBUG_EN
 debug_top u_debug_top (
     .clk              (clk_cpu        ),
-    .rst_n            (rst_n_sync     ),
+    .rst_n            (rst_n_dbg_sync ),   // DM/JTAG 域复位，不受 ndmreset 影响
     // JTAG 引脚
     .tck              (dbg_tck        ),
     .tms              (dbg_tms        ),
@@ -234,7 +293,14 @@ debug_top u_debug_top (
     // Trigger（硬件断点）
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
-    .trigger_hit      (trigger_hit    )
+    .trigger_hit      (trigger_hit    ),
+    // Debug CSR
+    .dbg_csr_we       (dbg_csr_we     ),
+    .dbg_csr_addr     (dbg_csr_addr   ),
+    .dbg_csr_wdata    (dbg_csr_wdata  ),
+    .dbg_csr_rdata    (dbg_csr_rdata  ),
+    // 复位控制
+    .ndmreset         (ndmreset       )
 );
 `else
 assign dbg_tdo = 1'b0;

@@ -66,7 +66,12 @@ module SoC_top #(
     // Trigger（硬件断点，透传至 RISC_V_Core）
     input   logic                       trigger_en,
     input   logic   [ADDR_WIDTH-1:0]    trigger_addr,
-    output  logic                       trigger_hit
+    output  logic                       trigger_hit,
+    // Debug CSR 访问（透传至 RISC_V_Core）
+    input   logic                       dbg_csr_we,
+    input   logic   [CSR_ADDR_WIDTH-1:0] dbg_csr_addr,
+    input   logic   [DATA_WIDTH-1:0]    dbg_csr_wdata,
+    output  logic   [DATA_WIDTH-1:0]    dbg_csr_rdata
 );
 
 // clk_wiz / clk_div / BUFG / Cdc_Sync 已全部移至 bd32_board_top（FPGA 板级顶层）
@@ -295,7 +300,12 @@ RISC_V_Core #(
     // Trigger
     .trigger_en         (trigger_en         ),
     .trigger_addr       (trigger_addr       ),
-    .trigger_hit        (trigger_hit        )
+    .trigger_hit        (trigger_hit        ),
+    // Debug CSR
+    .dbg_csr_we         (dbg_csr_we         ),
+    .dbg_csr_addr       (dbg_csr_addr       ),
+    .dbg_csr_wdata      (dbg_csr_wdata      ),
+    .dbg_csr_rdata      (dbg_csr_rdata      )
 );
 
 // =========================================================================

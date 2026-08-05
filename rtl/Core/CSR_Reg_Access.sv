@@ -13,6 +13,11 @@ module CSR_Reg_Access #(
     input   logic   [CSR_ADDR_WIDTH-1:0]    csr_addr,
     input   logic   [DATA_WIDTH-1:0]        csr_wdata,
     output  logic   [DATA_WIDTH-1:0]        csr_rdata,
+    // Debug CSR 访问（DM 抽象命令，仅 CPU halted 时活跃）
+    input   logic                           dbg_csr_we,
+    input   logic   [CSR_ADDR_WIDTH-1:0]    dbg_csr_addr,
+    input   logic   [DATA_WIDTH-1:0]        dbg_csr_wdata,
+    output  logic   [DATA_WIDTH-1:0]        dbg_csr_rdata,
 // from ctrl
     input   logic   [ADDR_WIDTH-1:0]        exception_inst_addr,
     input   logic   [ADDR_WIDTH-1:0]        next_inst_addr,//IF/ID或者jump_addr
@@ -245,6 +250,18 @@ always_ff @(posedge clk or negedge rst_n) begin
                 end
                 default  : ;
             endcase
+        end else if (dbg_csr_we) begin
+            // Debug CSR 写（DM 抽象命令，仅 CPU halted 时活跃）
+            case(dbg_csr_addr)
+                12'h300  : mstatus          <= #1 {mstatus[31:8],dbg_csr_wdata[7],mstatus[6:4],dbg_csr_wdata[3],mstatus[2:0]};
+                12'h304  : mie              <= #1 {mie[31:12],dbg_csr_wdata[11],mie[10:8],dbg_csr_wdata[7],mie[6:4],dbg_csr_wdata[3],mie[2:0]};
+                12'h305  : mtvec            <= #1 dbg_csr_wdata;
+                12'h306  : mcounteren       <= #1 dbg_csr_wdata;
+                12'h320  : mcountinhibit    <= #1 dbg_csr_wdata;
+                12'h341  : mepc             <= #1 dbg_csr_wdata;
+                12'hbc0  : mcounterclr      <= #1 dbg_csr_wdata;
+                default  : ;
+            endcase
         end
     end
 end
@@ -292,6 +309,44 @@ always_comb begin
             end
         endcase
     end
+end
+
+// Debug CSR 读（DM 抽象命令，组合输出，不受 csr_en 门控）
+always_comb begin
+    dbg_csr_rdata = 'h0;
+    case (dbg_csr_addr)
+        12'h300  : dbg_csr_rdata = mstatus;
+        12'h301  : dbg_csr_rdata = 32'h4000_1100; // misa
+        12'h304  : dbg_csr_rdata = mie;
+        12'h305  : dbg_csr_rdata = mtvec;
+        12'h306  : dbg_csr_rdata = mcounteren;
+        12'h320  : dbg_csr_rdata = mcountinhibit;
+        12'h341  : dbg_csr_rdata = mepc;
+        12'h342  : dbg_csr_rdata = mcause;
+        12'h343  : dbg_csr_rdata = mtval;
+        12'h344  : dbg_csr_rdata = mip;
+        12'hb00  : dbg_csr_rdata = mcycle[DATA_WIDTH-1:0];
+        12'hb80  : dbg_csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb02  : dbg_csr_rdata = minstret[DATA_WIDTH-1:0];
+        12'hb82  : dbg_csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hbc3  : dbg_csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];
+        12'hbc4  : dbg_csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];
+        12'hbc5  : dbg_csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];
+        12'hbc6  : dbg_csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];
+        12'hbc7  : dbg_csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];
+        12'hbc8  : dbg_csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];
+        12'hbc9  : dbg_csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];
+        12'hc43  : dbg_csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc44  : dbg_csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc45  : dbg_csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc46  : dbg_csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc47  : dbg_csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc48  : dbg_csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc49  : dbg_csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc01  : dbg_csr_rdata = mtime_shadow[DATA_WIDTH-1:0];
+        12'hc81  : dbg_csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH];
+        default : dbg_csr_rdata = 'h0;
+    endcase
 end
 
 endmodule

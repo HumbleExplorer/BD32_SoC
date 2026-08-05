@@ -46,7 +46,16 @@ module debug_top (
     output logic [2:0]      sba_size,
     input  logic            sba_rsp_valid,
     input  logic [31:0]     sba_rdata,
-    input  logic            sba_error
+    input  logic            sba_error,
+
+    // Debug CSR（Abstract 通用 CSR 读写）
+    output logic            dbg_csr_we,
+    output logic [11:0]     dbg_csr_addr,
+    output logic [31:0]     dbg_csr_wdata,
+    input  logic [31:0]     dbg_csr_rdata,
+
+    // 复位控制（ndmreset 复位 SoC，DM 自身不复位）
+    output logic            ndmreset
 );
 
 localparam DMI_ADDR_BITS = 6;
@@ -61,6 +70,8 @@ logic                    dm_req_ack;
 logic                    dm_resp_valid;
 logic [DMI_BITS-1:0]     dm_resp_data;
 logic                    dtm_resp_ack;
+
+
 
 // ============================================================
 // JTAG TAP + DTM（TCK 时钟域）
@@ -128,7 +139,13 @@ debug_dm #(
     .sba_size       (sba_size),
     .sba_rsp_valid  (sba_rsp_valid),
     .sba_rdata      (sba_rdata),
-    .sba_error      (sba_error)
+    .sba_error      (sba_error),
+    // Debug CSR
+    .dbg_csr_we     (dbg_csr_we),
+    .dbg_csr_addr   (dbg_csr_addr),
+    .dbg_csr_wdata  (dbg_csr_wdata),
+    .dbg_csr_rdata  (dbg_csr_rdata),
+    .ndmreset       (ndmreset)
 );
 
 endmodule

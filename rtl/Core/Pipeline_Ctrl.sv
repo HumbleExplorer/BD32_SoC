@@ -3,9 +3,9 @@
 timeunit 1ns;
 timeprecision 1ps;
 // =============================================================================
-// Pipeline_Ctrl - 流水线控制（4级流水线精简版）
+// Pipeline_Ctrl - 流水线控制
 // =============================================================================
-// 已合并 EX/MEM 阶段，不再有 ex_mem_stall/flush
+// 负责 stall/flush/跳转/异常仲裁/单步调试状态机
 // 异常优先级：IF → ID → EX（访存异常在 EX 级检测）
 // =============================================================================
 module Pipeline_Ctrl #(
@@ -241,9 +241,20 @@ end
 // =========================================================================
 wire step_drain_release = step_drain_active & ~step_drain_d;  // drain 第一拍
 
+// 普通 resume（非 step）后一拍保持：pc = inst_addr = dpc，BRAM 取到 dpc 指令。
+// step 通过 STEP_RUN 的 pc_stall 实现同样效果；普通 resume 之前缺少该保持，
+// pc 直接为 dpc+4，跳过 dpc 处指令（reset halt 后 resume 执行错位）。
+logic resume_hold;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)            resume_hold <= 1'b0;
+    else if (dbg_resume_pulse && !dbg_step) resume_hold <= 1'b1;
+    else                   resume_hold <= 1'b0;
+end
+
 // 高优先级 stall（仅依赖寄存器信号，路径极短）
-wire hp_stall = (dbg_halt_req | step_halt)
+wire hp_stall = (dbg_halt_req | step_halt | trigger_match)
               | (dbg_resume_pulse & dbg_step)
+              | resume_hold
               | step_run_active
               | (step_drain_active & step_drain_d)
               | waiting_int;
@@ -275,7 +286,12 @@ always_comb begin
         mem_wb_stall    = 1'b1;
         if_id_flush     = 1'b1;
         id_ex_flush     = 1'b1;
-    end else if (dbg_resume_pulse && dbg_step) begin
+    end else if (dbg_resume_pulse || resume_hold) begin
+        // 所有 resume（含普通 resume）都冲刷 IF-ID/ID-EX 并保持一拍：
+        // reset halt 后 IF-ID 里是复位残留，普通 resume 若不冲刷会执行残留指令；
+        // resume_hold 期间 if_id_stall 让 IF-ID 保持，等 BRAM 返回 dpc 的指令，
+        // 避免把旧拍指令错误配对到新 dpc。
+        if_id_stall     = 1'b1;
         if_id_flush     = 1'b1;
         id_ex_flush     = 1'b1;
     end else if (step_run_active) begin

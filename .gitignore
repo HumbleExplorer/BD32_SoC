@@ -67,3 +67,6 @@ desktop.ini
 
 # --- 归档 ---
 archive/
+
+# --- backup ---
+**/*.bak
