@@ -47,15 +47,16 @@ module RISC_V_Core #(
     input   logic                       dbg_resume_req,
     input   logic                       dbg_step,
     input   logic                       dbg_ebreakm,
+    output  logic                       ebreak_halt,      // ebreak 进入 debug 模式请求（ID 级）
     input   logic                       dbg_reg_we,
     input   logic   [REG_ADDR_WIDTH-1:0] dbg_reg_addr,
     input   logic   [DATA_WIDTH-1:0]    dbg_reg_wdata,
     output  logic   [DATA_WIDTH-1:0]    dbg_reg_rdata,
     output  logic   [DATA_WIDTH-1:0]    dbg_dpc,
     input   logic   [DATA_WIDTH-1:0]    dbg_pc_wdata,
-    // Trigger（硬件断点）
-    input   logic                       trigger_en,
-    input   logic   [DATA_WIDTH-1:0]    trigger_addr,
+    // Trigger（硬件断点，多路打包）
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_en,
+    input   logic   [`TRIGGER_NUM*DATA_WIDTH-1:0] trigger_addr,
     output  logic                       trigger_hit,
     // Debug CSR 访问（Abstract 通用 CSR 读写）
     input   logic                       dbg_csr_we,
@@ -68,6 +69,7 @@ module RISC_V_Core #(
     input   logic   [DATA_WIDTH-1:0]    sba_wdata,
     input   logic                       sba_write,
     input   logic   [2:0]               sba_size,
+    input   logic   [ALIGN_BYTES-1:0]   sba_be,           // SBA 字节使能（子字写）
     output  logic                       sba_rsp_valid,
     output  logic   [DATA_WIDTH-1:0]    sba_rdata,
     output  logic                       sba_error
@@ -155,8 +157,15 @@ logic   [DATA_WIDTH-1:0]    reg_rd_wdata;
 // IF
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    pc;
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_if;   // 当前指令地址（延迟一拍的 pc）
-assign dbg_dpc = inst_addr_if;  // Debug：dpc = halted 时的下一条指令地址
-assign trigger_hit = trigger_en & (inst_addr_if == trigger_addr);  // Trigger: 地址匹配
+// 多路 trigger 比较：任一使能的 trigger 地址匹配即命中
+logic [`TRIGGER_NUM-1:0] trigger_hit_vec;
+genvar ti;
+generate
+    for (ti = 0; ti < `TRIGGER_NUM; ti++) begin : gen_trigger
+        assign trigger_hit_vec[ti] = trigger_en[ti] & (inst_addr_if == trigger_addr[ti*DATA_WIDTH +: DATA_WIDTH]);
+    end
+endgenerate
+assign trigger_hit = |trigger_hit_vec;
 logic   [DATA_WIDTH-1:0]    inst;
 logic                       predict_taken_if;
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
@@ -164,6 +173,10 @@ logic   [ADDR_WIDTH-1:0]    predict_target_if;
 
 // ID
 logic   [ADDR_WIDTH-1:0]    inst_addr_id;
+// ebreak 触发 debug 时，dpc 必须是 ebreak 指令自身地址（ID 级）；
+// 其余 halt（haltreq/trigger/step）dpc 取 inst_addr_if。
+assign ebreak_halt = id_ebreak & dbg_ebreakm;
+assign dbg_dpc     = ebreak_halt ? inst_addr_id : inst_addr_if;  // Debug：dpc = halted PC（ebreak 时为 ebreak 地址）
 logic   [DATA_WIDTH-1:0]    inst_id;
 logic                       predict_taken_id;
 logic   [ADDR_WIDTH-1:0]    predict_target_id;
@@ -239,6 +252,7 @@ logic                       dtcm_sel;
 logic                       bus_sel;
 logic                       dtcm_rvalid;
 logic                       bus_rvalid;
+wire                        cpu_bus_transfer;   // CPU 总线请求（SBA 外设访问时覆盖）
 // MEM/WB bypass for bus loads (reg_rd_wen/addr from EX stage, bypassing EX/MEM)
 logic                       reg_rd_wen_selected_mem;
 logic   [REG_ADDR_WIDTH-1:0]reg_rd_waddr_selected_mem;
@@ -249,7 +263,7 @@ logic   [REG_ADDR_WIDTH-1:0]  bus_load_waddr;
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
         bus_load_waddr <= #1 '0;
-    else if (bus_transfer)
+    else if (cpu_bus_transfer)
         bus_load_waddr <= #1 reg_rd_waddr_ex;
 end
 
@@ -262,16 +276,19 @@ always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         bus_write_q <= #1 1'b0;
         bus_addr_q  <= #1 '0;
-    end else if (bus_transfer) begin
+    end else if (cpu_bus_transfer) begin
         bus_write_q <= #1 access_wr_ex;
         bus_addr_q  <= #1 access_addr_ex;
     end
 end
 
-// 总线错误检测：bus_tran_done 时 bus_resp 非 OKAY(2'b00) 即为错误
+// 总线错误检测：仅 CPU 总线事务有效（SBA 事务由 DM 侧 sba_error 处理）
 // （DECERR=2'b11 来自超时/无响应，SLVERR=2'b10 来自从机）
+wire  sba_bus_active;      // SBA 外设总线访问进行中（在 SBA 译码区 assign）
+wire  bus_tran_done_cpu;   // CPU 视角总线完成（屏蔽 SBA 事务）
+assign bus_tran_done_cpu = bus_tran_done && ~sba_bus_active;
 logic bus_error;
-assign bus_error = bus_tran_done && (bus_resp != 2'b00);
+assign bus_error = bus_tran_done_cpu && (bus_resp != 2'b00);
 
 // =========================================================================
 // 异常编码（统一在顶层完成，子模块只报 1-bit 条件）
@@ -286,7 +303,8 @@ assign exception_val_if  = inst_addr_if;
 // ID 级：非法指令 > ecall > ebreak
 assign exception_code_id = id_illegal_inst ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
                          : id_ecall        ? {{DATA_WIDTH-5{1'b0}}, (priv_mode == 2'b00) ? 4'd8 : 4'd11}
-                         : id_ebreak       ? {{DATA_WIDTH-5{1'b0}}, 4'd3}
+                         // ebreakm=1 时 ebreak 进入 debug 模式（mtvec 陷阱被抑制）
+                         : (id_ebreak && !ebreak_halt) ? {{DATA_WIDTH-5{1'b0}}, 4'd3}
                          : {DATA_WIDTH-1{1'b1}};
 assign exception_val_id  = id_illegal_inst ? inst_id : 'h0;
 
@@ -357,6 +375,8 @@ Pipeline_Ctrl #(
     .dbg_step               (dbg_step             ),
     .dbg_resume_pulse       (dbg_resume_req       ),
     .trigger_match          (trigger_hit          ),
+    .ebreak_halt            (ebreak_halt          ),
+    .sba_bus_active         (sba_bus_active       ),
     .load_use_flag       	(load_use_flag        ),
     .bus_ready    	        (bus_ready            ),
     .oitf_stall          	(oitf_stall           ),
@@ -491,41 +511,91 @@ BootROM #(
 
 // ============================================================
 // SBA (System Bus Access) 地址译码与 MUX
-// CPU halt 期间调试器通过 SBA 读写 ITCM/DTCM
+// CPU halt 期间调试器通过 SBA 读写 ITCM/DTCM/外设总线
+// 译码与 CPU 一致：ITCM=0x0001, DTCM=0x0002, tag>=0x8000 走 AXI/APB 总线
 // ============================================================
-wire sba_itcm_sel = (sba_addr[31:16] == 16'h0001);  // ITCM: 0x0001_0000~0x0001_FFFF
-wire sba_dtcm_sel = (sba_addr[31:28] == 4'h2);      // DTCM: 0x2000_0000~0x2FFF_FFFF
+wire sba_itcm_sel = (sba_addr[ADDR_WIDTH-1:16] == `ITCM_BASE_TAG);
+wire sba_dtcm_sel = (sba_addr[ADDR_WIDTH-1:16] == `DTCM_BASE_TAG);
+wire sba_bus_sel  = (sba_addr[ADDR_WIDTH-1:16] >= `BUS_BASE_ADDR);
+wire sba_any_sel  = sba_itcm_sel | sba_dtcm_sel | sba_bus_sel;
 
 // ITCM 读地址 mux：SBA 覆盖 PC
 wire [ADDR_WIDTH-1:0] itcm_rd_addr = (sba_req_valid && sba_itcm_sel) ? sba_addr : pc;
 
-// ITCM 写 mux：SBA 复用 download 端口
-wire                    itcm_wr_en_sba   = itcm_download_en | (sba_req_valid & sba_itcm_sel & sba_write);
-wire [ADDR_WIDTH-1:0]  itcm_wr_addr_sba = (sba_req_valid & sba_itcm_sel & sba_write) ? sba_addr : itcm_download_addr;
-wire [DATA_WIDTH-1:0]  itcm_wr_data_sba = (sba_req_valid & sba_itcm_sel & sba_write) ? sba_wdata : itcm_download_data;
+// ITCM 子字写 RMW：ITCM 写口无字节使能，8/16 位写先读 word 再合并写回
+logic itcm_rmw_active;   // RMW 写 phase（下一拍执行写）
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) itcm_rmw_active <= 1'b0;
+    else        itcm_rmw_active <= sba_req_valid & sba_itcm_sel & sba_write & (sba_size != 3'd2);
+end
+// 子字写数据 lane 重排：把 sba_wdata 低字节/半字移到 be 指示的目标 lane
+// （DTCM 直写 wmask、ITCM RMW 合并、外设 PSTRB 均使用该重排后的数据）
+logic [DATA_WIDTH-1:0] sba_wdata_lane;
+always_comb begin
+    sba_wdata_lane = sba_wdata;
+    if (sba_size == 3'd0) begin
+        case (sba_addr[1:0])
+            2'd1: sba_wdata_lane[15:8]  = sba_wdata[7:0];
+            2'd2: sba_wdata_lane[23:16] = sba_wdata[7:0];
+            2'd3: sba_wdata_lane[31:24] = sba_wdata[7:0];
+        endcase
+    end else if (sba_size == 3'd1) begin
+        if (sba_addr[1]) sba_wdata_lane[31:16] = sba_wdata[15:0];
+    end
+end
+logic [DATA_WIDTH-1:0] itcm_rmw_data;   // 读回 word 与写数据按 be 合并
+always_comb begin
+    itcm_rmw_data = itcm_inst;
+    for (int b = 0; b < ALIGN_BYTES; b++) begin
+        if (sba_be[b])
+            itcm_rmw_data[b*8 +: 8] = sba_wdata_lane[b*8 +: 8];
+    end
+end
 
-// DTCM 访问 mux：SBA 覆盖 EX 级
+// ITCM 写 mux：SBA 复用 download 端口（全字直写；子字写经 RMW）
+wire                    itcm_wr_en_sba   = itcm_download_en
+                                         | (sba_req_valid & sba_itcm_sel & sba_write & (sba_size == 3'd2))
+                                         | itcm_rmw_active;
+wire [ADDR_WIDTH-1:0]  itcm_wr_addr_sba = ((sba_req_valid & sba_itcm_sel) || itcm_rmw_active) ? sba_addr : itcm_download_addr;
+wire [DATA_WIDTH-1:0]  itcm_wr_data_sba = itcm_rmw_active ? itcm_rmw_data :
+                                          (sba_req_valid & sba_itcm_sel & sba_write) ? sba_wdata : itcm_download_data;
+
+// DTCM 访问 mux：SBA 覆盖 EX 级（DTCM 自带字节使能 wmask）
 wire [ADDR_WIDTH-1:0]  dtcm_addr_sba  = (sba_req_valid & sba_dtcm_sel) ? sba_addr : access_addr_ex;
 wire                    dtcm_wen_sba   = (sba_req_valid & sba_dtcm_sel & sba_write) ? 1'b1 :
                                           (access_wr_ex && dtcm_sel && ~(ex_mem_stall || ex_mem_flush));
-wire [DATA_WIDTH-1:0]  dtcm_wdata_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_wdata : access_wdata_ex;
-wire [ALIGN_BYTES-1:0] dtcm_wmask_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? {ALIGN_BYTES{1'b1}} : access_wmask_ex;
+wire [DATA_WIDTH-1:0]  dtcm_wdata_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_wdata_lane : access_wdata_ex;
+wire [ALIGN_BYTES-1:0] dtcm_wmask_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_be : access_wmask_ex;
 
-// SBA 响应流水线（BRAM 同步读 1 拍延迟）
+// SBA 外设总线访问：注入 CPU 总线通路（CPU halt 期间无总线活动，直接覆盖）
+assign sba_bus_active = sba_req_valid & sba_bus_sel;
+
+// SBA 响应流水线（BRAM 同步读 1 拍延迟；总线响应 = bus_tran_done）
 logic        sba_req_d;
 logic        sba_itcm_d;
+logic        sba_rmw_d;      // 上一拍请求是否为 ITCM 子字写
+logic        sba_bus_d;      // 上一拍请求是否为外设总线访问
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         sba_req_d  <= 1'b0;
         sba_itcm_d <= 1'b0;
+        sba_rmw_d  <= 1'b0;
+        sba_bus_d  <= 1'b0;
     end else begin
         sba_req_d  <= sba_req_valid;
         sba_itcm_d <= sba_itcm_sel;
+        sba_rmw_d  <= sba_req_valid & sba_itcm_sel & sba_write & (sba_size != 3'd2);
+        sba_bus_d  <= sba_bus_sel;
     end
 end
-assign sba_rsp_valid = sba_req_d;
-assign sba_rdata     = sba_itcm_d ? itcm_inst : dtcm_rdata;
-assign sba_error     = 1'b0;  // 暂不报错
+assign sba_rsp_valid = (sba_req_d & ~sba_rmw_d & ~sba_bus_d)  // TCM 直读/全字写/未映射：1 拍
+                     | itcm_rmw_active                        // ITCM 子字写：RMW 写完成
+                     | (sba_bus_d & bus_tran_done);           // 外设总线完成（sba_bus_d 为寄存器，避免组合环）
+// rsp 拍 sba_req_valid 已被 DM 同拍拉低，总线选择用寄存器延迟 sba_bus_d
+assign sba_rdata     = sba_bus_d ? bus_rdata :
+                       sba_itcm_d ? itcm_inst : dtcm_rdata;
+assign sba_error     = sba_bus_d ? (bus_resp != 2'b00)
+                                 : ~sba_any_sel;
 
 ITCM #(
     .ITCM_FILE      (ITCM_FILE),
@@ -849,7 +919,7 @@ Mem_Access #(
     .access_addr                (access_addr_ex),
     .access_en                  (access_en_ex),
     .access_wr                  (access_wr_ex),
-    .bus_tran_done              (bus_tran_done),
+    .bus_tran_done              (bus_tran_done_cpu),
     .dtcm_rdata                 (dtcm_rdata),
     .rd_bus_data                (bus_rdata),
     .access_func3               (access_func3_ex),
@@ -959,10 +1029,12 @@ assign reg_rd_wdata = reg_rd_wdata_wb;
 assign reg_rd_wen   = reg_rd_wen_wb;
 assign reg_rd_waddr = reg_rd_waddr_wb;
 
-assign bus_transfer   = bus_sel && ~(waiting_int || oitf_stall);
-assign bus_access_write  = access_wr_ex;
-assign bus_access_wdata  = access_wdata_ex;
-assign bus_access_addr  = access_addr_ex;
-assign bus_access_wstrb  = access_wmask_ex;
+// CPU 总线请求（SBA 外设访问时覆盖，CPU halt 期间无总线活动）
+assign cpu_bus_transfer = bus_sel && ~(waiting_int || oitf_stall);
+assign bus_transfer      = sba_bus_active ? 1'b1 : cpu_bus_transfer;
+assign bus_access_write  = sba_bus_active ? sba_write  : access_wr_ex;
+assign bus_access_wdata  = sba_bus_active ? sba_wdata_lane : access_wdata_ex;
+assign bus_access_addr   = sba_bus_active ? sba_addr   : access_addr_ex;
+assign bus_access_wstrb  = sba_bus_active ? sba_be     : access_wmask_ex;
 
 endmodule

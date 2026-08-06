@@ -1,7 +1,7 @@
 // BD32 Debug Module (DM)
 // 基于 SparrowRV jtag_dm.v 改编，系统 clk 时钟域
 // 实现：halt/resume + GPR 读写 + dcsr/dpc（单步/ebreakm）
-// System Bus Access 框架保留，第二步启用
+// System Bus Access：全字 + 字节/半字写（RMW 合并）
 `include "./../SoC_Config.sv"
 timeunit 1ns;
 timeprecision 1ps;
@@ -39,9 +39,10 @@ module debug_dm #(
     output logic                    dbg_ebreakm,      // ebreak 进入 debug mode
 
     // Trigger（硬件断点）
-    output logic                    trigger_en,       // 断点有效（execute match）
-    output logic [31:0]             trigger_addr,     // 匹配地址
+    output logic [`TRIGGER_NUM-1:0] trigger_en,       // 断点有效（execute match）
+    output logic [`TRIGGER_NUM*32-1:0] trigger_addr,  // 匹配地址（打包）
     input  logic                    trigger_hit,      // CPU 侧命中
+    input  logic                    ebreak_halt,      // CPU 执行 ebreak（ebreakm=1）
 
     // Debug CSR 值（CPU 侧维护，DM 可读）
     input  logic [31:0]             dbg_dpc,          // 进入 debug 时的 PC
@@ -53,6 +54,7 @@ module debug_dm #(
     output logic [31:0]             sba_wdata,        // 写数据
     output logic                    sba_write,        // 1=写 0=读
     output logic [2:0]              sba_size,         // 访问宽度 (2=word)
+    output logic [3:0]              sba_be,           // 字节使能（子字写）
     input  logic                    sba_rsp_valid,    // 响应有效
     input  logic [31:0]             sba_rdata,        // 读回数据
     input  logic                    sba_error,        // 访问错误
@@ -108,9 +110,10 @@ logic [2:0]  abstractcs_cmderr;
 logic        abstract_busy;     // abstract command 执行中（1 拍）
 logic [31:0] dscratch0;
 
-// Trigger 寄存器（1 个 mcontrol entry）
-logic [31:0] tdata1_r;        // {type=2, dmode, ..., execute, ...}
-logic [31:0] tdata2_r;        // 匹配地址
+// Trigger 寄存器（TRIGGER_NUM 个 mcontrol entry，tselect 选择）
+logic [31:0] tdata1_r [`TRIGGER_NUM];   // {type=2, dmode, ..., execute, ...}
+logic [31:0] tdata2_r [`TRIGGER_NUM];   // 匹配地址
+logic [1:0]  tselect_r;                 // 当前选择的 trigger 索引
 
 // dcsr 字段（DM 侧可写，CPU 侧只读）
 logic        dcsr_step;       // dcsr[2]：单步
@@ -180,9 +183,13 @@ logic        sbbusyerror;     // sbcs[22]
 localparam SBA_IDLE  = 2'b00;
 localparam SBA_READ  = 2'b01;
 localparam SBA_WRITE = 2'b10;
-localparam SBA_DONE  = 2'b11;
 logic [1:0]  sba_state;
 logic        sba_busy;
+
+// 子字写字节使能：8/16 位访问按地址 lane 生成（TCM/外设由 CPU 侧处理 wmask/RMW）
+assign sba_be = (sbaccess == 3'd0) ? (4'b0001 << sbaddress0_r[1:0]) :
+                (sbaccess == 3'd1) ? (4'b0011 << {sbaddress0_r[1], 1'b0}) :
+                4'b1111;
 
 // SBA 总线输出
 assign sba_req_valid = (sba_state == SBA_READ || sba_state == SBA_WRITE) && !sba_rsp_valid;
@@ -206,8 +213,8 @@ wire [31:0] sbcs_rdata = {
     1'b0,           // [4] sbaccess128
     1'b0,           // [3] sbaccess64
     1'b1,           // [2] sbaccess32 = 1（支持 32 位访问）
-    1'b0,           // [1] sbaccess16
-    1'b0            // [0] sbaccess8
+    1'b1,           // [1] sbaccess16 = 1（支持 16 位访问）
+    1'b1            // [0] sbaccess8  = 1（支持 8 位访问）
 };
 
 // DMI 字段解析
@@ -252,9 +259,14 @@ assign dbg_csr_addr   = csr_addr_w;
 assign dbg_csr_wdata  = csr_wdata_r;
 assign ndmreset       = ndmreset_r;
 
-// Trigger 输出：type==2 (mcontrol) && execute bit[2]
-assign trigger_en   = (tdata1_r[31:28] == 4'h2) && tdata1_r[2];
-assign trigger_addr = tdata2_r;
+// Trigger 输出：type==2 (mcontrol) && execute bit[2]，多路打包
+genvar tg;
+generate
+    for (tg = 0; tg < `TRIGGER_NUM; tg++) begin : gen_trg_out
+        assign trigger_en[tg]   = (tdata1_r[tg][31:28] == 4'h2) && tdata1_r[tg][2];
+        assign trigger_addr[tg*32 +: 32] = tdata2_r[tg];
+    end
+endgenerate
 
 // ============================================================
 // CDC 实例化
@@ -297,8 +309,11 @@ always_ff @(posedge clk or negedge rst_n) begin
         // type=2(mcontrol), dmode=0, disabled。
         // 注意：OpenOCD 0.12 枚举 trigger 时会把 dmode=1 的 trigger 清零，
         // 导致 hbreak 找不到可用 trigger；复位 dmode=0 可避免被清。
-        tdata1_r           <= 32'h2000_0000;
-        tdata2_r           <= '0;
+        for (int tdi = 0; tdi < `TRIGGER_NUM; tdi++) begin
+            tdata1_r[tdi]  <= 32'h2000_0000;
+            tdata2_r[tdi]  <= '0;
+        end
+        tselect_r          <= '0;
         dcsr_step          <= 1'b0;
         dcsr_ebreakm       <= 1'b0;
         halt_req_r         <= 1'b0;
@@ -342,11 +357,11 @@ always_ff @(posedge clk or negedge rst_n) begin
         halted_d <= dbg_halted;
         if (halted_fell)
             resume_ack_r <= 1'b1;   // CPU 恢复运行，置 ack
-        // Trigger halt 锁存：CPU 因硬件断点（trigger_match）halt 时，
-        // 把 haltreq 拉高，避免调试器删除断点（清 tdata1）后 trigger_match
-        // 释放导致 CPU 自动恢复运行。锁存后行为与普通 haltreq 一致，
-        // 直到调试器写 resumereq 才释放。
-        if (~halted_d & dbg_halted && trigger_hit)
+        // Trigger/ebreak halt 锁存：CPU 因硬件断点（trigger_match）或 ebreak
+        // （ebreakm=1）halt 时，把 haltreq 拉高，避免调试器清断点
+        // （清 tdata1 / 清 dcsr.ebreakm）后 halt 条件释放导致 CPU 自动恢复运行。
+        // 锁存后行为与普通 haltreq 一致，直到调试器写 resumereq 才释放。
+        if (~halted_d & dbg_halted && (trigger_hit || ebreak_halt))
             halt_req_r <= 1'b1;
         // dpc 捕获在下方独立 always_ff（正常 halt 边沿 + 复位后延迟捕获）
 
@@ -409,8 +424,11 @@ always_ff @(posedge clk or negedge rst_n) begin
                                     resume_ack_r      <= 1'b0;
                                     hartsel_r         <= '0;
                                     ndmreset_r        <= 1'b0;
-                                    tdata1_r          <= 32'h2000_0000;  // type=2, dmode=0, disabled
-                                    tdata2_r          <= '0;
+                                    for (int tdi = 0; tdi < `TRIGGER_NUM; tdi++) begin
+                                        tdata1_r[tdi] <= 32'h2000_0000;  // type=2, dmode=0, disabled
+                                        tdata2_r[tdi] <= '0;
+                                    end
+                                    tselect_r         <= '0;
                                     dscratch0         <= '0;
                                     dmcontrol_r       <= dmi_data;
                                 end else begin
@@ -487,9 +505,9 @@ always_ff @(posedge clk or negedge rst_n) begin
                                                     end
                                                     REGNO_DPC:       data0 <= dpc_r;
                                                     REGNO_DSCRATCH0: data0 <= dscratch0;
-                                                    REGNO_TSELECT:   data0 <= 32'd0;  // 仅 1 个 trigger (index 0)
-                                                    REGNO_TDATA1:    data0 <= tdata1_r;
-                                                    REGNO_TDATA2:    data0 <= tdata2_r;
+                                                    REGNO_TSELECT:   data0 <= {30'd0, tselect_r};
+                                                    REGNO_TDATA1:    data0 <= tdata1_r[tselect_r];
+                                                    REGNO_TDATA2:    data0 <= tdata2_r[tselect_r];
                                                     REGNO_TDATA3:    data0 <= 32'd0;
                                                     default: begin
                                                         if (dmi_data[15:0] < 16'h1000 || dmi_data[15:0] >= 16'hC000) begin
@@ -521,8 +539,11 @@ always_ff @(posedge clk or negedge rst_n) begin
                                                         dpc_wr_data <= data0;
                                                     end
                                                     REGNO_DSCRATCH0: dscratch0 <= data0;
-                                                    REGNO_TDATA1:    tdata1_r <= data0;
-                                                    REGNO_TDATA2:    tdata2_r <= data0;
+                                                    REGNO_TSELECT: begin
+                                                        tselect_r <= (data0 >= `TRIGGER_NUM) ? (`TRIGGER_NUM-1) : data0[$clog2(`TRIGGER_NUM)-1:0];
+                                                    end
+                                                    REGNO_TDATA1:    tdata1_r[tselect_r] <= data0;
+                                                    REGNO_TDATA2:    tdata2_r[tselect_r] <= data0;
                                                     default: begin
                                                         if (dmi_data[15:0] < 16'h1000 || dmi_data[15:0] >= 16'hC000) begin
                                                             // ---- 通用 CSR 写 ----
@@ -649,6 +670,7 @@ always_ff @(posedge clk or negedge rst_n) begin
             // Debug Spec 1.0 Table 8：
             // 1=ebreak 2=trigger 3=haltreq 4=step 5=resethaltreq 6=halt group 7=critical error
             if (reset_pending)        dcsr_cause_r <= 3'd5;  // resethaltreq
+            else if (ebreak_halt)     dcsr_cause_r <= 3'd1;  // ebreak
             else if (trigger_hit)     dcsr_cause_r <= 3'd2;  // trigger
             else if (stepped)         dcsr_cause_r <= 3'd4;  // step
             else                      dcsr_cause_r <= 3'd3;  // haltreq

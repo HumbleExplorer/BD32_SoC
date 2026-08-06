@@ -46,9 +46,9 @@ p/x $pc
 printf "\n==== [8] 内存读 ITCM 0x10000 ====\n"
 x/4wx 0x10000
 
-printf "\n==== [9] 内存写读 DTCM 0x20000000 ====\n"
-set {int}0x20000000 = 0xdeadbeef
-x/1wx 0x20000000
+printf "\n==== [9] 内存写读 DTCM 0x00020000 ====\n"
+set {int}0x00020000 = 0xdeadbeef
+x/1wx 0x00020000
 
 printf "\n==== [10] Trigger 硬件断点（NOP 滑道 0x10200 -> 命中 0x10204）====\n"
 set {int}0x10200 = 0x00000013

@@ -251,13 +251,15 @@ RISC_V_Core #(
     .sba_wdata          (32'b0       ),
     .sba_write          (1'b0        ),
     .sba_size           (3'b0        ),
+    .sba_be             (4'b0        ),
     .sba_rsp_valid      (            ),
     .sba_rdata          (            ),
     .sba_error          (            ),
     // Trigger — 不接硬件断点
-    .trigger_en         (1'b0        ),
-    .trigger_addr       (32'b0       ),
-    .trigger_hit        (            )
+    .trigger_en         (4'b0        ),
+    .trigger_addr       (128'b0      ),
+    .trigger_hit        (            ),
+    .ebreak_halt        (            )
 );
 
 

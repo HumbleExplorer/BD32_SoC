@@ -28,6 +28,8 @@ module Pipeline_Ctrl #(
     input   logic                       dbg_step,          // dcsr.step：单步模式
     input   logic                       dbg_resume_pulse,  // resume 单拍脉冲
     input   logic                       trigger_match,     // trigger 地址匹配（硬件断点）
+    input   logic                       ebreak_halt,       // ebreak 进入 debug 模式（ID 级）
+    input   logic                       sba_bus_active,    // SBA 外设总线访问中（halt 保持）
     // from Forward
     input   logic                       load_use_flag,
     // from EX
@@ -252,7 +254,7 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 // 高优先级 stall（仅依赖寄存器信号，路径极短）
-wire hp_stall = (dbg_halt_req | step_halt | trigger_match)
+wire hp_stall = (dbg_halt_req | step_halt | trigger_match | ebreak_halt)
               | (dbg_resume_pulse & dbg_step)
               | resume_hold
               | step_run_active
@@ -286,6 +288,13 @@ always_comb begin
         mem_wb_stall    = 1'b1;
         if_id_flush     = 1'b1;
         id_ex_flush     = 1'b1;
+    end else if (ebreak_halt) begin
+        // ebreak 停在 ID 级：只停不刷，等 OITF 排空/bus 空闲后 dbg_halted 确认，
+        // 由 DM 在 halted 上升沿锁存 haltreq（否则 ebreak 只维持 1 拍会丢失 halt）。
+        if_id_stall     = 1'b1;
+        id_ex_stall     = 1'b1;
+        ex_mem_stall    = 1'b1;
+        mem_wb_stall    = 1'b1;
     end else if (dbg_resume_pulse || resume_hold) begin
         // 所有 resume（含普通 resume）都冲刷 IF-ID/ID-EX 并保持一拍：
         // reset halt 后 IF-ID 里是复位残留，普通 resume 若不冲刷会执行残留指令；
@@ -331,6 +340,7 @@ always_comb begin
 end
 
 // Debug halted 确认：halt 请求有效（含 step 完成 / trigger 命中）+ OITF 排空 + 总线空闲
-assign dbg_halted = (dbg_halt_req || step_halt || trigger_match) && !oitf_stall && bus_ready;
+// SBA 外设总线访问期间 bus_ready 为 0（总线忙），此时仍视为 halt 保持
+assign dbg_halted = (dbg_halt_req || step_halt || trigger_match || ebreak_halt) && !oitf_stall && (bus_ready || sba_bus_active);
 
 endmodule

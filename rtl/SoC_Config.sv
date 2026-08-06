@@ -36,6 +36,9 @@
 // 仿真：+define+BD32_DEBUG_EN  综合：Vivado Settings 添加
 `define BD32_DEBUG_EN
 
+// 硬件断点 trigger 数量（mcontrol，多路）
+`define TRIGGER_NUM 4
+
 // 访存地址快速加法（减少 EX 阶段关键路径）
 // `define ADDR_GEN_FAST
 

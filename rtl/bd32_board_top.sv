@@ -155,13 +155,15 @@ logic [31:0]                sba_addr;
 logic [31:0]                sba_wdata;
 logic                       sba_write;
 logic [2:0]                 sba_size;
+logic [3:0]                 sba_be;
 logic                       sba_rsp_valid;
 logic [31:0]                sba_rdata;
 logic                       sba_error;
-// Trigger（硬件断点）
-logic                       trigger_en;
-logic [31:0]                trigger_addr;
+// Trigger（硬件断点，多路打包）
+logic [`TRIGGER_NUM-1:0]    trigger_en;
+logic [`TRIGGER_NUM*32-1:0] trigger_addr;
 logic                       trigger_hit;
+logic                       ebreak_halt;      // CPU ebreak 进 debug 请求
 // Debug CSR（Abstract 通用 CSR 读写）
 logic                       dbg_csr_we;
 logic [11:0]                dbg_csr_addr;
@@ -213,6 +215,7 @@ SoC_top #(
     .sba_wdata        (sba_wdata      ),
     .sba_write        (sba_write      ),
     .sba_size         (sba_size       ),
+    .sba_be           (sba_be         ),
     .sba_rsp_valid    (sba_rsp_valid  ),
     .sba_rdata        (sba_rdata      ),
     .sba_error        (sba_error      ),
@@ -220,6 +223,7 @@ SoC_top #(
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
+    .ebreak_halt      (ebreak_halt    ),
     // Debug CSR
     .dbg_csr_we       (dbg_csr_we     ),
     .dbg_csr_addr     (dbg_csr_addr   ),
@@ -242,12 +246,14 @@ SoC_top #(
     .sba_wdata        (32'b0          ),
     .sba_write        (1'b0           ),
     .sba_size         (3'b0           ),
+    .sba_be           (4'b0           ),
     .sba_rsp_valid    (               ),
     .sba_rdata        (               ),
     .sba_error        (               ),
     .trigger_en       (1'b0           ),
     .trigger_addr     (32'b0          ),
     .trigger_hit      (               ),
+    .ebreak_halt      (               ),
     .dbg_csr_we       (1'b0           ),
     .dbg_csr_addr     (12'b0          ),
     .dbg_csr_wdata    (32'b0          ),
@@ -287,6 +293,7 @@ debug_top u_debug_top (
     .sba_wdata        (sba_wdata      ),
     .sba_write        (sba_write      ),
     .sba_size         (sba_size       ),
+    .sba_be           (sba_be         ),
     .sba_rsp_valid    (sba_rsp_valid  ),
     .sba_rdata        (sba_rdata      ),
     .sba_error        (sba_error      ),
@@ -294,6 +301,7 @@ debug_top u_debug_top (
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
+    .ebreak_halt      (ebreak_halt    ),
     // Debug CSR
     .dbg_csr_we       (dbg_csr_we     ),
     .dbg_csr_addr     (dbg_csr_addr   ),

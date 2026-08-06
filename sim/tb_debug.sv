@@ -76,14 +76,16 @@ logic [31:0]                sba_addr;
 logic [31:0]                sba_wdata;
 logic                       sba_write;
 logic [2:0]                 sba_size;
+logic [3:0]                 sba_be;
 logic                       sba_rsp_valid;
 logic [31:0]                sba_rdata;
 logic                       sba_error;
 
 // Trigger 信号（SoC_top ↔ debug_top）
-logic                       trigger_en;
-logic [31:0]                trigger_addr;
+logic [`TRIGGER_NUM-1:0]    trigger_en;
+logic [`TRIGGER_NUM*32-1:0] trigger_addr;
 logic                       trigger_hit;
+logic                       ebreak_halt;
 // Debug CSR（SoC_top <-> debug_top）
 logic                       dbg_csr_we;
 logic [11:0]                dbg_csr_addr;
@@ -152,12 +154,14 @@ SoC_top #(
     .sba_wdata        (sba_wdata      ),
     .sba_write        (sba_write      ),
     .sba_size         (sba_size       ),
+    .sba_be           (sba_be         ),
     .sba_rsp_valid    (sba_rsp_valid  ),
     .sba_rdata        (sba_rdata      ),
     .sba_error        (sba_error      ),
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
+    .ebreak_halt      (ebreak_halt    ),
     .dbg_csr_we       (dbg_csr_we     ),
     .dbg_csr_addr     (dbg_csr_addr   ),
     .dbg_csr_wdata    (dbg_csr_wdata  ),
@@ -190,12 +194,14 @@ debug_top u_debug_top (
     .sba_wdata        (sba_wdata      ),
     .sba_write        (sba_write      ),
     .sba_size         (sba_size       ),
+    .sba_be           (sba_be         ),
     .sba_rsp_valid    (sba_rsp_valid  ),
     .sba_rdata        (sba_rdata      ),
     .sba_error        (sba_error      ),
     .trigger_en       (trigger_en     ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
+    .ebreak_halt      (ebreak_halt    ),
     .dbg_csr_we       (dbg_csr_we     ),
     .dbg_csr_addr     (dbg_csr_addr   ),
     .dbg_csr_wdata    (dbg_csr_wdata  ),
@@ -465,8 +471,8 @@ initial begin
     #(CLK_PERIOD * 50);
     // 配置 sbcs: sbaccess=010(32-bit), 其余默认
     dmi_write(ADDR_SBCS, 32'h0004_0000);
-    // 写地址 0x2000_0000
-    dmi_write(ADDR_SBADDRESS0, 32'h2000_0000);
+    // 写地址 0x0002_0000
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
     // 写数据（触发 SBA write）
     dmi_write(ADDR_SBDATA0, 32'hCAFE_BABE);
     #(CLK_PERIOD * 10);  // 等 SBA 完成
@@ -482,7 +488,7 @@ initial begin
     // 配置 sbcs: sbreadonaddr=1, sbaccess=010
     dmi_write(ADDR_SBCS, 32'h0014_0000);
     // 写地址（触发 SBA read）
-    dmi_write(ADDR_SBADDRESS0, 32'h2000_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
     #(CLK_PERIOD * 10);  // 等 SBA 完成
     // 读 sbdata0
     dmi_read(ADDR_SBDATA0, rd_data);
@@ -713,6 +719,249 @@ initial begin
     #(CLK_PERIOD * 50);
 
     // ----------------------------------------------------------
+    // Test 16: ebreak 进调试模式（ebreakm=1 → halt，dcsr.cause=1，dpc=ebreak 地址）
+    // ----------------------------------------------------------
+    $display("--- Test 16: ebreak enters debug mode ---");
+    // 1) dcsr.ebreakm=1
+    dmi_write(ADDR_DATA0, 32'h0000_8000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // write dcsr
+    jtag_idle(10);
+    // 2) SBA 把 0x10200 改成 ebreak
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h0010_0073);  // ebreak
+    #(CLK_PERIOD * 10);
+    // 3) dpc = 0x10200，resume → 执行 ebreak → halt
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // dpc=0x10200
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("ebreak halt: allhalted", rd_data[9], 1'b1);
+    // 4) dcsr.cause = 1 (ebreak)
+    dmi_write(ADDR_COMMAND, 32'h0022_07B0);  // read dcsr
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("ebreak halt: dcsr.cause=1", rd_data[8:6], 3'd1);
+    // 5) dpc = 0x10200（ebreak 指令自身地址）
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);  // read dpc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("ebreak halt: dpc=0x10200", rd_data, 32'h0001_0200);
+    // 6) 锁存验证：清 dcsr.ebreakm 后 CPU 应保持 halt
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // write dcsr (ebreakm=0)
+    jtag_idle(10);
+    #(CLK_PERIOD * 20);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("ebreak latch: still allhalted", rd_data[9], 1'b1);
+    // 7) 恢复原指令并 resume：CPU 从 dpc 执行 addi x1,42
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h02A0_0093);  // addi x1,x0,42
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("ebreak resume: allrunning", rd_data[11], 1'b1);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);  // halt
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_COMMAND, 32'h0022_1001);  // read x1
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("ebreak resume: x1 = 42", rd_data, 32'd42);
+    // 恢复 halt，等待结束
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+
+    // ----------------------------------------------------------
+    // Test 17: 多硬件断点（TRIGGER_NUM=4，tselect 选择）
+    // ----------------------------------------------------------
+    $display("--- Test 17: multi-trigger ---");
+    // 补程序：0x10200 addi x1,42; 0x10204 NOP; 0x10208 addi x2,99; 0x1020C NOP
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0208);
+    dmi_write(ADDR_SBDATA0, 32'h0630_0113);  // addi x2,x0,99
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_020C);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0013);  // NOP
+    #(CLK_PERIOD * 10);
+    // trigger0 → 0x10204
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A0);  // tselect=0
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h2800_0004);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1);  // tdata1 (type2+execute)
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0001_0204);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A2);  // tdata2=0x10204
+    jtag_idle(10);
+    // trigger1 → 0x10208
+    dmi_write(ADDR_DATA0, 32'h0000_0001);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A0);  // tselect=1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h2800_0004);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1);  // tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0001_0208);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A2);  // tdata2=0x10208
+    jtag_idle(10);
+    // 读 tselect 应返回 1
+    dmi_write(ADDR_COMMAND, 32'h0022_07A0);  // read tselect
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("tselect readback = 1", rd_data, 32'd1);
+    // dpc=0x10200，resume → 先命中 trigger0 (0x10204)
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("trig0 halt: allhalted", rd_data[9], 1'b1);
+    dmi_write(ADDR_COMMAND, 32'h0022_07B0);  // read dcsr
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("trig0 halt: dcsr.cause=2", rd_data[8:6], 3'd2);
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);  // read dpc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("trig0 halt: dpc=0x10204", rd_data, 32'h0001_0204);
+    // 清 trigger0，resume → 命中 trigger1 (0x10208)
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A0);  // tselect=0
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h2800_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1);  // 清 tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0001_0204);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // dpc=0x10204
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("trig1 halt: allhalted", rd_data[9], 1'b1);
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);  // read dpc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("trig1 halt: dpc=0x10208", rd_data, 32'h0001_0208);
+    // 清 trigger1，resume 跑完
+    dmi_write(ADDR_DATA0, 32'h0000_0001);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A0);  // tselect=1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h2800_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1);  // 清 tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("trig cleared: allrunning", rd_data[11], 1'b1);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);  // halt
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_COMMAND, 32'h0022_1001);  // read x1
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("multi-trigger: x1 = 42", rd_data, 32'd42);
+    dmi_write(ADDR_COMMAND, 32'h0022_1002);  // read x2
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("multi-trigger: x2 = 99", rd_data, 32'd99);
+    // 恢复 halt，等待结束
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+
+    // ----------------------------------------------------------
+    // Test 18: SBA 字节/半字写（RMW 合并）
+    // ----------------------------------------------------------
+    $display("--- Test 18: SBA byte/halfword write ---");
+    // 0x10200 当前 = 0x02A00093 (addi x1,42)
+    // 1) 字节写 0x10201 = 0xAA → word = 0x02A0AA93
+    dmi_write(ADDR_SBCS, 32'h0000_0000);  // sbaccess=0 (8-bit)
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0201);
+    dmi_write(ADDR_SBDATA0, 32'h0000_00AA);
+    #(CLK_PERIOD * 20);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);  // sbreadonaddr=1, sbaccess=2
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA byte write @0x10201", rd_data, 32'h02A0_AA93);
+    // 2) 半字写 0x10202 = 0x1234 → word = 0x1234AA93
+    dmi_write(ADDR_SBCS, 32'h0002_0000);  // sbaccess=1 (16-bit)
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0202);
+    dmi_write(ADDR_SBDATA0, 32'h0000_1234);
+    #(CLK_PERIOD * 20);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA halfword write @0x10202", rd_data, 32'h1234_AA93);
+    // 3) DTCM：全字写 0x00020000=0xCAFEBABE，再字节写 0x00020003=0x11
+    dmi_write(ADDR_SBCS, 32'h0004_0000);  // sbaccess=2
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
+    dmi_write(ADDR_SBDATA0, 32'hCAFE_BABE);
+    #(CLK_PERIOD * 20);
+    dmi_write(ADDR_SBCS, 32'h0000_0000);  // sbaccess=0
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0003);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0011);
+    #(CLK_PERIOD * 20);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA DTCM byte write @0x00020003", rd_data, 32'h11FE_BABE);
+    // 4) 恢复 0x10200 内容（addi x1,42）
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h02A0_0093);
+    #(CLK_PERIOD * 20);
+    // 恢复 halt，等待结束
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+
+    // ----------------------------------------------------------
+    // Test 19: SBA 访问外设总线（APB GPIO 0xE000_0000）
+    // ----------------------------------------------------------
+    $display("--- Test 19: SBA peripheral bus access ---");
+    // 1) GPIO OUTPUT (0xE000_0008) 全字写读回
+    dmi_write(ADDR_SBCS, 32'h0004_0000);  // sbaccess=2
+    dmi_write(ADDR_SBADDRESS0, 32'hE000_0008);
+    dmi_write(ADDR_SBDATA0, 32'hA5A5_A5A5);
+    #(CLK_PERIOD * 50);  // 等总线完成
+    dmi_write(ADDR_SBCS, 32'h0014_0000);  // sbreadonaddr=1
+    dmi_write(ADDR_SBADDRESS0, 32'hE000_0008);
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA GPIO word write/read", rd_data, 32'hA5A5_A5A5);
+    // 2) 字节写 0xE000_0009=0x11 → 0xA5A511A5（byte1 = bits 15:8）
+    dmi_write(ADDR_SBCS, 32'h0000_0000);  // sbaccess=0
+    dmi_write(ADDR_SBADDRESS0, 32'hE000_0009);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0011);
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'hE000_0008);
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA GPIO byte write", rd_data, 32'hA5A5_11A5);
+    // 3) 读 GPIO INPUT（仿真浮空→0）
+    dmi_write(ADDR_SBADDRESS0, 32'hE000_000C);
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA GPIO input read", rd_data, 32'h0);
+    // 4) 未映射地址 → sberror
+    dmi_write(ADDR_SBCS, 32'h0014_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h1234_5678);
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_SBCS, rd_data);
+    check("SBA unmapped: sberror set", rd_data[14:12], 3'b010);
+    // 5) 总线访问期间 halt 状态保持
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("SBA bus access: still allhalted", rd_data[9], 1'b1);
+    // 恢复 halt，等待结束
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+
+    // ----------------------------------------------------------
     // 汇总
     // ----------------------------------------------------------
     $display("\n========== Results: %0d PASS, %0d FAIL ==========\n", pass_cnt, fail_cnt);
@@ -727,7 +976,7 @@ end
 
 // 超时保护
 initial begin
-    #(CLK_PERIOD * 100_000);
+    #(CLK_PERIOD * 400_000);
     $display("[TIMEOUT] Simulation exceeded time limit");
     $finish;
 end

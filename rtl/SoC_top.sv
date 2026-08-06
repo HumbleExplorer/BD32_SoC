@@ -60,13 +60,15 @@ module SoC_top #(
     input   logic   [DATA_WIDTH-1:0]    sba_wdata,
     input   logic                       sba_write,
     input   logic   [2:0]               sba_size,
+    input   logic   [ALIGN_BYTES-1:0]   sba_be,
     output  logic                       sba_rsp_valid,
     output  logic   [DATA_WIDTH-1:0]    sba_rdata,
     output  logic                       sba_error,
     // Trigger（硬件断点，透传至 RISC_V_Core）
-    input   logic                       trigger_en,
-    input   logic   [ADDR_WIDTH-1:0]    trigger_addr,
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_en,
+    input   logic   [`TRIGGER_NUM*DATA_WIDTH-1:0] trigger_addr,
     output  logic                       trigger_hit,
+    output  logic                       ebreak_halt,
     // Debug CSR 访问（透传至 RISC_V_Core）
     input   logic                       dbg_csr_we,
     input   logic   [CSR_ADDR_WIDTH-1:0] dbg_csr_addr,
@@ -294,6 +296,7 @@ RISC_V_Core #(
     .sba_wdata          (sba_wdata          ),
     .sba_write          (sba_write          ),
     .sba_size           (sba_size           ),
+    .sba_be             (sba_be             ),
     .sba_rsp_valid      (sba_rsp_valid      ),
     .sba_rdata          (sba_rdata          ),
     .sba_error          (sba_error          ),
@@ -301,6 +304,7 @@ RISC_V_Core #(
     .trigger_en         (trigger_en         ),
     .trigger_addr       (trigger_addr       ),
     .trigger_hit        (trigger_hit        ),
+    .ebreak_halt        (ebreak_halt        ),
     // Debug CSR
     .dbg_csr_we         (dbg_csr_we         ),
     .dbg_csr_addr       (dbg_csr_addr       ),

@@ -29,10 +29,11 @@ module debug_top (
     output logic            dbg_step,
     output logic            dbg_ebreakm,
 
-    // Trigger（硬件断点）
-    output logic            trigger_en,
-    output logic [31:0]     trigger_addr,
+    // Trigger（硬件断点，多路打包）
+    output logic [`TRIGGER_NUM-1:0] trigger_en,
+    output logic [`TRIGGER_NUM*32-1:0] trigger_addr,
     input  logic            trigger_hit,
+    input  logic            ebreak_halt,
 
     // Debug CSR
     input  logic [31:0]     dbg_dpc,
@@ -44,6 +45,7 @@ module debug_top (
     output logic [31:0]     sba_wdata,
     output logic            sba_write,
     output logic [2:0]      sba_size,
+    output logic [3:0]      sba_be,
     input  logic            sba_rsp_valid,
     input  logic [31:0]     sba_rdata,
     input  logic            sba_error,
@@ -128,6 +130,7 @@ debug_dm #(
     .trigger_en     (trigger_en),
     .trigger_addr   (trigger_addr),
     .trigger_hit    (trigger_hit),
+    .ebreak_halt    (ebreak_halt),
     // Debug CSR
     .dbg_dpc        (dbg_dpc),
     .dbg_pc_wdata   (dbg_pc_wdata),
@@ -137,6 +140,7 @@ debug_dm #(
     .sba_wdata      (sba_wdata),
     .sba_write      (sba_write),
     .sba_size       (sba_size),
+    .sba_be         (sba_be),
     .sba_rsp_valid  (sba_rsp_valid),
     .sba_rdata      (sba_rdata),
     .sba_error      (sba_error),

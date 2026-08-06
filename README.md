@@ -13,8 +13,8 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：UART（含 NCO 波特率发生器）、CLINT（mtime/mtip）、PLIC 中断控制器、APB Timer（PWM）、GPIO
 - CoreMark 验证通过（-O2 和 -O3 均通过 CRC 校验）
-- RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写
-- 硬件断点：Trigger Module（mcontrol type=2）地址匹配，OpenOCD `hbreak` / GDB 在线调试实测通过
+- RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）
+- 硬件断点：Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择），支持 ebreak 进调试模式（dcsr.ebreakm），OpenOCD `hbreak` / GDB 在线调试实测通过
 - 完整调试回归：DMI 一键测试（10 项）、GDB 全功能套件、真实 demo 符号级在线调试
 - 动态分支预测器调试支持：单步模式下自动门控预测跳转，保证 PC 严格 +4 递增
 
@@ -324,7 +324,7 @@ BD32 实现了 RISC-V Debug Specification 的 0.13 风格子集（dcsr 读回按
 调试采用 **halt-in-place + 直接端口访问** 架构（与 tinyriscv/Ibex 同类，区别于 E203/CVA6 的 Debug ROM + Park Loop）：
 - halt 后流水线全级 stall + flush，CPU 原地冻结；无需 Debug ROM、不执行任何调试代码
 - GPR/CSR 通过专用调试端口直连（RegFile / CSR_Reg_Access），不经 CPU 执行
-- 内存访问走 SBA（32-bit），在 halt 期间直接读写 ITCM/DTCM
+- 内存访问走 SBA（32-bit 读；8/16/32-bit 写），在 halt 期间读写 ITCM/DTCM 以及外设总线（APB：UART/GPIO/CLINT/PLIC/Timer 等）
 
 ### 架构
 
@@ -359,20 +359,22 @@ FT2232H Channel A (JTAG: TCK/TDI/TDO/TMS)
 | reset halt | 已验证 | `ndmreset` + haltreq 驻留，停在复位向量 |
 | GPR / CSR 读写 | 已验证 | abstract command，regno 0x1000~0x101F / 0xC000\|csr 与 1.0 直接编码 |
 | dcsr / dpc | 已验证 | dcsr 按 1.0 位域读回（debugver/cause/step/ebreakm） |
-| SBA | 已验证 | 32-bit 地址/数据，读写 ITCM/DTCM |
-| 硬件断点 | 已验证 | tdata1/tdata2, mcontrol type=2 地址匹配，OpenOCD `hbreak` + GDB |
+| SBA | 已验证 | 32-bit 地址，8/16/32-bit 写 + 32-bit 读，读写 ITCM/DTCM + 外设总线（APB） |
+| 硬件断点 | 已验证 | 4 路 tdata1/tdata2（tselect 选择），mcontrol type=2 地址匹配，OpenOCD `hbreak` + GDB |
+| ebreak 进调试 | 已验证 | `dcsr.ebreakm=1` 时 ebreak 触发 halt，cause=1，dpc=ebreak 地址 |
 | GDB 在线调试 | 已验证 | 真实 demo（breathing）符号级调试：加载/断点/单步/变量 |
 
-未实现：Debug ROM / Park Loop、ProgBuf（progbufsize=0）、abstract 内存访问（cmdtype=2）、16/8-bit SBA、多 hart。
+未实现：Debug ROM / Park Loop、ProgBuf（progbufsize=0）、abstract 内存访问（cmdtype=2）、多 hart。
 
 ### Trigger Module（硬件断点）
 
-DM 内部实现了一组 trigger 寄存器（tselect, tdata1, tdata2），通过 abstract command 的 CSR 地址空间（0x7A0~0x7A3）访问：
+DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通过 abstract command 的 CSR 地址空间（0x7A0~0x7A3）访问：
 
 - `tdata1` 复位值 = 0x2000_0000（type=2 mcontrol, dmode=0, 默认 disabled；dmode=0 避免 OpenOCD 0.12 枚举时清零导致 hbreak 失败）
-- OpenOCD 通过 `hbreak *<addr>` 命令编程 tdata2 = 目标地址，置 tdata1[2]（execute match enable）
-- CPU 侧 `trigger_hit = trigger_en & (inst_addr_if == trigger_addr)`，命中后触发 halt
+- OpenOCD 通过 `hbreak *<addr>` 命令编程 tdata2 = 目标地址，置 tdata1[2]（execute match enable）；tselect 越界写自动钳位，用于枚举 trigger 数量（4 路）
+- CPU 侧多路并行比较 `trigger_hit = |(trigger_en[i] & (inst_addr_if == trigger_addr[i]))`，命中后触发 halt
 - **trigger halt 锁存**：命中时 DM 自动拉高 haltreq，删除断点（清 tdata1）不会让 CPU 自动恢复运行，直到调试器发 `resumereq`
+- **ebreak 进调试**：`dcsr.ebreakm=1` 时 ID 级 ebreak 不产生异常，CPU 原地 halt（ID 保持、不冲刷），DM 锁存 haltreq 并置 `dcsr.cause=1`、`dpc=ebreak 地址`；调试器恢复原指令后 resume 即可继续执行（软件断点通路）
 
 ### OpenOCD + GDB 使用
 
@@ -436,8 +438,18 @@ Testbench `sim/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物�
 - Test 13：reset halt（停在复位向量）
 - Test 14：reset halt 后改 dpc 再 resume 的取指对齐（`resume_hold` 回归）
 - Test 15：trigger halt 锁存（清断点后 CPU 保持 halt）
+- Test 16：ebreak 进调试模式（halt / cause=1 / dpc / 锁存 / resume 后正确执行）
+- Test 17：多硬件断点（tselect 选择，双断点依次命中，逐个清除）
+- Test 18：SBA 字节/半字写（ITCM/DTCM RMW 合并验证）
 
-当前回归结果：**31 PASS / 0 FAIL**。
+上板验证（新 bitstream，2026-08-06）全部通过：
+- DMI 一键测试 10/10（`bd32_debug_test.cfg`，OpenOCD 枚举识别 4 个 trigger）
+- GDB 套件 10 项（`run_gdb_debug_test.bat`：reset halt / 单步 / GPR / CSR / SBA / hbreak）
+- 真实 demo（breathing.elf）符号级调试（`run_demo_debug.bat`）
+- 新功能专项 12/12（`bd32_new_feat_test.cfg`：SBA 8/16-bit 写、双硬件断点、ebreak 进调试模式）
+- SBA 外设总线 6/6（`bd32_sba_periph.cfg`：SBA 访问 GPIO/UART/CLINT 外设、字节使能、未映射 sberror、halt 保持）
+
+当前回归结果：**49 PASS / 0 FAIL**。
 
 ## FPGA 在线控制工具（SDK/tools）
 
