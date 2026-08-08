@@ -607,9 +607,162 @@ initial begin
     dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // write dcsr, step=0
     jtag_idle(10);
 
-    // 最终 resume
+    // ----------------------------------------------------------
+    // Test 12b: Single-step over a taken jump (JAL)
+    //   Regression: after stepping a jump, dpc must point to the
+    //   jump target. OpenOCD's watchpoint dance (disable triggers ->
+    //   step -> enable triggers) steps the current PC on hw-bp
+    //   continue; if that instruction is JAL/JALR/branch the
+    //   STEP_DRAIN phase must let the branch redirect take effect,
+    //   otherwise the resumed PC is wrong (X+4 into a gap).
+    // ----------------------------------------------------------
+    $display("--- Test 12b: Single-step over JAL ---");
+    // halt CPU
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+    // ITCM 0x10200: jal x0, +0x10 = 0x0100006F (jump to 0x10210)
+    dmi_write(ADDR_SBCS, 32'h0004_0000);  // sbaccess=32b, no readonaddr
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h0100_006F);
+    #(CLK_PERIOD * 10);
+    // ITCM 0x10210: nop = 0x00000013
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0210);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0013);
+    #(CLK_PERIOD * 10);
+    // dpc = 0x10200
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // write dpc
+    jtag_idle(10);
+    // dcsr.step = 1
+    dmi_write(ADDR_DATA0, 32'h0000_0004);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // write dcsr
+    jtag_idle(10);
+    // resume (step)
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 50);
+    // CPU should halt
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("step-jal: dmstatus.allhalted", rd_data[9], 1'b1);
+    // dpc should point to jump target 0x10210
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);  // read dpc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("step-jal: dpc = jump target", rd_data, 32'h0001_0210);
+    // clear step, back to normal mode
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // write dcsr, step=0
+    jtag_idle(10);
+    // resume running (for later tests)
     dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
     #(CLK_PERIOD * 20);
+    // ----------------------------------------------------------
+    // Test 12c: Single-step over a trapping instruction
+    //   Regression: stepping an instruction that traps (ecall /
+    //   illegal) or mret must end with dpc at the trap target
+    //   (mtvec / mepc), not X+4. STEP_DRAIN must let the exception/
+    //   mret redirect take effect; interrupts stay excluded until
+    //   after resume (dcsr.stepie=0 behavior).
+    // ----------------------------------------------------------
+    $display("--- Test 12c: Single-step over trap/mret ---");
+    // reset halt first: Test 12b resumes into leftover ITCM contents,
+    // so the CPU may be running/trapped with IF at an invalid address.
+    // A pending IF access fault would suppress debug CSR writes.
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0003);  // haltreq + ndmreset
+    #(CLK_PERIOD * 30);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);  // release ndmreset, keep haltreq
+    #(CLK_PERIOD * 200);
+    // mtvec = 0x10210 (trap target)
+    dmi_write(ADDR_DATA0, 32'h0001_0210);
+    dmi_write(ADDR_COMMAND, 32'h0023_C305);  // write mtvec
+    jtag_idle(10);
+    // ITCM 0x10210: nop (handler landing pad)
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0210);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0013);
+    #(CLK_PERIOD * 10);
+
+    // 1) ecall @0x10200: after step, dpc=mtvec, mcause=11, mepc=0x10200
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0073);  // ecall
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // write dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0000_0004);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // write dcsr, step=1
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume (step)
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("step-ecall: dmstatus.allhalted", rd_data[9], 1'b1);
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);  // read dpc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("step-ecall: dpc = mtvec", rd_data, 32'h0001_0210);
+    dmi_write(ADDR_COMMAND, 32'h0022_C342);  // read mcause
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("step-ecall: mcause=11", rd_data, 32'h0000_000B);
+    dmi_write(ADDR_COMMAND, 32'h0022_C341);  // read mepc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("step-ecall: mepc=0x10200", rd_data, 32'h0001_0200);
+
+    // 2) illegal @0x10200: after step, dpc=mtvec, mcause=2
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'hFFFF_FFFF);  // illegal encoding
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // write dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume (step)
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("step-illegal: dmstatus.allhalted", rd_data[9], 1'b1);
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);  // read dpc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("step-illegal: dpc = mtvec", rd_data, 32'h0001_0210);
+    dmi_write(ADDR_COMMAND, 32'h0022_C342);  // read mcause
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("step-illegal: mcause=2", rd_data, 32'h0000_0002);
+
+    // 3) mret @0x10200 with mepc=0x10214: after step, dpc=mepc
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h3020_0073);  // mret
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0214);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0013);  // nop @0x10214
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_DATA0, 32'h0001_0214);
+    dmi_write(ADDR_COMMAND, 32'h0023_C341);  // write mepc = 0x10214
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1);  // write dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume (step)
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("step-mret: dmstatus.allhalted", rd_data[9], 1'b1);
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);  // read dpc
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("step-mret: dpc = mepc", rd_data, 32'h0001_0214);
+
+    // cleanup: dcsr.step=0, restore addi x1,42 @0x10200, resume
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B0);  // write dcsr, step=0
+    jtag_idle(10);
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h02A0_0093);  // addi x1,x0,42
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);  // resume
+    #(CLK_PERIOD * 20);
+
 
     // ----------------------------------------------------------
     // Test 13: reset halt（ndmreset + haltreq 驻留 → 停在复位向量 0x0）

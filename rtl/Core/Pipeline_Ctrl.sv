@@ -20,6 +20,7 @@ module Pipeline_Ctrl #(
     // from CSR
     input   logic                       trap_jump,
     input   logic   [ADDR_WIDTH-1:0]    trap_jump_addr,
+    input   logic                       trap_jump_exc, // exception/mret only (no interrupt), for single-step drain
     input   logic   [1:0]               priv_mode,
     input   logic                       waiting_int,
     // from Debug Module
@@ -308,6 +309,25 @@ always_comb begin
         id_ex_flush     = 1'b1;
     end else if (step_drain_active) begin
         if_id_flush     = step_drain_d;
+        // During single-step drain, let the stepped instruction's own
+        // effects redirect the PC:
+        //  - trap (exception / mret): jump to mtvec/mepc and flush like
+        //    the normal trap path (interrupts excluded - they must wait
+        //    until after resume, matching dcsr.stepie=0);
+        //  - taken branch/jump: redirect to the branch target.
+        // Otherwise stepping such an instruction leaves dpc at X+4 and
+        // the resume after OpenOCD's watchpoint dance executes the wrong
+        // address (e.g. a gap of zeros after `j _start`).
+        if (trap_jump_exc) begin
+            if_id_flush    = 1'b1;
+            id_ex_flush    = (sel_stage >= 2'd1);
+            ex_mem_flush   = (sel_stage >= 2'd2);
+            ctrl_jump_en   = 1'b1;
+            ctrl_jump_addr = trap_jump_addr;
+        end else if (branch_jump_en) begin
+            ctrl_jump_en   = 1'b1;
+            ctrl_jump_addr = branch_jump_addr;
+        end
     end else if (waiting_int) begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;

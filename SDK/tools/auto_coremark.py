@@ -7,7 +7,7 @@ BD32 CoreMark 自动化测试脚本
     python tools/auto_coremark.py --config coremark_o2     # 只跑一个
     python tools/auto_coremark.py --port COM8 --baud 115200
 """
-import ftd2xx
+import subprocess
 import serial
 import serial.tools.list_ports
 import time
@@ -20,8 +20,7 @@ import re
 # ============================================================
 # 配置
 # ============================================================
-RST_BIT = 0x20          # ADBUS5
-RESET_HOLD = 0.5        # 复位保持时间(秒)
+# 复位由 fpga_reset.py 处理（OpenOCD/WinUSB，无需 ftd2xx）
 BOOT_DELAY = 1.0        # 复位释放后等BootROM启动(秒)
 SEND_CHUNK = 256        # 串口发送分块大小
 SEND_DELAY = 0.01       # 每块间隔(秒)
@@ -61,31 +60,14 @@ def find_port():
 # ============================================================
 # 复位控制
 # ============================================================
-def find_debugger():
-    num = ftd2xx.createDeviceInfoList()
-    for i in range(num):
-        info = ftd2xx.getDeviceInfoDetail(i)
-        if b'RS232 A' in info['description']:
-            return i
-    return None
-
 def reset_fpga():
-    idx = find_debugger()
-    if idx is None:
-        print("[ERROR] Sipeed RV-Debugger not found!")
+    """复位 FPGA：调用 fpga_reset.py（默认 OpenOCD/WinUSB，无需切换驱动）"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run([sys.executable, os.path.join(script_dir, "fpga_reset.py")],
+                       capture_output=True, text=True, errors="replace")
+    if r.returncode != 0:
+        print("[ERROR] FPGA reset failed:\n%s" % ((r.stderr or r.stdout)[-400:]))
         return False
-    dev = ftd2xx.open(idx)
-    dev.resetDevice()
-    time.sleep(0.05)
-    dev.purge(0x03)
-    dev.setBitMode(RST_BIT, 0x01)
-    time.sleep(0.05)
-    dev.write(bytes([RST_BIT]))   # assert reset
-    time.sleep(RESET_HOLD)
-    dev.write(b'\x00')            # release reset
-    time.sleep(0.05)
-    dev.setBitMode(0x00, 0x00)
-    dev.close()
     return True
 
 # ============================================================

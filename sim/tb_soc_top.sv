@@ -26,7 +26,7 @@ logic   rst_n;
 logic   download_en;
 logic   key0_val;
 wire    [GPIO_NUM-1:0]  gpio_io;
-// GPIO[0] (MODE_SEL) 浮空，BootROM 读到 0 → 进入 UART 下载模式
+// GPIO[0] (MODE_SEL) 浮空，BootROM 读到 1 → 进入 UART 下载模式
 // 注：GPIO_SIM 模式下 gpio_io 不连到 apb_gpio（用 gpio_i/gpio_o/gpio_oe 替代）
 logic   uart_rx;
 logic   uart_tx;

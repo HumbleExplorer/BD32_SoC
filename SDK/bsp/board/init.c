@@ -20,7 +20,7 @@ void __attribute__((weak)) board_init(void) {
 void _init(void) {
     soc_init();
 
-    /* UART 初始化（唯一调用点，避免 __udivdi3 破坏 gp） */
+    /* UART 初始化（soc_init 测频完成后调用，按实测主频计算 FCW） */
     uart_init(115200);
 
     /* 设置中断向量表 (Vectored 模式) */

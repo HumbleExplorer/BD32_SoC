@@ -216,6 +216,7 @@ def main():
     p.add_argument("source", nargs="?", default=None, help="C source file or demo directory")
     p.add_argument("-o", "--output", default=None, help="Output ELF path")
     p.add_argument("--no-bin", action="store_true", help="Skip .mem/.uartbin")
+    p.add_argument("--debug", action="store_true", help="Compile with -g (GDB source-level debug info)")
     p.add_argument("--newlib", action="store_true", help="Link with newlib-nano (printf, malloc, etc.)")
     p.add_argument("--clang", action="store_true", help="Use LLVM/clang for .c compilation (linking still via xpack gcc)")
     p.add_argument("--opt", default="Os", help="Optimization (Os, O2, O3, etc.)")
@@ -226,6 +227,10 @@ def main():
     opt_flag = "-" + args.opt
     CFLAGS.insert(3, opt_flag)
     NEWLIB_CFLAGS.insert(2, opt_flag)
+    # GDB source-level debug info (--debug)
+    if args.debug:
+        CFLAGS.append("-g")
+        NEWLIB_CFLAGS.append("-g")
     # Extra flags
     extra_list = args.extra.split() if args.extra else []
     CFLAGS.extend(extra_list)
@@ -269,6 +274,16 @@ def main():
         name_suffix = ""
 
     args.output = os.path.abspath(args.output)
+
+    # --debug：link.ld 的 /DISCARD/ 会丢弃 .debug*，生成去掉该规则的脚本以保留 GDB 调试信息
+    if args.debug:
+        global LINKER
+        with open(LINKER, encoding="utf-8") as _f:
+            _ld = _f.read().replace("*(.debug*)", "")
+        _dbg_ld = os.path.join(os.path.dirname(args.output), "link_debug.ld")
+        with open(_dbg_ld, "w", encoding="utf-8") as _f:
+            _f.write(_ld)
+        LINKER = _dbg_ld
 
     print(f"BD32 SDK Build: {src_dir} -> {args.output}")
     compile(src_dir, args.output, usenewlib=args.newlib, useclang=args.clang)

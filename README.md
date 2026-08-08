@@ -16,7 +16,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）
 - 硬件断点：Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择），支持 ebreak 进调试模式（dcsr.ebreakm），OpenOCD `hbreak` / GDB 在线调试实测通过
 - 数据观察点：复用 Trigger Module 4 路 tdata，支持 load/store 地址匹配（读/写观察点）与访问宽度过滤（sizelo），命中即 halt（store/load 不提交）；GDB `watch` 在线调试脚本已固化（`run_gdb_watchpoint.bat`）
-- 完整调试回归：DMI 一键测试（10 项）、GDB 全功能套件、真实 demo 符号级在线调试
+- 完整调试回归：DMI 一键测试、GDB 全功能套件、真实 demo 符号级在线调试
 - 动态分支预测器调试支持：单步模式下自动门控预测跳转，保证 PC 严格 +4 递增
 
 ## 已知限制
@@ -30,7 +30,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 | 抽象内存访问（cmdtype=2） | 未实现：调试器内存访问走 SBA |
 | 多 hart | 未实现：单 hart |
 | 跟踪调试（trace） | 未实现：仅交互式调试（halt/step/断点/观察点） |
-| 软件断点命令（GDB `break`） | 未启用：ebreak 需手动替换指令；硬件断点用 `hbreak` |
+| 软件断点（GDB `break`） | 可设置/命中/单步越过/continue（OpenOCD 写 ebreak，需 `dcsr.ebreakm`），数量不受 4 路限制。OpenOCD 0.12 不声明 `swbreak` 特性，GDB 在 PC 位于断点地址时自动执行“删断点→单步→重插→继续”，实测 `continue` 可正常越过；回归脚本 `run_gdb_swbp_continue.bat`。若断点设在循环内反复调用的函数（如 `delay_ms`），continue 后再次命中是正常调试器行为（程序确实再次执行到该处，可观察 `$ra`/调用点区分） |
 | SPI / I2C | 地址预留，未实现 |
 | Flash / DDR | AXI 从机未实现，访问返回总线错误 |
 
@@ -45,9 +45,9 @@ python tools/build.py demos/newlib/hello --newlib
 cd ..
 
 # 2) Debug 模块仿真回归（无需板子，ModelSim）
-./script/debug_test/run_msim_debug.bat      # 结果：logs/msim_out.txt（82 项断言）
+./script/debug_test/run_msim_debug.bat      # 结果：logs/msim_out.txt
 
-# 3) 核级 ISA 回归（custom_asm 36 项）
+# 3) 核级 ISA 回归（custom_asm）
 cd script
 python run_all_custom_asm.py
 cd ..
@@ -60,17 +60,18 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 
 | 类别 | 项目 | 结果 | 说明 |
 |------|------|------|------|
-| 仿真 | custom_asm 核级回归 | 36/36 PASS | tb_core_top + ModelSim |
-| 仿真 | riscv-tests | 48/50 PASS | fence_i/ma_data 未过（见「已知限制」） |
-| 仿真 | Debug 模块回归（tb_debug） | 82 PASS / 0 FAIL | 23 项测试，无需板子 |
+| 仿真 | custom_asm 核级回归 | 通过 | tb_core_top + ModelSim |
+| 仿真 | riscv-tests | 通过（fence_i/ma_data 未过） | 见「已知限制」 |
+| 仿真 | Debug 模块回归（tb_debug） | 通过（93 项） | 无需板子 |
 | 仿真 | 外设 PLIC / Timer / GPIO / UART | PASS | UART 含 NCO 位级 TX/RX 检查 |
 | 仿真 | SoC CoreMark | 启动输出通过 | 完整 500 迭代 CRC 以上板为准 |
-| 上板 | DMI 一键测试 | 11/11 PASS | `bd32_debug_test.cfg` |
-| 上板 | 新功能专项 | 10/10 PASS | SBA 8/16-bit、双断点、ebreak |
-| 上板 | SBA 外设总线 | 6/6 PASS | GPIO/UART/CLINT、sberror |
-| 上板 | watchpoint | 15/15 PASS | `bd32_watchpoint_test.cfg` |
+| 上板 | DMI 一键测试 | 通过 | `bd32_debug_test.cfg` |
+| 上板 | 新功能专项 | 通过 | SBA 8/16-bit、双断点、ebreak |
+| 上板 | SBA 外设总线 | 通过 | GPIO/UART/CLINT、sberror |
+| 上板 | watchpoint | 通过 | `bd32_watchpoint_test.cfg` |
 | 上板 | GDB 在线 watchpoint | PASS | `run_gdb_watchpoint.bat`（管道模式） |
 | 上板 | GDB 套件 / demo 符号级调试 | PASS | 需 socket 环境（OpenOCD gdb server） |
+| 上板 | 软/硬断点 continue 回归（S1–S5） | PASS | `run_gdb_swbp_continue.bat`（管道模式），含 hw bp 命中→reset→重插→continue 与软硬断点结合 |
 | 上板 | CoreMark（多优化等级） | CRC 验证通过 | `auto_coremark.py` |
 
 ## 目录结构
@@ -270,7 +271,7 @@ python run_all_custom_asm.py               # custom_asm 全回归
 python run_all_riscv_tests.py              # riscv-tests ISA 兼容性
 ```
 
-riscv-tests 回归已知限制：`rv32ui-p-fence_i` 与 `rv32ui-p-ma_data` 未通过——BD32 **不支持自修改代码**（FENCE.I 不刷新取指路径）与**非对齐访存**（不产生 misaligned 异常），其余 48 项通过，属预期行为。
+riscv-tests 回归已知限制：`rv32ui-p-fence_i` 与 `rv32ui-p-ma_data` 未通过——BD32 **不支持自修改代码**（FENCE.I 不刷新取指路径）与**非对齐访存**（不产生 misaligned 异常），其余通过，属预期行为。
 
 判定约定：x26=1 表示完成，x27=1 表示通过；x3(gp) 记录失败的子测试编号。
 
@@ -590,7 +591,7 @@ halt 期间通过 SBA 访问整个 SoC 地址空间（32-bit 地址；读为 32-
 (gdb) continue
 ```
 
-当前 OpenOCD/GDB 的软件断点命令（`break`）未启用；软件断点需按上述方式手动替换指令，硬件断点直接用 `hbreak`。
+GDB 的软件断点命令（`break`）完整可用：OpenOCD 把 ebreak 写入目标地址（自动设置 `dcsr.ebreakm`），可设置、命中、`stepi` 单步越过、`continue` 继续运行。OpenOCD 0.12 不声明 `swbreak` 特性，GDB 在 PC 位于软件断点地址时自动执行“删断点→单步→重插→继续”，因此 `continue` 不会原地重命中；回归脚本 `run_gdb_swbp_continue.bat`。注意：若断点设在循环内被反复调用的函数（如 `delay_ms`/`uart_init`），continue 后再次停在同地址属正常现象（程序确实再次执行到该处），可通过 `$ra`/`$sp` 与调用点确认，并非无法越过。数量不受 4 路限制；上述手动替换 ebreak 的方式仍然可用。
 
 #### 8. 真实 demo 符号级调试（breathing）
 
@@ -607,6 +608,8 @@ halt 期间通过 SBA 访问整个 SoC 地址空间（32-bit 地址；读为 32-
 ```
 
 `bd32_demo_debug.gdb` 已固化该流程（hbreak main、单步、全局变量 / .data / mtime 读取）。
+
+**C 语言级调试**：用 `build.py --debug` 重建固件后，除了符号断点 + `stepi`，还可以源码行 `next`/查看变量（`run_gdb_c_debug.bat` 一键验证）。硬件断点最多 4 路（同时最多 4 个 hbreak）；多次 `next` 依赖触发槽可复用，需 bitstream 含 tdata1 修复（type=0 写入 -> 0x20000000）。
 
 #### 9. OpenOCD TCL 直接操作（DMI 寄存器级）
 
@@ -694,16 +697,18 @@ SDK/tools/ 下所有脚本输出统一到仓库根 `logs/` 目录（已加入 .g
 
 | 脚本 | 内容 | 结果文件 |
 |------|------|----------|
-| `bd32_debug_test.cfg`（OpenOCD 直接运行） | DMI 全功能：JTAG、halt/PC、GPR/CSR、单步、SBA、Trigger、reset halt（11 项） | 终端输出 |
-| `bd32_new_feat_test.cfg`（OpenOCD 直接运行） | 新功能专项：SBA 8/16-bit 写、双硬件断点（tselect0/1 依次命中）、ebreak 进调试（10 项） | 终端输出 |
-| `bd32_sba_periph.cfg`（OpenOCD 直接运行） | SBA 外设总线：GPIO/UART/CLINT 读写、字节使能、未映射 sberror、halt 保持（6 项） | 终端输出 |
+| `bd32_debug_test.cfg`（OpenOCD 直接运行） | DMI 全功能：JTAG、halt/PC、GPR/CSR、单步、SBA、Trigger、reset halt | 终端输出 |
+| `bd32_new_feat_test.cfg`（OpenOCD 直接运行） | 新功能专项：SBA 8/16-bit 写、双硬件断点（tselect0/1 依次命中）、ebreak 进调试 | 终端输出 |
+| `bd32_sba_periph.cfg`（OpenOCD 直接运行） | SBA 外设总线：GPIO/UART/CLINT 读写、字节使能、未映射 sberror、halt 保持 | 终端输出 |
 | `run_gdb_debug_test.bat` | GDB 全功能套件：reset halt、寄存器/CSR、单步、内存读写、hbreak（socket 模式） | `logs/gdb_test_result.txt` |
 | `run_demo_debug.bat` | 真实 demo（breathing）符号级调试：加载、hbreak main、单步、变量（socket 模式） | `logs/demo_debug_result.txt` |
-| `bd32_watchpoint_test.cfg`（OpenOCD 直接运行） | 数据观察点上板测试：写/读观察点命中、宽度过滤、无访问不误命中（15 项断言） | 终端输出 |
+| `bd32_watchpoint_test.cfg`（OpenOCD 直接运行） | 数据观察点上板测试：写/读观察点命中、宽度过滤、无访问不误命中 | 终端输出 |
 | `run_watchpoint_test.bat` | watchpoint TCL 测试包装 | `logs/watchpoint_test.log` |
 | `run_gdb_watchpoint.bat` | GDB 在线 watchpoint（管道模式，无需 socket） | `logs/gdb_watchpoint_result.txt` |
+| `run_gdb_c_debug.bat` | GDB C 语言级调试：hbreak main → continue → 源码行 next → 变量，及软件断点（break）命中验证（自动 --debug --opt O0 重建） | `logs/gdb_c_debug_result.txt` |
+| `run_gdb_swbp_continue.bat` | GDB 软件断点 continue 回归：直接 continue 越过软件断点、stepi 后 continue、与 hbreak 结合使用（管道模式，无需 socket） | `logs/gdb_swbp_continue_result.txt` |
 | `bd32_clean_itcm.cfg`（OpenOCD 直接运行） | 维护工具：将 ITCM 0x10200~0x10300 写回 NOP，清理探针/自循环残留 | 终端输出 |
-| `run_msim_debug.bat`（script/debug_test/） | ModelSim 回归（tb_debug，82 项断言，无需板子） | `logs/msim_out.txt` |
+| `run_msim_debug.bat`（script/debug_test/） | ModelSim 回归（tb_debug，无需板子） | `logs/msim_out.txt` |
 
 ```bash
 # 正常环境直接运行：
@@ -755,15 +760,15 @@ Testbench `sim/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物�
 - Test 23：reset halt（CPU 停 0x0）后 2 字节 SBA 读 BootROM，验证子字读不误报 sberror
 
 上板验证（2026-08-06/07 新 bitstream）全部通过：
-- DMI 一键测试 11/11（`bd32_debug_test.cfg`，OpenOCD 枚举识别 4 个 trigger）
+- DMI 一键测试（`bd32_debug_test.cfg`，OpenOCD 枚举识别 4 个 trigger）
 - GDB 套件（`run_gdb_debug_test.bat`：reset halt / 单步 / GPR / CSR / SBA / hbreak）
 - 真实 demo（breathing.elf）符号级调试（`run_demo_debug.bat`）
-- 新功能专项 10/10（`bd32_new_feat_test.cfg`：SBA 8/16-bit 写、双硬件断点、ebreak 进调试模式）
-- SBA 外设总线 6/6（`bd32_sba_periph.cfg`：SBA 访问 GPIO/UART/CLINT 外设、字节使能、未映射 sberror、halt 保持）
-- 数据观察点 15/15（`bd32_watchpoint_test.cfg`：写/读观察点、宽度过滤、无访问不误命中）
+- 新功能专项（`bd32_new_feat_test.cfg`：SBA 8/16-bit 写、双硬件断点、ebreak 进调试模式）
+- SBA 外设总线（`bd32_sba_periph.cfg`：SBA 访问 GPIO/UART/CLINT 外设、字节使能、未映射 sberror、halt 保持）
+- 数据观察点（`bd32_watchpoint_test.cfg`：写/读观察点、宽度过滤、无访问不误命中）
 - GDB 在线数据观察点（`run_gdb_watchpoint.bat`：watch 0x20000 → continue → 命中停止，SBA 读 BootROM 判定路径完整）
 
-当前回归结果：**ModelSim 仿真 82 PASS / 0 FAIL**；上板 DMI 11、新功能 10、外设 SBA 6、watchpoint 15、GDB 在线 watchpoint 全部 PASS。
+当前回归结果：**ModelSim 仿真全部通过**；上板 DMI、新功能、外设 SBA、watchpoint、GDB 在线 watchpoint 全部 PASS。
 
 ## FPGA 在线控制工具（SDK/tools）
 
@@ -783,7 +788,7 @@ Python 依赖：
 pip install ftd2xx pyserial
 ```
 
-注意：Windows 下 fpga_reset.py 使用 ftd2xx（D2XX 库）控制 FTDI 芯片，需要 FTDI VCP 驱动；而 OpenOCD 使用 libusb，需要 WinUSB 驱动。两者互斥——同一时刻 Channel A 只能绑定一种驱动。切换方法：用 Zadig 在 WinUSB 和 FTDI VCP（libusbK 也可）之间替换。日常调试建议保持 WinUSB（OpenOCD），复位功能可改用 Vivado 或板载按键。
+注意：fpga_reset.py 默认通过 OpenOCD 驱动 FTDI ADBUS5 实现复位（参考 E203 SDK openocd_evalsoc.cfg，配置见 `bd32_reset.cfg`），**WinUSB 模式即可，无需切换驱动**。仅 `--assert/--release`（跨会话保持复位）才需要 ftd2xx（FTDI VCP 驱动，与 OpenOCD/WinUSB 互斥）。日常流程（复位 → UART 下载 → 调试）保持 WinUSB 即可。
 
 所有串口工具默认自动检测 CH340（通过 USB VID:PID = 1A86:7523 匹配），无需手动指定 COM 口号。该编号标识的是 CH340 芯片型号而非特定板卡，因此更换任何使用 CH340 的开发板均可自动识别。若同时连接多块 CH340 板，需用 `--port COMx` 手动指定。
 
@@ -966,6 +971,7 @@ python tools/auto_coremark.py 2>&1 | tee tools/coremark_results.log
 | `--no-bin` | 跳过 .mem/.uartbin 生成 |
 | `--opt O2` | 优化等级（默认 Os） |
 | `--clang` | 用 Clang 做前端代码生成（链接仍走 GCC） |
+| `--debug` | 启用 `-g` 调试信息（GDB 源码级单步/查看变量，需 GDB 在线调试） |
 | `--extra "-DFLAG"` | 追加编译标志 |
 
 编译流程：AS start.S → CC board/init.c → CC drivers → CC trap → CC main.c → LD → OBJDUMP → 生成 .mem/.uartbin

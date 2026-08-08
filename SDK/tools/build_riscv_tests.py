@@ -5,19 +5,20 @@ BD32 内存布局：ITCM @ 0x00010000, DTCM @ 0x00020000
 import subprocess, os, shutil, struct, re, sys
 
 # ===== 路径 =====
-RISCV_TESTS = r"D:\Desktop\毕业设计\参考资料和工具\RISC-V软件\riscv-tests"
+RISCV_TESTS = os.environ.get("RISCV_TESTS_SRC", r"D:\Desktop\毕业设计\参考资料和工具\RISC-V软件\riscv-tests")
 ISA_SRC     = os.path.join(RISCV_TESTS, "isa")
 ENV_P       = os.path.join(RISCV_TESTS, "env", "p")
-TINY_ENV    = r"D:\Desktop\OpenClaw_Workspace\Ref\tinyriscv-master\tests\isa"
-OUT_DIR     = r"D:\Desktop\OpenClaw_Workspace\Working\test_data\riscv-tests"
+TINY_ENV    = os.environ.get("TINY_RISCV_ISA", r"D:\Desktop\OpenClaw_Workspace\Ref\tinyriscv-master\tests\isa")
+OUT_DIR     = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "test_data", "riscv-tests"))
 LD_SCRIPT   = os.path.join(ENV_P, "link.ld")
 
-CC      = r"D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin/riscv-none-elf-gcc"
-OBJCOPY = r"D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin/riscv-none-elf-objcopy"
-OBJDUMP = r"D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin/riscv-none-elf-objdump"
+_TC = os.environ.get("RISCV_TOOLCHAIN", r"D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin")
+CC      = os.path.join(_TC, "riscv-none-elf-gcc")
+OBJCOPY = os.path.join(_TC, "riscv-none-elf-objcopy")
+OBJDUMP = os.path.join(_TC, "riscv-none-elf-objdump")
 
 # 官方 LLVM / Clang (--clang 时用于汇编 riscv-tests 的 .S，链接仍用 xpack gcc)
-LLVM_BIN = r"D:/RISCV_Tool/llvm-22.1.8/bin"
+LLVM_BIN = os.environ.get("LLVM_BIN", r"D:/RISCV_Tool/llvm-22.1.8/bin")
 CLANG    = os.path.join(LLVM_BIN, "clang")
 # 命令行带 --clang 时启用 LLVM 汇编；否则完全保持原有 gcc 行为
 USE_CLANG = "--clang" in sys.argv

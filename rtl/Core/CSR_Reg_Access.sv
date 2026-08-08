@@ -42,6 +42,7 @@ module CSR_Reg_Access #(
     output  logic   [1:0]                   priv_mode,//特权模式 0：U；  1：S；  3：M
     (* MAX_FANOUT = 16 *)output  logic                           trap_jump,
     output  logic   [DATA_WIDTH-1:0]        trap_jump_addr,
+    output  logic                           trap_jump_exc, // exception/mret only (no interrupt), for single-step drain
     output  logic                           waiting_int,
 
     input   logic                           hpm_valid,
@@ -153,6 +154,8 @@ assign int_trap     = mstatus[3] & int_come;
 
 assign priv_mode = mstatus[12:11];
 assign exception_jump = exception_trap;
+// exception/mret-only trap jump, used by the single-step drain path
+assign trap_jump_exc = exception_jump | mret_req;
 // 异常：本周期立即触发；中断：延迟1拍（预计算地址，指令边界响应）,但多周期指令和总线指令需要等待。
 assign trap_jump = exception_jump | int_trap_jump | mret_req;
 

@@ -1,0 +1,46 @@
+# =============================================================================
+# 行尾与文件类型规范
+# 文本统一 LF（批处理统一 CRLF）；二进制文件不做任何转换
+# =============================================================================
+* text=auto
+
+# --- 源码 / 文本：LF ---
+*.sv   text eol=lf
+*.svh  text eol=lf
+*.v    text eol=lf
+*.vh   text eol=lf
+*.c    text eol=lf
+*.h    text eol=lf
+*.S    text eol=lf
+*.s    text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+*.do   text eol=lf
+*.tcl  text eol=lf
+*.sh   text eol=lf
+*.gdb  text eol=lf
+*.cfg  text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+*.xci  text eol=lf
+*.xpr  text eol=lf
+*.f    text eol=lf
+*.ld   text eol=lf
+.gitignore text eol=lf
+*.dat  text eol=lf
+*.mem  text eol=lf
+*.coe  text eol=lf
+*.mif  text eol=lf
+
+# --- Windows 批处理：CRLF ---
+*.bat  text eol=crlf
+
+# --- 二进制：不转换 ---
+*.bin     binary
+*.elf     binary
+*.o       binary
+*.uartbin binary
+*.xlsx    binary
+*.bit     binary
+*.wlf     binary
+*.dcp     binary

@@ -33,7 +33,7 @@
 `define MULT_PIPELINE
 
 // RISC-V Debug Module（JTAG TAP + DM，Spec 0.13）
-// 仿真：+define+BD32_DEBUG_EN  综合：Vivado Settings 添加
+// 默认开启；如需关闭可注释本行
 `define BD32_DEBUG_EN
 
 // 硬件断点 trigger 数量（mcontrol，多路）

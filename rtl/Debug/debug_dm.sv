@@ -551,7 +551,10 @@ always_ff @(posedge clk or negedge rst_n) begin
                                                     REGNO_TSELECT: begin
                                                         tselect_r <= (data0 >= `TRIGGER_NUM) ? (`TRIGGER_NUM-1) : data0[$clog2(`TRIGGER_NUM)-1:0];
                                                     end
-                                                    REGNO_TDATA1:    tdata1_r[tselect_r] <= data0;
+                                                    // tdata1 写 type=0（如 OpenOCD 清断点写 0）时存为禁用 mcontrol 默认值
+                                                    // 0x2000_0000：OpenOCD 分配器只认 type=2 的禁用态，存 0 会导致
+                                                    // 触发槽无法被复用（断点删除后资源耗尽）。
+                                                    REGNO_TDATA1:    tdata1_r[tselect_r] <= (data0[31:28] == 4'h0) ? 32'h2000_0000 : data0;
                                                     REGNO_TDATA2:    tdata2_r[tselect_r] <= data0;
                                                     default: begin
                                                         if (dmi_data[15:0] < 16'h1000 || dmi_data[15:0] >= 16'hC000) begin

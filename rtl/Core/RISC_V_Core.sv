@@ -84,6 +84,7 @@ logic                       branch_jump_en_ex;
 logic   [ADDR_WIDTH-1:0]    branch_jump_addr_ex;
 (* MAX_FANOUT = 16 *) logic                       trap_jump;
 logic   [ADDR_WIDTH-1:0]    trap_jump_addr;
+logic                       trap_jump_exc;
 logic   [1:0]               priv_mode;
 logic                       waiting_int;
 (* MAX_FANOUT = 16 *) logic                       load_use_flag;
@@ -387,6 +388,7 @@ Pipeline_Ctrl #(
     .branch_jump_addr    	(branch_jump_addr_ex  ),
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
+    .trap_jump_exc         (trap_jump_exc         ),
     .priv_mode           	(priv_mode            ),
     .waiting_int           	(waiting_int          ),
     .dbg_halt_req           (dbg_halt_req         ),
@@ -893,6 +895,7 @@ CSR_Reg_Access #(
     .priv_mode      	(priv_mode          ),
     .trap_jump      	(trap_jump          ),
     .trap_jump_addr 	(trap_jump_addr     ),
+    .trap_jump_exc         (trap_jump_exc         ),
     .waiting_int        (waiting_int        ),
     .hpm_valid          (hpm_valid          ),
     .hpm_inst_type      (hpm_inst_type      ),
