@@ -1,5 +1,5 @@
 #!/bin/bash
-# BD32 诊断 MROM Build Script
+# BD32 诊断 MROM Build Script (xPack toolchain)
 # 产物: mrom_diag.o, mrom_diag.elf, mrom_diag.bin, mrom_diag.dump, mrom_diag.dat, mrom_diag.coe
 
 set -e
@@ -7,17 +7,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-GCC=riscv64-unknown-elf-gcc
-OBJCOPY=llvm-objcopy
-OBJDUMP=llvm-objdump
+TC="/d/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin"
+GCC="$TC/riscv-none-elf-gcc"
+OBJCOPY="$TC/riscv-none-elf-objcopy"
+OBJDUMP="$TC/riscv-none-elf-objdump"
+PY=python3
 
-if ! command -v $GCC &>/dev/null; then
-    GCC="/d/NucleiStudio/toolchain/gcc/bin/$GCC"
-    OBJCOPY="/d/NucleiStudio/toolchain/gcc/bin/$OBJCOPY"
-    OBJDUMP="/d/NucleiStudio/toolchain/gcc/bin/$OBJDUMP"
-fi
-
-ARCH_FLAGS="-march=rv32im -mabi=ilp32"
+ARCH_FLAGS="-march=rv32im_zicsr -mabi=ilp32"
 LD_FLAGS="-nostartfiles -nodefaultlibs -Wl,-Ttext=0x00000000"
 
 SRC="mrom_diag.s"
@@ -25,54 +21,41 @@ BASE="mrom_diag"
 
 echo "=== BD32 Diagnostic MROM Build ==="
 
-# 1. Assemble
-echo "[1/6] Assembling $SRC → ${BASE}.o ..."
-$GCC -c $ARCH_FLAGS $LD_FLAGS -o ${BASE}.o $SRC
+echo "[1/6] Assembling $SRC -> ${BASE}.o ..."
+"$GCC" -c $ARCH_FLAGS $LD_FLAGS -o ${BASE}.o $SRC
 
-# 2. Link
-echo "[2/6] Linking ${BASE}.o → ${BASE}.elf ..."
-$GCC $ARCH_FLAGS $LD_FLAGS -o ${BASE}.elf ${BASE}.o
+echo "[2/6] Linking ${BASE}.o -> ${BASE}.elf ..."
+"$GCC" $ARCH_FLAGS $LD_FLAGS -o ${BASE}.elf ${BASE}.o
 
-# 3. Binary
 echo "[3/6] Generating ${BASE}.bin ..."
-$OBJCOPY -O binary ${BASE}.elf ${BASE}.bin
+"$OBJCOPY" -O binary ${BASE}.elf ${BASE}.bin
 
-# 4. Disassembly
 echo "[4/6] Generating ${BASE}.dump ..."
-$OBJDUMP -d ${BASE}.elf > ${BASE}.dump
+"$OBJDUMP" -d ${BASE}.elf > ${BASE}.dump
 
-# 5. Hex data for simulation ($readmemh)
 echo "[5/6] Generating ${BASE}.dat ..."
-python3 -c "
+"$PY" - <<'EOF'
 import struct
-with open('${BASE}.bin', 'rb') as f:
-    data = f.read()
+data = open('mrom_diag.bin', 'rb').read()
 while len(data) % 4:
     data += b'\x00'
-words = [f'{struct.unpack(\"<I\", data[i:i+4])[0]:08x}' for i in range(0, len(data), 4)]
-with open('${BASE}.dat', 'w') as f:
-    f.write('\n'.join(words) + '\n')
-print(f'  {len(words)} words')
-"
+words = ['%08x' % struct.unpack('<I', data[i:i+4])[0] for i in range(0, len(data), 4)]
+open('mrom_diag.dat', 'w').write('\n'.join(words) + '\n')
+print('  %d words' % len(words))
+EOF
 
-# 6. COE for Xilinx BRAM init
 echo "[6/6] Generating ${BASE}.coe ..."
-python3 -c "
+"$PY" - <<'EOF'
 import struct
-with open('${BASE}.bin', 'rb') as f:
-    data = f.read()
+data = open('mrom_diag.bin', 'rb').read()
 while len(data) % 4:
     data += b'\x00'
-words = [f'{struct.unpack(\"<I\", data[i:i+4])[0]:08X}' for i in range(0, len(data), 4)]
-# Pad to 1024 words (MROM depth)
+words = ['%08X' % struct.unpack('<I', data[i:i+4])[0] for i in range(0, len(data), 4)]
 while len(words) < 1024:
     words.append('00000000')
-with open('${BASE}.coe', 'w') as f:
-    f.write('memory_initialization_radix=16;\n')
-    f.write('memory_initialization_vector=\n')
-    f.write('\n'.join(words) + ';\n')
-print(f'  {len(words)} words (padded to 1024)')
-"
+open('mrom_diag.coe', 'w').write('memory_initialization_radix=16;\nmemory_initialization_vector=\n' + '\n'.join(words) + ';')
+print('  %d words (padded to 1024)' % len(words))
+EOF
 
 SIZE=$(wc -c < ${BASE}.bin)
 echo ""

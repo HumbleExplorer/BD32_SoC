@@ -1,7 +1,7 @@
 set pagination off
 set confirm off
 set architecture riscv:rv32
-file Working/SDK/demos/nolibc/breathing/build/breathing.elf
+file SDK/demos/nolibc/breathing/build/breathing.elf
 target extended-remote :3333
 
 printf "\n==== [0] DM 复位 + reset halt ====\n"
@@ -15,10 +15,10 @@ printf "\n==== [1] load breathing.elf ====\n"
 load
 flushregs
 
-printf "\n==== [2] $pc=0x10000，hbreak main(0x105cc)，continue ====\n"
+printf "\n==== [2] $pc=0x10000，hbreak main，continue ====\n"
 set $pc = 0x10000
 flushregs
-hbreak *0x105cc
+hbreak main
 continue
 flushregs
 p/x $pc

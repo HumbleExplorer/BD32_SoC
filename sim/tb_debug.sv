@@ -15,8 +15,8 @@ parameter ALIGN_BYTES    = `ALIGN_BYTES;
 parameter ALIGN_WIDTH    = `ALIGN_WIDTH;
 parameter GPIO_NUM       = `GPIO_NUM;
 
-localparam CPU_FREQ      = 80_000_000;
-localparam CLK_PERIOD    = 1_000_000_000 / CPU_FREQ;  // 12.5ns
+localparam CPU_FREQ      = 75_000_000;
+localparam CLK_PERIOD    = 1_000_000_000 / CPU_FREQ;  // 13.333ns
 localparam TCK_PERIOD    = 100;  // 10MHz JTAG clock
 
 // DMI 参数
@@ -83,6 +83,10 @@ logic                       sba_error;
 
 // Trigger 信号（SoC_top ↔ debug_top）
 logic [`TRIGGER_NUM-1:0]    trigger_en;
+logic [`TRIGGER_NUM-1:0]    trigger_exec_en;
+logic [`TRIGGER_NUM-1:0]    trigger_load_en;
+logic [`TRIGGER_NUM-1:0]    trigger_store_en;
+logic [`TRIGGER_NUM*2-1:0]  trigger_size;
 logic [`TRIGGER_NUM*32-1:0] trigger_addr;
 logic                       trigger_hit;
 logic                       ebreak_halt;
@@ -159,6 +163,10 @@ SoC_top #(
     .sba_rdata        (sba_rdata      ),
     .sba_error        (sba_error      ),
     .trigger_en       (trigger_en     ),
+    .trigger_exec_en    (trigger_exec_en    ),
+    .trigger_load_en    (trigger_load_en    ),
+    .trigger_store_en   (trigger_store_en   ),
+    .trigger_size       (trigger_size       ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
     .ebreak_halt      (ebreak_halt    ),
@@ -199,6 +207,10 @@ debug_top u_debug_top (
     .sba_rdata        (sba_rdata      ),
     .sba_error        (sba_error      ),
     .trigger_en       (trigger_en     ),
+    .trigger_exec_en    (trigger_exec_en    ),
+    .trigger_load_en    (trigger_load_en    ),
+    .trigger_store_en   (trigger_store_en   ),
+    .trigger_size       (trigger_size       ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
     .ebreak_halt      (ebreak_halt    ),
@@ -336,6 +348,11 @@ task check(input string name, input logic [31:0] actual, input logic [31:0] expe
         fail_cnt = fail_cnt + 1;
     end
 endtask
+
+
+
+
+
 
 initial begin
     // 初始化
@@ -962,7 +979,297 @@ initial begin
     #(CLK_PERIOD * 50);
 
     // ----------------------------------------------------------
+    // Test 20: 数据观察点（watchpoint：load/store 地址匹配）
+    // ----------------------------------------------------------
+    $display("--- Test 20: watchpoint ---");
+    // 程序布局（ITCM）：
+    //   0x10200 addi x1,x0,42    0x02A00093
+    //   0x10204 lui  x2,0x20     0x00020137  -> x2 = 0x00020000
+    //   0x10208 sw   x1,0(x2)    0x00112023  （写观察点目标）
+    //   0x1020C nop              0x00000013
+    //   0x10210 lw   x3,0(x2)    0x00012183  （读观察点目标）
+    //   0x10214 sb   x1,0(x2)    0x00110023  （宽度过滤测试）
+    //   0x10218 nop              0x00000013
+    //   0x1021C jal  x0,self     0x000000EF  （安全自旋，防跑到未知区域）
+    dmi_write(ADDR_SBCS, 32'h0004_0000);  // sbaccess=2
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    dmi_write(ADDR_SBDATA0, 32'h02A0_0093);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0204);
+    dmi_write(ADDR_SBDATA0, 32'h0002_0137);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0208);
+    dmi_write(ADDR_SBDATA0, 32'h0011_2023);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_020C);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0013);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0210);
+    dmi_write(ADDR_SBDATA0, 32'h0001_2183);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0214);
+    dmi_write(ADDR_SBDATA0, 32'h0011_0023);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0218);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0013);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_021C);
+    dmi_write(ADDR_SBDATA0, 32'h0000_00EF);
+    #(CLK_PERIOD * 10);
+    // 清零 DTCM 0x00020000（Test 18 遗留 0x11FEBABE）并读回确认
+    // 回读验证全部程序字（sbreadonaddr 模式）
+    dmi_write(ADDR_SBCS, 32'h0014_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0200);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_0200", rd_data, 32'h02A0_0093);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0204);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_0204", rd_data, 32'h0002_0137);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0208);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_0208", rd_data, 32'h0011_2023);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_020C);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_020C", rd_data, 32'h0000_0013);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0210);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_0210", rd_data, 32'h0001_2183);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0214);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_0214", rd_data, 32'h0011_0023);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_0218);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_0218", rd_data, 32'h0000_0013);
+    dmi_write(ADDR_SBADDRESS0, 32'h0001_021C);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint prog @0001_021C", rd_data, 32'h0000_00EF);
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBCS, 32'h0004_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
+    dmi_write(ADDR_SBDATA0, 32'h0000_0000);
+    #(CLK_PERIOD * 10);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);  // sbreadonaddr=1
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint: DTCM cleared", rd_data, 32'h0);
+
+    // 1) 写观察点：trigger0 = store 0x00020000（tdata1=type2+dmode+store）
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A0);  // tselect=0
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h2800_0002);   // type=2, dmode=1, store=1
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1); // tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0002_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A2); // tdata2=0x00020000
+    jtag_idle(10);
+    // 读回 tdata1 验证 load/store 位保留
+    dmi_write(ADDR_COMMAND, 32'h0022_07A1);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("watchpoint: tdata1 readback", rd_data[1:0], 2'b10);
+    // dpc=0x10200，resume → addi/lui 执行，sw 在 EX 命中 → halt
+    dmi_write(ADDR_DATA0, 32'h0001_0200);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1); // dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001); // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("watchpoint store: allhalted", rd_data[9], 1'b1);
+    // dcsr.cause = 2 (trigger)
+    dmi_write(ADDR_COMMAND, 32'h0022_07B0);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("watchpoint store: dcsr.cause=2", rd_data[8:6], 3'd2);
+    // dpc = 0x10208（sw 指令自身，而非下一条）
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("watchpoint store: dpc=0x10208", rd_data, 32'h0001_0208);
+    // 关键：before 时序，sw 未提交 → DTCM 仍为 0
+    dmi_write(ADDR_SBCS, 32'h0014_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint store: DTCM not written", rd_data, 32'h0);
+    // 清 trigger0 → resume → sw 真正执行，然后 halt 检查
+    dmi_write(ADDR_DATA0, 32'h2800_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1); // 清 tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001); // resume
+    #(CLK_PERIOD * 30);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001); // halt
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0002_0000);
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("watchpoint store: DTCM=42 after resume", rd_data, 32'd42);
+
+    // 2) 读观察点：trigger1 = load 0x00020000
+    dmi_write(ADDR_DATA0, 32'h0000_0001);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A0);  // tselect=1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h2800_0001);   // type=2, dmode=1, load=1
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1); // tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0002_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A2); // tdata2
+    jtag_idle(10);
+    // 先清 x3（防止残留值干扰判断）
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_1003); // write x3=0
+    jtag_idle(10);
+    // dpc=0x10210（lw），resume → EX 命中 load → halt
+    dmi_write(ADDR_DATA0, 32'h0001_0210);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1); // dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("watchpoint load: allhalted", rd_data[9], 1'b1);
+    dmi_write(ADDR_COMMAND, 32'h0022_07B1);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("watchpoint load: dpc=0x10210", rd_data, 32'h0001_0210);
+    // x3 未被更新（load 未写回）
+    dmi_write(ADDR_COMMAND, 32'h0022_1003);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("watchpoint load: x3 unchanged", rd_data, 32'h0);
+    // 清 trigger1 → resume → lw 完成，x3=42
+    dmi_write(ADDR_DATA0, 32'h2800_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1); // 清 tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 30);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001); // halt
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_COMMAND, 32'h0022_1003);
+    jtag_idle(10);
+    dmi_read(ADDR_DATA0, rd_data);
+    check("watchpoint load: x3=42 after resume", rd_data, 32'd42);
+
+    // 3) 访问宽度过滤：store + sizelo=3(word)；sb 不匹配不 halt，sw 匹配 halt
+    dmi_write(ADDR_DATA0, 32'h0000_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A0);  // tselect=0
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h2803_0002);   // type=2, dmode=1, size=3(32bit), store=1
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1); // tdata1
+    jtag_idle(10);
+    dmi_write(ADDR_DATA0, 32'h0002_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A2); // tdata2
+    jtag_idle(10);
+    // 从 0x10214（sb）跑：sb 是 8 位写，不应命中 word 观察点
+    dmi_write(ADDR_DATA0, 32'h0001_0214);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1); // dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001); // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("watchpoint size: sb not matched (running)", rd_data[11], 1'b1);
+    // halt，从 0x10208（sw）跑：word 写命中
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+    dmi_write(ADDR_DATA0, 32'h0001_0208);
+    dmi_write(ADDR_COMMAND, 32'h0023_07B1); // dpc
+    jtag_idle(10);
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001); // resume
+    #(CLK_PERIOD * 50);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("watchpoint size: sw matched (halted)", rd_data[9], 1'b1);
+    // 清理 trigger
+    dmi_write(ADDR_DATA0, 32'h2800_0000);
+    dmi_write(ADDR_COMMAND, 32'h0023_07A1);
+    jtag_idle(10);
+    // 最终 resume，让程序停在自旋
+    dmi_write(ADDR_DMCONTROL, 32'h4000_0001);
+    #(CLK_PERIOD * 30);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 50);
+
+    // ----------------------------------------------------------
+    // ----------------------------------------------------------
+    // Test 21: 对照实验——sb 操作数串位是否只在调试路径出现
+    //   程序（ITCM 0x10000，复位向量）：
+    //     0x10000 addi x1,x0,42    0x02A00093
+    //     0x10004 lui  x2,0x20     0x00020137  -> x2=0x20000
+    //     0x10008 nop              0x00000013
+    //     0x1000C lw   x3,0(x2)    0x00012183
+    //     0x10010 sb   x1,0(x2)    0x00110023
+    //     0x10014 nop              0x00000013
+    //     0x10018 jal  x0,self     0x000000EF
+    //   A) ndmreset 复位自跑（无任何 halt/resume/trigger 介入）
+    // ----------------------------------------------------------
+    // Test 21: 对照实验——sb 操作数串位是否只在调试路径出现
+    //   A1) 无调试自跑：lw x3 -> sb x1（byte store）
+    //   A2) 无调试自跑：lw x3 -> sw x1（word store）
     // 汇总
+    // ----------------------------------------------------------
+    // Test 22: SBA 读 BootROM（0x0000_0000 区）——GDB/OpenOCD 在线调试 stop 判定路径
+    //   0x0000_0000 应为 mrom.dat[0] = 0x00100293 (addi x5,x0,1)
+    //   BootROM 只读：SBA 写 0x0 应报 sberror=010 且 ROM 内容不变
+    // ----------------------------------------------------------
+    $display("--- Test 22: SBA read BootROM ---");
+    dmi_write(ADDR_SBCS, 32'h0004_0000);   // sbaccess=2, 写模式（清 sbreadonaddr）
+    dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);   // sbreadonaddr=1, sbaccess=2
+    dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);  // 触发 SBA read @0x0
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA BootROM readback @0x0", rd_data, 32'h0010_0293);
+    // 写保护：SBA 写 0x0 应报错
+    dmi_write(ADDR_SBCS, 32'h0004_0000);   // sbaccess=2, 写模式
+    dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);
+    dmi_write(ADDR_DATA0, 32'hDEAD_BEEF);  // 触发 SBA write @0x0
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBCS, rd_data);
+    check("SBA BootROM write: sberror set", rd_data[14:12], 3'b010);
+    // 写失败后内容不变
+    dmi_write(ADDR_SBCS, 32'h0004_0000);   // sbaccess=2, 写模式
+    dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);
+    dmi_write(ADDR_SBCS, 32'h0014_0000);   // sbreadonaddr=1, sbaccess=2
+    dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);  // 再次读 @0x0
+    #(CLK_PERIOD * 10);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("SBA BootROM unchanged after write", rd_data, 32'h0010_0293);
+
+    // ----------------------------------------------------------
+    // Test 23: reset halt（CPU 停在 BootROM 0x0）后 2 字节 SBA 读 0x0
+    //   复刻板上 OpenOCD 场景：reset halt 后 GDB 以 sbaccess=1 读复位向量区
+    //   验证不误报 sberror 且数据正确
+    // ----------------------------------------------------------
+    $display("--- Test 23: reset halt + subword SBA read BootROM ---");
+    // ndmreset + haltreq 驻留 → reset halt
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0003);
+    #(CLK_PERIOD * 30);
+    dmi_write(ADDR_DMCONTROL, 32'h8000_0001);
+    #(CLK_PERIOD * 200);
+    dmi_read(ADDR_DMSTATUS, rd_data);
+    check("reset-halt subword: allhalted", rd_data[9], 1'b1);
+    // 2 字节 SBA 读 0x0（sbreadonaddr + sbaccess=1 + sbautoincrement）
+    dmi_write(ADDR_SBCS, 32'h0000_7000);   // W1C 清掉 Test 22 残留的 sberror
+    dmi_write(ADDR_SBCS, 32'h0013_0000);
+    dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);
+    jtag_idle(4);
+    dmi_read(ADDR_SBDATA0, rd_data);
+    check("reset-halt subword: SBA read @0x0 data", rd_data, 32'h0010_0293);
+    dmi_read(ADDR_SBCS, rd_data);
+    check("reset-halt subword: no sberror", rd_data[14:12], 3'b0);
+    // 清 sberror + 读回 sbaddress0 确认自增（0x0 + 2 = 0x2）
+    dmi_write(ADDR_SBCS, 32'h0000_7000);
+    dmi_read(ADDR_SBADDRESS0, rd_data);
+    check("reset-halt subword: sbaddress0 autoincrement", rd_data, 32'h0000_0002);
+
     // ----------------------------------------------------------
     $display("\n========== Results: %0d PASS, %0d FAIL ==========\n", pass_cnt, fail_cnt);
     if (fail_cnt == 0)
@@ -980,5 +1287,6 @@ initial begin
     $display("[TIMEOUT] Simulation exceeded time limit");
     $finish;
 end
+
 
 endmodule

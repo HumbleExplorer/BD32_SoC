@@ -64,8 +64,12 @@ module SoC_top #(
     output  logic                       sba_rsp_valid,
     output  logic   [DATA_WIDTH-1:0]    sba_rdata,
     output  logic                       sba_error,
-    // Trigger（硬件断点，透传至 RISC_V_Core）
+    // Trigger（硬件断点 + 数据观察点，透传至 RISC_V_Core）
     input   logic   [`TRIGGER_NUM-1:0]  trigger_en,
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_exec_en,
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_load_en,
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_store_en,
+    input   logic   [`TRIGGER_NUM*2-1:0] trigger_size,
     input   logic   [`TRIGGER_NUM*DATA_WIDTH-1:0] trigger_addr,
     output  logic                       trigger_hit,
     output  logic                       ebreak_halt,
@@ -302,6 +306,10 @@ RISC_V_Core #(
     .sba_error          (sba_error          ),
     // Trigger
     .trigger_en         (trigger_en         ),
+    .trigger_exec_en     (trigger_exec_en     ),
+    .trigger_load_en     (trigger_load_en     ),
+    .trigger_store_en    (trigger_store_en    ),
+    .trigger_size        (trigger_size        ),
     .trigger_addr       (trigger_addr       ),
     .trigger_hit        (trigger_hit        ),
     .ebreak_halt        (ebreak_halt        ),

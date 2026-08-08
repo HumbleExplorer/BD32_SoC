@@ -3,7 +3,7 @@
 # 用法: 在 script/soc_test/ 目录下执行
 #   vsim -do run_bus_timeout_test.do
 # 或:
-#   D:\modeltech64_2020.4\win64\modelsim -do run_bus_timeout_test.do
+#   <ModelSim 安装目录>\win64\modelsim -do run_bus_timeout_test.do
 # ============================================================
 
 if [file exists "work"] {vdel -all}
@@ -62,5 +62,5 @@ add wave -radix hex sim:/tb_soc_top/u_SoC_top/u_RISC_V_Core/inst_addr_if
 add wave -radix hex sim:/tb_soc_top/u_SoC_top/u_RISC_V_Core/pc
 
 # bus_timeout.uartbin ~2992 bytes → 下载约 260ms
-# 下载 + 运行 + 超时(12.8us) + 异常处理 ≈ 270ms，留余量跑 300ms
+# 下载 + 运行 + 超时(13.65us) + 异常处理 ≈ 270ms，留余量跑 300ms
 run 300ms

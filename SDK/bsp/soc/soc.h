@@ -44,7 +44,7 @@
  * CPU 频率（Hz）— 编译期常量
  * 直接使用宏定义，避免全局变量 gp/s0 寄存器破坏问题
  * =================================================================== */
-#define CPU_FREQ_HZ_DEFAULT  80000000UL
+#define CPU_FREQ_HZ_DEFAULT  75000000UL
 
 #define CPU_FREQ_HZ          CPU_FREQ_HZ_DEFAULT
 #define CPU_FREQ_KHZ         (CPU_FREQ_HZ / 1000UL)
@@ -121,7 +121,12 @@ static inline void soc_init(void)
 {
     /* 使能 mcycle 计数器 */
     csr_write(CSR_MCOUNTEREN, 1);
-    /* 设置 CPU 频率默认值 */
-    g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
+    /* 预热一次（去掉第一次 tick 的不稳定边界） */
+    measure_cpu_freq(1);
+    /* 标准测量 10000 ticks (10ms)，±10% 合理性检查，失败回退到编译期常量 */
+    uint32_t f  = measure_cpu_freq(MEASURE_MTIME_TICKS);
+    uint32_t lo = CPU_FREQ_HZ_DEFAULT - CPU_FREQ_HZ_DEFAULT / 10;
+    uint32_t hi = CPU_FREQ_HZ_DEFAULT + CPU_FREQ_HZ_DEFAULT / 10;
+    g_cpu_freq_hz = (f >= lo && f <= hi) ? f : CPU_FREQ_HZ_DEFAULT;
 }
 #endif

@@ -8,9 +8,9 @@
 # 如果此 MROM 复位后能正常下载 → 问题在 OITF/CSR 路径
 # 如果此 MROM 复位后仍失败 → 问题在基本总线访问路径
 #
-# 硬编码主频 = 80MHz（与你的 MMCM 输出匹配）
-# DLL = 80000000 / 1843200 = 43 (0x2B)
-# FCW = round(1843200 * 2^32 / 80000000) = 98957 (0x0001828D)
+# 硬编码主频 = 75MHz（与 MMCM 输出匹配）
+# DLL = 75000000 / 1843200 = 40 (0x28)
+# FCW = round(1843200 * 2^32 / 75000000) = 105550758 (0x064A93A6)
 
 .equ GPIO_BASE,     0xE0000000
 .equ UART_BASE,     0xE0010000
@@ -41,7 +41,7 @@ normal_mode:
     j jump_to_itcm
 
 # ====================================================================
-# Download Mode — 硬编码 UART 参数（80MHz）
+# Download Mode — 硬编码 UART 参数（75MHz）
 # ====================================================================
 download_mode:
     li t1, 0x10             # LED1 ON (bit[4])
@@ -53,7 +53,7 @@ download_mode:
     # LCR[DLAB]=1, 写 DLL/DLM
     li t1, 0x80
     sw t1, 0x0C(ra)         # LCR[DLAB]=1
-    li t2, 43               # DLL = 80MHz / 1843200 ≈ 43
+    li t2, 40               # DLL = 75MHz / 1843200 ≈ 40
     sw t2, 0x00(ra)         # DLL
     sw zero, 0x04(ra)       # DLM = 0
 
@@ -62,8 +62,8 @@ download_mode:
     sw t1, 0x0C(ra)         # LCR = 8N1
     sw zero, 0x08(ra)       # FCR reset
 
-    # NCO FCW = 98957 = 0x0001828D
-    li t2, 0x1828D
+    # NCO FCW = 105550758 = 0x064A93A6
+    li t2, 0x64A93A6
     sw t2, 0x24(ra)         # FCW
 
     # 使能下载

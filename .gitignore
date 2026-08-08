@@ -55,9 +55,19 @@ SDK/tools/ocd_*.txt
 **/~$*
 .history/
 .workbuddy/
+.vscode/
+.idea/
 Thumbs.db
 desktop.ini
 *.swp
+
+# --- 大二进制（波形 / 位流 / 检查点，不进仓库） ---
+*.vcd
+*.bit
+*.dcp
+
+# --- 回归脚本输出 ---
+logs/
 
 # --- 日志 ---
 **/*.log

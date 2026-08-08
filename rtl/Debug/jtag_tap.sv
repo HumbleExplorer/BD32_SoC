@@ -202,6 +202,10 @@ always_ff @(posedge tck or negedge rst_n) begin
     if (!rst_n) begin
         dm_resp_latch <= '0;
         dm_is_busy    <= 1'b0;
+    end else if (tap_state == UPDATE_DR && ir_reg == REG_DTMCS && dtm_reset) begin
+        // DTMCS dmireset: clear DMI busy as well, so a lost response cannot wedge DMI forever
+        dm_resp_latch <= '0;
+        dm_is_busy    <= 1'b0;
     end else begin
         if (rx_valid)
             dm_resp_latch <= rx_data;

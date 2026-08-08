@@ -3,7 +3,7 @@
 # 用法: 在 script/soc_test/ 目录下执行
 #   vsim -do run_reset_test.do
 # 或在 top_tb.bat 中改为:
-#   D:\modeltech64_2020.4\win64\modelsim -do run_reset_test.do
+#   <ModelSim 安装目录>\win64\modelsim -do run_reset_test.do
 # ============================================================
 
 if [file exists "work"] {vdel -all}

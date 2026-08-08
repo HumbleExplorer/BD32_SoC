@@ -14,13 +14,13 @@ LINKER   = os.path.join(BSP_DIR, "ld", "link.ld")
 STARTUP  = os.path.join(BSP_DIR, "startup", "start.S")
 
 # xPack RISC-V 工具链 (默认编译+链接都用它；--clang 时仅 .c 编译改用 clang)
-TOOLCHAIN = "D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin"
+TOOLCHAIN = os.environ.get("RISCV_TOOLCHAIN", "D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin")
 CC       = os.path.join(TOOLCHAIN, "riscv-none-elf-gcc")
 OBJCOPY  = os.path.join(TOOLCHAIN, "riscv-none-elf-objcopy")
 OBJDUMP  = os.path.join(TOOLCHAIN, "riscv-none-elf-objdump")
 
 # 官方 LLVM / Clang (方案A: clang 做 rv32 .c 代码生成, 复用 xpack 的 newlib 头与 libgcc 链接)
-LLVM_BIN = "D:/RISCV_Tool/llvm-22.1.8/bin"
+LLVM_BIN = os.environ.get("LLVM_BIN", "D:/RISCV_Tool/llvm-22.1.8/bin")
 CLANG    = os.path.join(LLVM_BIN, "clang")
 XPACK_ROOT = os.path.dirname(TOOLCHAIN)                 # .../xpack-riscv-none-elf-gcc-15.2.0-1
 SYSROOT    = os.path.join(XPACK_ROOT, "riscv-none-elf") # newlib 头/库 (--newlib + --clang 时用)

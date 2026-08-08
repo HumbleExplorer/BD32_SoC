@@ -4,7 +4,7 @@ timeprecision 1ps;
 module tb_apb_uart;
 
 // =================== 配置参数 ===================
-parameter CLK_FREQ    = 100_000_000;
+parameter CLK_FREQ    =  50_000_000;  // must match PCLK below (forever #10)
 parameter BAUD_RATE   = 115200;
 localparam SAMPLE_PER_BIT = 16;
 // 真实波特率周期 (ns)：模拟真实串口助手发送节拍

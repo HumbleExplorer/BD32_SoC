@@ -54,8 +54,12 @@ module RISC_V_Core #(
     output  logic   [DATA_WIDTH-1:0]    dbg_reg_rdata,
     output  logic   [DATA_WIDTH-1:0]    dbg_dpc,
     input   logic   [DATA_WIDTH-1:0]    dbg_pc_wdata,
-    // Trigger（硬件断点，多路打包）
+    // Trigger：硬件断点 + 数据观察点，多路打包
     input   logic   [`TRIGGER_NUM-1:0]  trigger_en,
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_exec_en,
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_load_en,
+    input   logic   [`TRIGGER_NUM-1:0]  trigger_store_en,
+    input   logic   [`TRIGGER_NUM*2-1:0] trigger_size,
     input   logic   [`TRIGGER_NUM*DATA_WIDTH-1:0] trigger_addr,
     output  logic                       trigger_hit,
     // Debug CSR 访问（Abstract 通用 CSR 读写）
@@ -157,15 +161,6 @@ logic   [DATA_WIDTH-1:0]    reg_rd_wdata;
 // IF
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    pc;
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_if;   // 当前指令地址（延迟一拍的 pc）
-// 多路 trigger 比较：任一使能的 trigger 地址匹配即命中
-logic [`TRIGGER_NUM-1:0] trigger_hit_vec;
-genvar ti;
-generate
-    for (ti = 0; ti < `TRIGGER_NUM; ti++) begin : gen_trigger
-        assign trigger_hit_vec[ti] = trigger_en[ti] & (inst_addr_if == trigger_addr[ti*DATA_WIDTH +: DATA_WIDTH]);
-    end
-endgenerate
-assign trigger_hit = |trigger_hit_vec;
 logic   [DATA_WIDTH-1:0]    inst;
 logic                       predict_taken_if;
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
@@ -173,10 +168,6 @@ logic   [ADDR_WIDTH-1:0]    predict_target_if;
 
 // ID
 logic   [ADDR_WIDTH-1:0]    inst_addr_id;
-// ebreak 触发 debug 时，dpc 必须是 ebreak 指令自身地址（ID 级）；
-// 其余 halt（haltreq/trigger/step）dpc 取 inst_addr_if。
-assign ebreak_halt = id_ebreak & dbg_ebreakm;
-assign dbg_dpc     = ebreak_halt ? inst_addr_id : inst_addr_if;  // Debug：dpc = halted PC（ebreak 时为 ebreak 地址）
 logic   [DATA_WIDTH-1:0]    inst_id;
 logic                       predict_taken_id;
 logic   [ADDR_WIDTH-1:0]    predict_target_id;
@@ -210,6 +201,34 @@ logic                       access_en_ex;
 logic                       access_wr_ex;
 logic   [ADDR_WIDTH-1:0]    access_addr_ex;
 logic   [2:0]               access_func3_ex;
+// =========================================================================
+// Trigger 比较：IF 级 execute 地址匹配（硬件断点）+
+//             EX 级 load/store 有效地址匹配（数据观察点），按读写类型与访问宽度过滤
+// =========================================================================
+logic [`TRIGGER_NUM-1:0] trigger_hit_vec;   // IF 级（指令地址）
+logic [`TRIGGER_NUM-1:0] wp_hit_vec;        // EX 级（访存地址）
+logic                    trigger_hit_data;  // 观察点命中（dpc 需取 EX 级指令 PC）
+genvar ti;
+generate
+    for (ti = 0; ti < `TRIGGER_NUM; ti++) begin : gen_trigger
+        // 硬件断点：取指地址匹配
+        assign trigger_hit_vec[ti] = trigger_exec_en[ti] & (inst_addr_if == trigger_addr[ti*DATA_WIDTH +: DATA_WIDTH]);
+        // 数据观察点：load/store 有效地址匹配，读/写类型 + 访问宽度过滤（sizelo：0=any 1=8b 2=16b 3=32b）
+        assign wp_hit_vec[ti] = access_en_ex
+                              & ((trigger_load_en[ti] & ~access_wr_ex) | (trigger_store_en[ti] & access_wr_ex))
+                              & ((trigger_size[ti*2 +: 2] == 2'd0) || (trigger_size[ti*2 +: 2] == (access_func3_ex[1:0] + 2'd1)))
+                              & (access_addr_ex == trigger_addr[ti*DATA_WIDTH +: DATA_WIDTH]);
+    end
+endgenerate
+assign trigger_hit      = |trigger_hit_vec | |wp_hit_vec;
+assign trigger_hit_data = |wp_hit_vec;
+
+// 观察点命中时流水线停在 EX，dpc 取访存指令自身；其余 halt（haltreq/trigger/step）取 inst_addr_if。
+assign ebreak_halt = id_ebreak & dbg_ebreakm;
+assign dbg_dpc     = ebreak_halt ? inst_addr_id
+                   : trigger_hit_data ? inst_addr_ex   // 观察点命中：流水线停在 EX，dpc = 访存指令自身
+                   : inst_addr_if;                     // 普通 halt/断点：dpc = 取指地址
+
 logic   [DATA_WIDTH-1:0]    access_wdata_ex;
 logic   [ALIGN_BYTES-1:0]   access_wmask_ex;
 logic                       reg_rd_wen_ex;
@@ -493,6 +512,7 @@ logic [DATA_WIDTH-1:0]    bootrom_inst;
 logic [DATA_WIDTH-1:0]    itcm_inst;
 logic                     bootrom_sel;
 logic                     itcm_sel;
+wire  [ADDR_WIDTH-1:0]    bootrom_rd_addr;   // BootROM read addr: sba_addr when SBA hits 0x0000 region
 
 assign bootrom_sel = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
 assign itcm_sel    = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
@@ -505,19 +525,22 @@ BootROM #(
 )u_BootROM(
     .clk            (clk),
     .rst_n          (rst_n),
-    .inst_addr      (pc),               // 提前一拍送地址
+    .inst_addr      (bootrom_rd_addr),               // 提前一拍送地址
     .inst_o         (bootrom_inst)      // 同步读，下一拍输出
 );
 
 // ============================================================
 // SBA (System Bus Access) 地址译码与 MUX
-// CPU halt 期间调试器通过 SBA 读写 ITCM/DTCM/外设总线
-// 译码与 CPU 一致：ITCM=0x0001, DTCM=0x0002, tag>=0x8000 走 AXI/APB 总线
+// CPU halt 期间调试器通过 SBA 读写 ITCM/DTCM/外设总线；BootROM(0x0000) 只读
+// 译码与 CPU 一致：BOOT=0x0000, ITCM=0x0001, DTCM=0x0002, tag>=0x8000 走 AXI/APB 总线
 // ============================================================
-wire sba_itcm_sel = (sba_addr[ADDR_WIDTH-1:16] == `ITCM_BASE_TAG);
-wire sba_dtcm_sel = (sba_addr[ADDR_WIDTH-1:16] == `DTCM_BASE_TAG);
-wire sba_bus_sel  = (sba_addr[ADDR_WIDTH-1:16] >= `BUS_BASE_ADDR);
-wire sba_any_sel  = sba_itcm_sel | sba_dtcm_sel | sba_bus_sel;
+wire sba_bootrom_sel = (sba_addr[ADDR_WIDTH-1:16] == `BOOT_BASE_TAG);
+wire sba_itcm_sel    = (sba_addr[ADDR_WIDTH-1:16] == `ITCM_BASE_TAG);
+wire sba_dtcm_sel    = (sba_addr[ADDR_WIDTH-1:16] == `DTCM_BASE_TAG);
+wire sba_bus_sel     = (sba_addr[ADDR_WIDTH-1:16] >= `BUS_BASE_ADDR);
+wire sba_any_sel     = sba_bootrom_sel | sba_itcm_sel | sba_dtcm_sel | sba_bus_sel;
+// BootROM read-addr mux: switch to sba_addr only for SBA read of 0x0000 (PC frozen while halted)
+assign bootrom_rd_addr = (sba_req_valid && sba_bootrom_sel) ? sba_addr : pc;
 
 // ITCM 读地址 mux：SBA 覆盖 PC
 wire [ADDR_WIDTH-1:0] itcm_rd_addr = (sba_req_valid && sba_itcm_sel) ? sba_addr : pc;
@@ -572,17 +595,20 @@ assign sba_bus_active = sba_req_valid & sba_bus_sel;
 
 // SBA 响应流水线（BRAM 同步读 1 拍延迟；总线响应 = bus_tran_done）
 logic        sba_req_d;
+logic        sba_bootrom_d;
 logic        sba_itcm_d;
 logic        sba_rmw_d;      // 上一拍请求是否为 ITCM 子字写
 logic        sba_bus_d;      // 上一拍请求是否为外设总线访问
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         sba_req_d  <= 1'b0;
+        sba_bootrom_d <= 1'b0;
         sba_itcm_d <= 1'b0;
         sba_rmw_d  <= 1'b0;
         sba_bus_d  <= 1'b0;
     end else begin
         sba_req_d  <= sba_req_valid;
+        sba_bootrom_d <= sba_bootrom_sel;
         sba_itcm_d <= sba_itcm_sel;
         sba_rmw_d  <= sba_req_valid & sba_itcm_sel & sba_write & (sba_size != 3'd2);
         sba_bus_d  <= sba_bus_sel;
@@ -593,8 +619,10 @@ assign sba_rsp_valid = (sba_req_d & ~sba_rmw_d & ~sba_bus_d)  // TCM 直读/全�
                      | (sba_bus_d & bus_tran_done);           // 外设总线完成（sba_bus_d 为寄存器，避免组合环）
 // rsp 拍 sba_req_valid 已被 DM 同拍拉低，总线选择用寄存器延迟 sba_bus_d
 assign sba_rdata     = sba_bus_d ? bus_rdata :
+                       sba_bootrom_d ? bootrom_inst :
                        sba_itcm_d ? itcm_inst : dtcm_rdata;
 assign sba_error     = sba_bus_d ? (bus_resp != 2'b00)
+                                 : (sba_bootrom_d & sba_write) ? 1'b1   // BootROM read-only, write returns error
                                  : ~sba_any_sel;
 
 ITCM #(
@@ -1030,7 +1058,7 @@ assign reg_rd_wen   = reg_rd_wen_wb;
 assign reg_rd_waddr = reg_rd_waddr_wb;
 
 // CPU 总线请求（SBA 外设访问时覆盖，CPU halt 期间无总线活动）
-assign cpu_bus_transfer = bus_sel && ~(waiting_int || oitf_stall);
+assign cpu_bus_transfer = bus_sel && ~(waiting_int || oitf_stall) && ~trigger_hit;
 assign bus_transfer      = sba_bus_active ? 1'b1 : cpu_bus_transfer;
 assign bus_access_write  = sba_bus_active ? sba_write  : access_wr_ex;
 assign bus_access_wdata  = sba_bus_active ? sba_wdata_lane : access_wdata_ex;

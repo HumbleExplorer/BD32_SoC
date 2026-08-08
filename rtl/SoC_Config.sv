@@ -158,7 +158,7 @@
 // --- 总线阈值 ---
 `define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000  // 高16位 >= 此值走 AXI
 
-// AXI 超时（时钟周期）：80MHz 下 1024 周期 ≈ 12.8μs
+// AXI 超时（时钟周期）：75MHz 下 1024 周期 ≈ 13.65μs
 `define BUS_TIMEOUT  1024
 
 // --- 16 位设备标签（快速地址译码用）---

@@ -45,7 +45,7 @@ if os.name == "nt":
 # ============================================================
 
 # ModelSim 路径（None 表示自动在 PATH 查找）
-VSIM_PATH = r"D:\modeltech64_2020.4\win64"
+VSIM_PATH = os.environ.get("MODELSIM_PATH", r"D:\modeltech64_2020.4\win64")
 
 # 工作目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

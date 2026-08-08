@@ -26,7 +26,7 @@ import shutil
 # 配置
 # ============================================================
 
-VSIM_PATH = r"D:\modeltech64_2020.4\win64"
+VSIM_PATH = os.environ.get("MODELSIM_PATH", r"D:\modeltech64_2020.4\win64")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CORE_TEST_DIR = os.path.join(BASE_DIR, "core_test")

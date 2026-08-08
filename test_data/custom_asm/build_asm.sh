@@ -26,7 +26,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Windows .exe 工具（gcc/python）只认 Windows 风格路径；Git Bash 的 /d/... 它不认
 REPO_ROOT_WIN="$(cygpath -w "$REPO_ROOT" | sed 's/\\/\//g')"
 
-TOOLCHAIN="D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin"
+TOOLCHAIN="${RISCV_TOOLCHAIN:-D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin}"
 GCC="$TOOLCHAIN/riscv-none-elf-gcc"
 OBJCOPY="$TOOLCHAIN/riscv-none-elf-objcopy"
 OBJDUMP="$TOOLCHAIN/riscv-none-elf-objdump"
@@ -54,7 +54,7 @@ build_one() {
 
     # 4) 二进制 -> .dat（4 字节小端 -> %08x 每行一字，与 $readmemh 完全一致）
     local PYBIN
-    PYBIN="D:/Python312/python.exe"
+    PYBIN="${PYTHON:-D:/Python312/python.exe}"
     "$PYBIN" - "$name.bin" "$name.dat" <<'PY'
 import sys
 data = open(sys.argv[1], 'rb').read()

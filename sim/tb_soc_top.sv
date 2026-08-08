@@ -16,8 +16,8 @@ localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
 localparam  PATH  = `PATH;//vsim路径
 localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE};
-localparam  CPU_FREQUENCY = 80_000_000;
-localparam  CLK_PERIOD = 1_000_000_000 / CPU_FREQUENCY; // 1ns/80MHz
+localparam  CPU_FREQUENCY = 75_000_000;
+localparam  CLK_PERIOD = 1_000_000_000 / CPU_FREQUENCY; // 1ns/75MHz
 // 真实波特率周期 (ns)：模拟真实串口助手的发送节拍
 localparam  BAUD_PERIOD_NS = 1_000_000_000 / 115200;  // ~8680ns per bit @ 115200
 
@@ -534,7 +534,32 @@ SoC_top #(
     .uart_rx     	(uart_rx    ),
     .uart_tx     	(uart_tx    ),
     .gpio_io     	(gpio_io    ),
-    .timer_channel_io   (timer_channel_io )
+    .timer_channel_io   (timer_channel_io ),
+    // Debug 接口：SoC 级仿真不例化 Debug Module，输入全部接地，
+    // 避免 SBA 地址 mux 的 X 传播导致 ITCM 取指全变 NOP（CoreMark 仿真跑飞根因）
+    .dbg_halt_req       (1'b0           ),
+    .dbg_resume_req     (1'b0           ),
+    .dbg_step           (1'b0           ),
+    .dbg_ebreakm        (1'b0           ),
+    .dbg_reg_we         (1'b0           ),
+    .dbg_reg_addr       (5'd0           ),
+    .dbg_reg_wdata      (32'd0          ),
+    .dbg_pc_wdata       (32'd0          ),
+    .sba_req_valid      (1'b0           ),
+    .sba_addr           (32'd0          ),
+    .sba_wdata          (32'd0          ),
+    .sba_write          (1'b0           ),
+    .sba_size           (3'd0           ),
+    .sba_be             (4'd0           ),
+    .trigger_en         (4'd0           ),
+    .trigger_exec_en    (4'd0           ),
+    .trigger_load_en    (4'd0           ),
+    .trigger_store_en   (4'd0           ),
+    .trigger_size       (8'd0           ),
+    .trigger_addr       (128'd0         ),
+    .dbg_csr_we         (1'b0           ),
+    .dbg_csr_addr       (12'd0          ),
+    .dbg_csr_wdata      (32'd0          )
 );
 
 // ------------------------ Write-back Trace (debug) ------------------------

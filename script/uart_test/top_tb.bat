@@ -1,4 +1,4 @@
-D:\modeltech64_2020.4\win64\modelsim -do run.do
+if defined MODELSIM_PATH ("%MODELSIM_PATH%\modelsim" -do run.do) else (modelsim -do run.do)
 
 :clean_workspace
 

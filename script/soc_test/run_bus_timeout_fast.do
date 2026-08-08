@@ -1,6 +1,6 @@
 # ============================================================
 # 总线访问超时测试 — 纯功能验证（无波形日志，跑得快）
-# 用法: D:\modeltech64_2020.4\win64\vsim -c -do run_bus_timeout_fast.do
+# 用法: <ModelSim 安装目录>\win64\vsim -c -do run_bus_timeout_fast.do
 # ============================================================
 
 if [file exists "work"] {vdel -all}

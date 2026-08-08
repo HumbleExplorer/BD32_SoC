@@ -15,7 +15,7 @@ build_asm.py — 构建自定义汇编测试 (custom_asm)
 """
 import subprocess, sys, os, glob
 
-TOOLCHAIN = r"D:\RISCV_Tool\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
+TOOLCHAIN = os.environ.get("RISCV_TOOLCHAIN", r"D:\RISCV_Tool\xpack-riscv-none-elf-gcc-15.2.0-1\bin")
 GCC     = os.path.join(TOOLCHAIN, "riscv-none-elf-gcc.exe")
 OBJDUMP = os.path.join(TOOLCHAIN, "riscv-none-elf-objdump.exe")
 OBJCOPY = os.path.join(TOOLCHAIN, "riscv-none-elf-objcopy.exe")

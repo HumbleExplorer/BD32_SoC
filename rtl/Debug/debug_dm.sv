@@ -39,10 +39,15 @@ module debug_dm #(
     output logic                    dbg_ebreakm,      // ebreak 进入 debug mode
 
     // Trigger（硬件断点）
-    output logic [`TRIGGER_NUM-1:0] trigger_en,       // 断点有效（execute match）
-    output logic [`TRIGGER_NUM*32-1:0] trigger_addr,  // 匹配地址（打包）
-    input  logic                    trigger_hit,      // CPU 侧命中
-    input  logic                    ebreak_halt,      // CPU 执行 ebreak（ebreakm=1）
+    // Trigger（硬件断点 + 数据观察点）
+    output logic [`TRIGGER_NUM-1:0] trigger_en,        // 断点有效（execute/load/store 任一使能）
+    output logic [`TRIGGER_NUM-1:0] trigger_exec_en,   // execute 使能（硬件断点）
+    output logic [`TRIGGER_NUM-1:0] trigger_load_en,   // load 使能（读观察点）
+    output logic [`TRIGGER_NUM-1:0] trigger_store_en,  // store 使能（写观察点）
+    output logic [`TRIGGER_NUM*2-1:0] trigger_size,    // sizelo：0=any 1=8b 2=16b 3=32b
+    output logic [`TRIGGER_NUM*32-1:0] trigger_addr,   // 匹配地址（打包）
+    input  logic                    trigger_hit,       // CPU 侧命中
+    input  logic                    ebreak_halt,       // CPU 执行 ebreak（ebreakm=1）
 
     // Debug CSR 值（CPU 侧维护，DM 可读）
     input  logic [31:0]             dbg_dpc,          // 进入 debug 时的 PC
@@ -259,11 +264,15 @@ assign dbg_csr_addr   = csr_addr_w;
 assign dbg_csr_wdata  = csr_wdata_r;
 assign ndmreset       = ndmreset_r;
 
-// Trigger 输出：type==2 (mcontrol) && execute bit[2]，多路打包
+// Trigger 输出：type==2 (mcontrol)，按 execute/load/store 位分开使能，多路打包
 genvar tg;
 generate
     for (tg = 0; tg < `TRIGGER_NUM; tg++) begin : gen_trg_out
-        assign trigger_en[tg]   = (tdata1_r[tg][31:28] == 4'h2) && tdata1_r[tg][2];
+        assign trigger_en[tg]       = (tdata1_r[tg][31:28] == 4'h2) && (tdata1_r[tg][2] | tdata1_r[tg][1] | tdata1_r[tg][0]);
+        assign trigger_exec_en[tg]  = (tdata1_r[tg][31:28] == 4'h2) && tdata1_r[tg][2];
+        assign trigger_load_en[tg]  = (tdata1_r[tg][31:28] == 4'h2) && tdata1_r[tg][0];
+        assign trigger_store_en[tg] = (tdata1_r[tg][31:28] == 4'h2) && tdata1_r[tg][1];
+        assign trigger_size[tg*2 +: 2] = tdata1_r[tg][17:16];
         assign trigger_addr[tg*32 +: 32] = tdata2_r[tg];
     end
 endgenerate

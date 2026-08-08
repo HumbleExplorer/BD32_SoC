@@ -159,8 +159,12 @@ logic [3:0]                 sba_be;
 logic                       sba_rsp_valid;
 logic [31:0]                sba_rdata;
 logic                       sba_error;
-// Trigger（硬件断点，多路打包）
+// Trigger（硬件断点 + 数据观察点，多路打包）
 logic [`TRIGGER_NUM-1:0]    trigger_en;
+logic [`TRIGGER_NUM-1:0]    trigger_exec_en;
+logic [`TRIGGER_NUM-1:0]    trigger_load_en;
+logic [`TRIGGER_NUM-1:0]    trigger_store_en;
+logic [`TRIGGER_NUM*2-1:0]  trigger_size;
 logic [`TRIGGER_NUM*32-1:0] trigger_addr;
 logic                       trigger_hit;
 logic                       ebreak_halt;      // CPU ebreak 进 debug 请求
@@ -221,6 +225,10 @@ SoC_top #(
     .sba_error        (sba_error      ),
     // Trigger
     .trigger_en       (trigger_en     ),
+    .trigger_exec_en    (trigger_exec_en    ),
+    .trigger_load_en    (trigger_load_en    ),
+    .trigger_store_en   (trigger_store_en   ),
+    .trigger_size       (trigger_size       ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
     .ebreak_halt      (ebreak_halt    ),
@@ -251,6 +259,10 @@ SoC_top #(
     .sba_rdata        (               ),
     .sba_error        (               ),
     .trigger_en       (1'b0           ),
+    .trigger_exec_en    (4'b0           ),
+    .trigger_load_en    (4'b0           ),
+    .trigger_store_en   (4'b0           ),
+    .trigger_size       (8'b0           ),
     .trigger_addr     (32'b0          ),
     .trigger_hit      (               ),
     .ebreak_halt      (               ),
@@ -297,8 +309,12 @@ debug_top u_debug_top (
     .sba_rsp_valid    (sba_rsp_valid  ),
     .sba_rdata        (sba_rdata      ),
     .sba_error        (sba_error      ),
-    // Trigger（硬件断点）
+    // Trigger（硬件断点 + 数据观察点）
     .trigger_en       (trigger_en     ),
+    .trigger_exec_en    (trigger_exec_en    ),
+    .trigger_load_en    (trigger_load_en    ),
+    .trigger_store_en   (trigger_store_en   ),
+    .trigger_size       (trigger_size       ),
     .trigger_addr     (trigger_addr   ),
     .trigger_hit      (trigger_hit    ),
     .ebreak_halt      (ebreak_halt    ),

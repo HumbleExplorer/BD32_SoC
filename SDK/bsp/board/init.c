@@ -19,7 +19,6 @@ void __attribute__((weak)) board_init(void) {
 
 void _init(void) {
     soc_init();
-    g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
 
     /* UART 初始化（唯一调用点，避免 __udivdi3 破坏 gp） */
     uart_init(115200);
@@ -42,6 +41,4 @@ void _init(void) {
                      : : "i"((1 << 0) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) |
                              (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9)));
 
-    /* 保险：重新赋值（gp 可能在后续被破坏） */
-    g_cpu_freq_hz = CPU_FREQ_HZ_DEFAULT;
 }

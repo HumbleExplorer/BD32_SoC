@@ -2,7 +2,7 @@ import os
 import sys
 import urllib.request
 
-base = r"D:\Desktop\OpenClaw_Workspace\RISC-V Spec"
+base = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("RISCV_SPEC_DIR", "riscv-spec")
 os.makedirs(base, exist_ok=True)
 
 url = "https://docs.riscv.org/reference/home/index.html"

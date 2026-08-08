@@ -257,6 +257,10 @@ RISC_V_Core #(
     .sba_error          (            ),
     // Trigger — 不接硬件断点
     .trigger_en         (4'b0        ),
+    .trigger_exec_en    (4'b0        ),
+    .trigger_load_en    (4'b0        ),
+    .trigger_store_en   (4'b0        ),
+    .trigger_size       (8'b0        ),
     .trigger_addr       (128'b0      ),
     .trigger_hit        (            ),
     .ebreak_halt        (            )

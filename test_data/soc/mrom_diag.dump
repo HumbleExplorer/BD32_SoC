@@ -1,48 +1,49 @@
 
-mrom_diag.elf:	file format elf32-littleriscv
+D:\Desktop\OpenClaw_Workspace\Working\test_data\soc\mrom_diag.elf:     file format elf32-littleriscv
+
 
 Disassembly of section .text:
 
 00000000 <_start>:
-       0: e00000b7     	lui	ra, 0xe0000
-       4: 01800313     	li	t1, 0x18
-       8: 0060a223     	sw	t1, 0x4(ra)
-       c: 0000a423     	sw	zero, 0x8(ra)
-      10: 00c0a303     	lw	t1, 0xc(ra)
-      14: 00137313     	andi	t1, t1, 0x1
-      18: 00031863     	bnez	t1, 0x28 <download_mode>
+   0:	e00000b7          	lui	ra,0xe0000
+   4:	01800313          	li	t1,24
+   8:	0060a223          	sw	t1,4(ra) # e0000004 <GPIO_BASE+0x4>
+   c:	0000a423          	sw	zero,8(ra)
+  10:	00c0a303          	lw	t1,12(ra)
+  14:	00137313          	andi	t1,t1,1
+  18:	00031863          	bnez	t1,28 <download_mode>
 
 0000001c <normal_mode>:
-      1c: 00800313     	li	t1, 0x8
-      20: 0060a423     	sw	t1, 0x8(ra)
-      24: 05c0006f     	j	0x80 <jump_to_itcm>
+  1c:	00800313          	li	t1,8
+  20:	0060a423          	sw	t1,8(ra)
+  24:	05c0006f          	j	80 <jump_to_itcm>
 
 00000028 <download_mode>:
-      28: 01000313     	li	t1, 0x10
-      2c: 0060a423     	sw	t1, 0x8(ra)
-      30: e00100b7     	lui	ra, 0xe0010
-      34: 08000313     	li	t1, 0x80
-      38: 0060a623     	sw	t1, 0xc(ra)
-      3c: 02b00393     	li	t2, 0x2b
-      40: 0070a023     	sw	t2, 0x0(ra)
-      44: 0000a223     	sw	zero, 0x4(ra)
-      48: 00300313     	li	t1, 0x3
-      4c: 0060a623     	sw	t1, 0xc(ra)
-      50: 0000a423     	sw	zero, 0x8(ra)
-      54: 000183b7     	lui	t2, 0x18
-      58: 28d38393     	addi	t2, t2, 0x28d
-      5c: 0270a223     	sw	t2, 0x24(ra)
-      60: 00100313     	li	t1, 0x1
-      64: 0060ae23     	sw	t1, 0x1c(ra)
+  28:	01000313          	li	t1,16
+  2c:	0060a423          	sw	t1,8(ra)
+  30:	e00100b7          	lui	ra,0xe0010
+  34:	08000313          	li	t1,128
+  38:	0060a623          	sw	t1,12(ra) # e001000c <UART_BASE+0xc>
+  3c:	02800393          	li	t2,40
+  40:	0070a023          	sw	t2,0(ra)
+  44:	0000a223          	sw	zero,4(ra)
+  48:	00300313          	li	t1,3
+  4c:	0060a623          	sw	t1,12(ra)
+  50:	0000a423          	sw	zero,8(ra)
+  54:	064a93b7          	lui	t2,0x64a9
+  58:	3a638393          	addi	t2,t2,934 # 64a93a6 <__global_pointer$+0x64a7b1e>
+  5c:	0270a223          	sw	t2,36(ra)
+  60:	00100313          	li	t1,1
+  64:	0060ae23          	sw	t1,28(ra)
 
 00000068 <download_wait>:
-      68: 0200ae83     	lw	t4, 0x20(ra)
-      6c: 001eff13     	andi	t5, t4, 0x1
-      70: fe0f0ce3     	beqz	t5, 0x68 <download_wait>
-      74: e00002b7     	lui	t0, 0xe0000
-      78: 01800313     	li	t1, 0x18
-      7c: 0062a423     	sw	t1, 0x8(t0)
+  68:	0200ae83          	lw	t4,32(ra)
+  6c:	001eff13          	andi	t5,t4,1
+  70:	fe0f0ce3          	beqz	t5,68 <download_wait>
+  74:	e00002b7          	lui	t0,0xe0000
+  78:	01800313          	li	t1,24
+  7c:	0062a423          	sw	t1,8(t0) # e0000008 <GPIO_BASE+0x8>
 
 00000080 <jump_to_itcm>:
-      80: 00010337     	lui	t1, 0x10
-      84: 00030067     	jr	t1
+  80:	00010337          	lui	t1,0x10
+  84:	00030067          	jr	t1 # 10000 <__global_pointer$+0xe778>
