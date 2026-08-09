@@ -437,6 +437,31 @@ FT2232H Channel A (JTAG: TCK/TDI/TDO/TMS)
 
 未实现：Debug ROM / Park Loop、ProgBuf（progbufsize=0）、abstract 内存访问（cmdtype=2）、多 hart。
 
+### 未实现能力说明（调试扩展点）
+
+以下 Debug Spec 能力未实现。当前调试操作全部由 DM 硬件直连完成（GPR/CSR 直读、SBA 访存），无需 CPU 执行任何调试代码；列于此便于后续完善时对照。
+
+| 能力 | 概念 | 当前影响 / 补充时机 |
+|------|------|------|
+| ProgBuf | DM 内小块 RAM（典型 1~16 字），调试器写入任意 RISC-V 指令，CPU 在 debug mode 下取指执行 | 无“任意代码注入”通道；flash 在线编程、复杂寄存器序列等需 CPU 执行的操作受限 |
+| 抽象内存访问（cmdtype=2） | 调试器发抽象命令，由 CPU 自身执行一次 load/store，走 CPU 视角（PMP、地址翻译、CPU 私有存储） | SBA 仅总线视角；启用 PMP 或 CPU 私有存储后需补充 |
+| 多 hart | 多核调试（dmcontrol.hasel / hart 选择） | 当前单 hart，不涉及 |
+
+**Trigger 高级特性**（当前仅 4 路 mcontrol type=2 地址匹配）：
+
+- priv 过滤（mcontrol6）：指定只在某特权级触发，避免 ISR 中同地址误命中；当前纯 M-mode 不受影响，增加 U/S-mode 后需要
+- match 模式扩展：NAPOT 地址范围 / 大于小于 / 掩码匹配，一路 trigger 可覆盖一段地址区间
+- chain：两路 trigger 条件“与”（如地址 + 数据值同时匹配）
+- timing / hit 计数：第 N 次命中才触发（循环计数场景）
+- icount（type=3）：执行 N 条指令后触发
+- itrigger（type=4）/ etrigger（type=5）：中断 / 外部信号触发
+
+**dcsr 控制位**（当前读回固定为 0）：
+
+- `stepie`（单步时中断使能）：为 0 时单步不响应中断；为 1 时可单步进入中断处理流程
+- `stopcount`：debug mode 下 mcycle / instret / 性能计数器停止，避免调试暂停计入性能测量
+- `stoptime`：debug mode 下时间类计数器（mtime 等）停止
+
 ### Trigger Module（硬件断点）
 
 DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通过 abstract command 的 CSR 地址空间（0x7A0~0x7A3）访问：
