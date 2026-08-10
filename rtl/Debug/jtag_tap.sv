@@ -1,5 +1,15 @@
+// ============================================================================
+// jtag_tap.sv — JTAG TAP + DTM（Debug Transport Module）
+//
+// BD32 — RV32IM Pipelined RISC-V SoC
+// Copyright (c) 2026 BD32 Project
+// SPDX-License-Identifier: Apache-2.0
+//
+// 改编自 SparrowRV jtag_driver.v（MIT License）：
+//   Copyright (c) 2022 xiaowuzxc, https://github.com/xiaowuzxc/SparrowRV
+//   修改说明：dmireset/dmihardreset 分离、dmistat busy=3、IDCODE/IR 定制
+// ============================================================================
 // BD32 JTAG TAP + DTM (Debug Transport Module)
-// 基于 SparrowRV jtag_driver.v 改编，TCK 时钟域
 // 实现 IEEE 1149.1 TAP 状态机 + RISC-V Debug Spec 1.0 DMI 接口
 `include "./../SoC_Config.sv"
 timeunit 1ns;

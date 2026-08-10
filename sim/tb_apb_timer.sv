@@ -1,20 +1,12 @@
+// ============================================================================
+// tb_apb_timer.sv — APB Timer Testbench
+//
+// BD32 — RV32IM Pipelined RISC-V SoC
+// Copyright (c) 2026 BD32 Project
+// SPDX-License-Identifier: Apache-2.0
+// ============================================================================
 timeunit 1ns;
 timeprecision 1ps;
-/*
- * tb_apb_timer.sv - APB Timer Testbench
- *
- * 测试内容：
- *   - 寄存器读写测试.
-0. *   - 定时器基本计数功能测试
- *   - 预分频功能测试
- *   - 自动重载功能测试
- *   - 递增/递减计数模式测试
- *   - 溢出中断测试
- *   - 输入捕获/输出比较功能测试 (可选)
- *
- * 作者：基于参考代码改编
- * 日期：2026/03/31
- */
 
 module tb_apb_timer;
 
@@ -99,18 +91,17 @@ apb_timer #(
     .CHANNEL_NUM    (CHANNEL_NUM)
 ) dut (.*);
 
-initial
-begin
+initial begin : reset_watchdog_monitor
     errors         = 0;
     reset_watchdog = 0;
     got_reset      = 0;
 
-    forever
-    begin
+    // 复位看门狗：若 1000 拍内未出现 PRESETn 有效脉冲则终止仿真
+    forever begin
         reset_watchdog++;
         @(posedge PCLK);
         if (!got_reset && reset_watchdog == 1000)
-            $fatal(-1,"PRESETn not asserted\nTestbench requires an APB reset");
+            $fatal(1, "APB reset never observed; testbench requires an active-low PRESETn");
     end
 end
 
@@ -129,36 +120,31 @@ initial begin : gen_PRESETn
 end : gen_PRESETn
 
 
-always @(negedge PRESETn) begin
-    //wait for reset to negate
+always @(negedge PRESETn) begin : main_test_flow
+    // 等待复位释放，随后按顺序执行全部测试用例
     @(posedge PRESETn);
     got_reset = 1;
 
-    repeat(5) @(posedge PCLK);
+    repeat (5) @(posedge PCLK);
     #1;
 
-    welcome_text();
+    print_banner();
 
-    //check reset values
-    test_reset_register_values();
+    test_reset_register_values();   // 复位后寄存器初值
+    test_timer_basic_count();       // 基本计数
+    test_timer_prescaler();         // 预分频
+    test_timer_autoload();          // 自动重载
+    test_timer_direction();         // 递增/递减
+    test_timer_overflow_interrupt();// 溢出中断
+    test_timer_clear();             // 计数器清零
+    test_channel_output_compare();  // 输出比较
+    test_channel_input_capture();   // 输入捕获
 
-    // basic timer function tests
-    test_timer_basic_count();
-    test_timer_prescaler();
-    test_timer_autoload();
-    test_timer_direction();
-    test_timer_overflow_interrupt();
-    test_timer_clear();
-
-    // channel tests
-    test_channel_output_compare();
-    test_channel_input_capture();
-
-    //Finish simulation
+    // 收尾：留出余量后打印结果
     repeat (100) @(posedge PCLK);
     #1;
-    finish_text();
-    $finish();
+    print_summary();
+    $finish;
 end
 
 
@@ -167,89 +153,24 @@ end
 // Tasks
 //
            
-task welcome_text();
-    $display("      _____                                                                   _____      ");
-    $display("     ( ___ )-----------------------------------------------------------------( ___ )     ");
-    $display("      |   |                                                                   |   |      ");
-    $display("      |   |                                                                   |   |      ");
-    $display("      |   |      ____  __    __  ________   ____  ____  _________    __  ___  |   |      ");
-    $display("      |   |     / __ )/ /   / / / / ____/  / __ \/ __ \/ ____/   |  /  |/  /  |   |      ");
-    $display("      |   |    / __  / /   / / / / __/    / / / / /_/ / __/ / /| | / /|_/ /   |   |      ");
-    $display("      |   |   / /_/ / /___/ /_/ / /___   / /_/ / _, _/ /___/ ___ |/ /  / /    |   |      ");
-    $display("      |   |  /_____/_____/\____/_____/  /_____/_/ |_/_____/_/  |_/_/  /_/     |   |      ");
-    $display("      |   |                                                                   |   |      ");
-    $display("      |___|                                                                   |___|      ");
-    $display("     (_____)-----------------------------------------------------------------(_____)     ");
-    $display("                                                                                         ");
-    $display("                                    ..                                                   ");
-    $display("                                   .++.                                                  ");
-    $display("                                   .++.                                                  ");
-    $display("                                   .++.                                                  ");
-    $display("                                   .++.                                                  ");
-    $display("                                   .--.    ..                                            ");
-    $display("                                    -.     .+-                                           ");
-    $display("                                    -.     .+#-.       .++.                              ");
-    $display("                                    -.     .+##+..      ..                               ");
-    $display("                                    -.     .+###+.      ..               .++.            ");
-    $display("                            -+++.   -.     .+####+-.    -.               -##.            ");
-    $display("                            -+++.   -.     .+####++-    -.                .-             ");
-    $display("                                    -.    ..#####+++.   -.                .-             ");
-    $display("                                   .-+. ..#-+####++++.  -.                .-             ");
-    $display("                                    .. .-##-+####++++.  -.      .-.       .-             ");
-    $display("                              ....   .-####-+####++++...-.      .+....    .-             ");
-    $display("                ..---..            .+######-#####++++-#+..      .+..+-    .-             ");
-    $display("        .----..-++++###+--++-.  .-#########-####+++++-####-.    .-.       .-  .-.        ");
-    $display("      ......+#########-.........###########-####+++++-#####+..  .-.       .-  .+-..      ");
-    $display("                              .+###########-####+++++-########+..-.       .-  .++-.      ");
-    $display("                  ..        .--+##########+-####+++++-#########..-.       .- .+++--.     ");
-    $display("    .--.          ..       .+#-+#######--###++##++++--#########.-#-       .- -+++--.     ");
-    $display("   .-#-           .-      .###-+###+-+###+------------#########.-##.  .-. .++++++--.     ");
-    $display("  .-+#.      .-++..-   ...-###-++-++##+------------.--#########.+##.   .-+####+++--.     ");
-    $display(" .--+#-      ..+-..-   -#--###-+##+---------------------+##+###.+##.   .++####+++--.     ");
-    $display(" .--+#+.     ..   .-  .##--###-+#+--+++----------------++--++##.+##.  .-++####+++--.     ");
-    $display(" .--###.     ...  .-  .##--###-+##+++------------------+--+++##.+##..-++++####++--..     ");
-    $display(" .-+###+.    ...  .-.++##--###-+#++++++--------------.-+#++-+##-###-++++#####+++--.      ");
-    $display(" .-++##++-.  .-. .-++++##--####+-+##++++++--------.-+++-###++##-###++########++--.       ");
-    $display(" .-++#+++++-.-.  .+++++##-.+#######+++++--+-----+++-+######++#+-###+########+++-.        ");
-    $display(" .--++++++++-+. ..+++++##-+--##########++++--+++-+#########+++--###+#######++++..        ");
-    $display("  .--+++++++-+-.-##++++##-+++--############+--+############--++-###########++-.          ");
-    $display("   .--++++++---.-###+++##-++++--.-##########.+##########+----++-##########+-.            ");
-    $display("   ..--+++++----#####+++#-++++----..+#######.+########--+++--++-######++..               ");
-    $display("    ..---++#+-----++#++++-++++---------+####.+#####---++###+-++-####-..-.  .             ");
-    $display("      .---++##+-------+++-++++----------.-++.+#+-.---++####+-++-###. .++-.               ");
-    $display("       ..--++###+-.-----+-++++-------------...-------+#####+-++-###. ...                 ");
-    $display("         ..-+++####+------+###--------------..------++#####++##-#-.  ..       -+..       ");
-    $display("             .-+###+++----+###--------------..------++#####++##-     ..  ...             ");
-    $display("                 ..-++++--..----------------..-----+++#####++#+.     .-....              ");
-    $display("                   .++++++-----.------------..----++++#####++#+.....----..               ");
-    $display("          ..        .++++##++----.----------..---+++++#####+++...------.                 ");
-    $display("        ...+....      ..-++++++--...--------..--++++++#----...----++++..                 ");
-    $display("       ..-+#+...          .--+++----.-------..-++++++-.--------+++++..                   ");
-    $display("           ..              .---++-----........-++++-.-----++++++++.                      ");
-    $display("                            .---++++-----..-----------+####+++-..                        ");
-    $display("  .+........................  .-+++##++++++---...--++####+-.    ........................ ");
-    $display("  .-........................    .--++###++++++++++++#+++..               ............... ");
-    $display("                                    .-+++#########+--..                                  ");
-    $display("                                         ........                                        ");
-    $display("                                                                                         ");
-    $display("APB Timer Testbench Initialized");
-endtask : welcome_text
+task print_banner();
+    $display("==================================================");
+    $display(" BD32 APB Timer Testbench");
+    $display("==================================================");
+endtask : print_banner
 
 
-task finish_text();
-    if (errors>0)
-    begin
-        $display ("------------------------------------------------------------");
-        $display (" APB Timer Testbench failed with (%0d) errors @%0t", errors, $time);
-        $display ("------------------------------------------------------------");
+task print_summary();
+    if (errors > 0) begin
+        $display("------------------------------------------------------------");
+        $display(" APB Timer Testbench FAILED: %0d error(s) @%0t", errors, $time);
+        $display("------------------------------------------------------------");
+    end else begin
+        $display("------------------------------------------------------------");
+        $display(" APB Timer Testbench PASSED @%0t", $time);
+        $display("------------------------------------------------------------");
     end
-    else
-    begin
-        $display ("------------------------------------------------------------");
-        $display (" APB Timer Testbench finished successfully @%0t", $time);
-        $display ("------------------------------------------------------------");
-    end
-endtask : finish_text
+endtask : print_summary
 
 
 task check (

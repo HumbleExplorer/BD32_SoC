@@ -300,16 +300,17 @@ always_ff @(posedge PCLK, negedge PRESETn)
     else          tr_falling_edge_reg <= #1 ~input_regs[INPUT_STAGES-1] & in_reg;
 
 
-//trigger status
+//trigger status：type=0 电平触发（lvl0=低电平、lvl1=高电平）
+//              type=1 边沿触发（lvl0=下降沿、lvl1=上升沿）
 always_comb begin
-    for (int n=0; n<DATA_WIDTH; n++) begin
-        case (tr_type_reg[n])
-            0: tr_status[n] = (tr_lvl0_reg[n] & ~in_reg[n]) |
-                              (tr_lvl1_reg[n] &  in_reg[n]);
-            1: tr_status[n] = (tr_lvl0_reg[n] & tr_falling_edge_reg[n]) |
-                              (tr_lvl1_reg[n] & tr_rising_edge_reg [n]);
-            default:tr_status[n] = 'h0;
-        endcase
+    tr_status = '0;
+    for (int n = 0; n < DATA_WIDTH; n++) begin
+        if (tr_type_reg[n])
+            tr_status[n] = (tr_lvl0_reg[n] & tr_falling_edge_reg[n]) |
+                           (tr_lvl1_reg[n] & tr_rising_edge_reg[n]);
+        else
+            tr_status[n] = (tr_lvl0_reg[n] & ~in_reg[n]) |
+                           (tr_lvl1_reg[n] &  in_reg[n]);
     end
 end
 

@@ -1,3 +1,14 @@
+// ============================================================================
+// plic_gateway.sv — PLIC 单中断源 Gateway
+//
+// BD32 — RV32IM Pipelined RISC-V SoC
+// Copyright (c) 2026 BD32 Project
+// SPDX-License-Identifier: Apache-2.0
+//
+// 改编自 RISCV_PLIC（MIT License）：
+//   Copyright (c) 2025 Brendan Lynskey
+//   修改说明：接口参数化、时序适配 BD32 APB 总线
+// ============================================================================
 timeunit 1ns;
 timeprecision 1ps;
 // =============================================================================

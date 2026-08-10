@@ -41,3 +41,49 @@ JTAG 四线（TCK/TDI/TDO/TMS）+ GND，adapter speed 500kHz（杜邦线）。
 - 每次 RTL 改动：custom_asm + riscv-tests + tb_debug 全量回归。
 - 每次固件改动：编译全部 demo + CoreMark（`SDK/tools/build.py`）+ 上板串口验证。
 - 上板改动后：DMI / 新功能 / SBA / watchpoint / GDB 套件逐一回归。
+
+## SDK Demos（可仿真 / 上板验证）
+
+全部 demo 用 `SDK/tools/build.py` 编译（产物同步到 `test_data/soc/c/*.uartbin`
+与 `.mem`），既可用于 ModelSim SoC 仿真（改 `SoC_Config.sv` 的
+`ITCM_FILE`/`DTCM_FILE` 指向对应 `.mem`），也可用 `uart_send.py --reset` 上板烧录。
+
+### nolibc（裸机，无 C 库）
+
+| demo | 验证内容 | 观察方式 |
+|---|---|---|
+| `empty` | 最小启动 + UART 输出 | 串口打印 |
+| `blink` | GPIO 输出、CLINT mtime 延时 | LED 闪烁 |
+| `breathing` | Timer PWM 呼吸灯 | LED 呼吸 |
+| `gpio_input` | GPIO 输入、按键消抖轮询 | 按键控制 LED |
+| `uart_echo` | UART TX/RX 全双工 | 串口回显 |
+| `apb_timer_irq` | APB Timer 中断 | LED 按定时翻转 |
+| `plic_irq` | PLIC 按键中断 | 按键进 ISR 翻 LED |
+| `cpuinfo` | CSR 读写通路（mstatus/mtvec/mie…） | 串口 dump |
+| `comprehensive_test` | 综合中断（定时器 + 按键） | 阶段 A/B 现象 |
+| `bus_timeout` | 总线访问超时保护 | 异常处理打印 |
+
+### newlib（C 标准库）
+
+| demo | 验证内容 |
+|---|---|
+| `hello` | printf/标准库启动 |
+| `coremark` | 性能基准（CRC 校验，上板 `auto_coremark.py`） |
+| `libc_test` / `stdio_test` / `stdlib_test` / `string_test` | libc 功能 |
+| `math_test` | 数学库（软浮点） |
+| `errno_test` | errno 机制 |
+
+构建示例：
+
+```bash
+cd SDK
+python tools/build.py demos/nolibc/breathing          # 裸机
+python tools/build.py demos/newlib/hello --newlib      # C 库
+python tools/build.py demos/newlib/coremark --newlib --opt O3  # CoreMark -O3
+```
+
+上板烧录示例：
+
+```bash
+python SDK/tools/uart_send.py test_data/soc/c/breathing.uartbin --reset
+```

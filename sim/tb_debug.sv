@@ -350,10 +350,6 @@ task check(input string name, input logic [31:0] actual, input logic [31:0] expe
 endtask
 
 
-
-
-
-
 initial begin
     // 初始化
     rst_n = 0;

@@ -1,5 +1,14 @@
+// ============================================================================
+// debug_cdc.sv — JTAG TCK 域 ↔ 系统 clk 域 DMI 跨时钟域传输
+//
+// BD32 — RV32IM Pipelined RISC-V SoC
+// Copyright (c) 2026 BD32 Project
+// SPDX-License-Identifier: Apache-2.0
+//
+// 改编自 tinyriscv full_handshake_tx/rx（Apache-2.0）：
+//   合并为单文件，参数化数据位宽
+// ============================================================================
 // BD32 Debug CDC — 4相全握手跨时钟域传输
-// 基于 tinyriscv full_handshake_tx/rx 合并为单文件
 // 用于 TCK 域 ↔ 系统 clk 域之间的 DMI 数据传输
 `include "./../SoC_Config.sv"
 timeunit 1ns;

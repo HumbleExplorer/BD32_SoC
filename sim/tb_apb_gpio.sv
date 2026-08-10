@@ -1,6 +1,10 @@
-timeunit 1ns;
-timeprecision 1ps;
-
+// ============================================================================
+// tb_apb_gpio.sv — APB GPIO Testbench
+//
+// BD32 — RV32IM Pipelined RISC-V SoC
+// Copyright (c) 2026 BD32 Project
+// SPDX-License-Identifier: Apache-2.0
+// ============================================================================
 timeunit 1ns;
 timeprecision 1ps;
 module tb_apb_gpio;
@@ -65,18 +69,17 @@ apb_gpio #(
     .ALIGN_BYTES    (PSTRB_SIZE )
 ) dut (.*);
 
-initial
-begin
+initial begin : reset_watchdog_monitor
     errors         = 0;
     reset_watchdog = 0;
     got_reset      = 0;
 
-    forever
-    begin
+    // 复位看门狗：若 1000 拍内未出现 PRESETn 有效脉冲则终止仿真
+    forever begin
         reset_watchdog++;
         @(posedge PCLK);
         if (!got_reset && reset_watchdog == 1000)
-            $fatal(-1,"PRESETn not asserted\nTestbench requires an APB reset");
+            $fatal(1, "APB reset never observed; testbench requires an active-low PRESETn");
     end
 end
 
@@ -95,57 +98,34 @@ initial begin : gen_PRESETn
 end : gen_PRESETn;
 
 
-always @(negedge PRESETn) begin
-    //wait for reset to negate
+always @(negedge PRESETn) begin : main_test_flow
+    // 等待复位释放，随后按顺序执行全部测试用例
     @(posedge PRESETn);
     got_reset = 1;
 
-    repeat(5) @(posedge PCLK);
+    repeat (5) @(posedge PCLK);
     #1;
 
-    welcome_text();
+    print_banner();
 
-    //check reset values
-    test_reset_register_values();
+    test_reset_register_values();   // 复位后寄存器初值
+    test_io_basic();                // 基本 IO 读写
+    test_bop();                     // BOP_SET / BOP_CLR
+    test_io_random();               // 随机 IO
+    test_clear_status();            // TR_STATUS 清零
+    test_trigger_level_low();       // 电平触发（低有效）
+    test_trigger_level_high();      // 电平触发（高有效）
+    test_trigger_level_random();    // 电平触发（随机）
+    test_trigger_edge_fall();       // 下降沿触发
+    test_trigger_edge_rise();       // 上升沿触发
+    test_trigger_edge_random();     // 随机边沿触发
+    test_irq();                     // 中断输出
 
-    //basic IO test
-    test_io_basic();
-
-    //BOP_SET/BOP_CLR test
-    test_bop();
-
-    //random IO test
-    test_io_random();
-
-    //clear TR_STATUS register test
-    test_clear_status();
-
-    //Trigger Level LOW test
-    test_trigger_level_low();
-
-    //Trigger level HI test
-    test_trigger_level_high();
-
-    //Trigger level random test
-    test_trigger_level_random();
-
-    //Trigger Falling-Edge test
-    test_trigger_edge_fall();
-
-    //Trigger Rising-Edge test
-    test_trigger_edge_rise();
-
-    //Trigger Random-Edge test
-    test_trigger_edge_random();
-
-    //IRQ test
-    test_irq();
-
-    //Finish simulation
+    // 收尾：留出余量后打印结果
     repeat (100) @(posedge PCLK);
     #1;
-    finish_text();
-    $finish();
+    print_summary();
+    $finish;
 end
 
 
@@ -153,37 +133,24 @@ end
 //
 // Tasks
 //
-task welcome_text();
-    $display(" _____                                                                   _____ ");
-    $display("( ___ )-----------------------------------------------------------------( ___ )");
-    $display(" |   |                                                                   |   | ");
-    $display(" |   |                                                                   |   | ");
-    $display(" |   |      ____  __    __  ________   ____  ____  _________    __  ___  |   | ");
-    $display(" |   |     / __ )/ /   / / / / ____/  / __ \/ __ \/ ____/   |  /  |/  /  |   | ");
-    $display(" |   |    / __  / /   / / / / __/    / / / / /_/ / __/ / /| | / /|_/ /   |   | ");
-    $display(" |   |   / /_/ / /___/ /_/ / /___   / /_/ / _, _/ /___/ ___ |/ /  / /    |   | ");
-    $display(" |   |  /_____/_____/\____/_____/  /_____/_/ |_/_____/_/  |_/_/  /_/     |   | ");
-    $display(" |   |                                                                   |   | ");
-    $display(" |___|                                                                   |___| ");
-    $display("(_____)-----------------------------------------------------------------(_____)");
-    $display("APB GPIO Testbench Initialized");
-endtask : welcome_text
+task print_banner();
+    $display("==================================================");
+    $display(" BD32 APB GPIO Testbench");
+    $display("==================================================");
+endtask : print_banner
 
 
-task finish_text();
-    if (errors>0)
-    begin
-        $display ("------------------------------------------------------------");
-        $display (" APB GPIO Testbench failed with (%0d) errors @%0t", errors, $time);
-        $display ("------------------------------------------------------------");
+task print_summary();
+    if (errors > 0) begin
+        $display("------------------------------------------------------------");
+        $display(" APB GPIO Testbench FAILED: %0d error(s) @%0t", errors, $time);
+        $display("------------------------------------------------------------");
+    end else begin
+        $display("------------------------------------------------------------");
+        $display(" APB GPIO Testbench PASSED @%0t", $time);
+        $display("------------------------------------------------------------");
     end
-    else
-    begin
-        $display ("------------------------------------------------------------");
-        $display (" APB GPIO Testbench finished successfully @%0t", $time);
-        $display ("------------------------------------------------------------");
-    end
-endtask : finish_text
+endtask : print_summary
 
 
 task check (
@@ -203,7 +170,7 @@ task error_msg(
     input   [PDATA_WIDTH-1:0]   expected
 );
     errors++;
-    $display("ERROR  : Incorrect %s value. Expected: %b, received: %b @%0t", name, expected, actual, $time);
+    $display("ERROR  : %s mismatch. Expected: %b, got: %b @%0t", name, expected, actual, $time);
 endtask : error_msg
 
 

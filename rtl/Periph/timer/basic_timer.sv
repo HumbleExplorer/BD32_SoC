@@ -1,3 +1,16 @@
+// ============================================================================
+// basic_timer.sv — 基本定时器（预分频/自动装载/16/32 位计数）
+//
+// BD32 — RV32IM Pipelined RISC-V SoC
+// Copyright (c) 2026 BD32 Project
+// SPDX-License-Identifier: Apache-2.0
+//
+// 参考来源（大幅改编）：
+//   1) Opensoc 107_apb_timer/basic_timer.v（MIT License）
+//      Copyright (c) 2024 Panda, 2257691535@qq.com
+//   2) E203_RTL timer 模块（Apache-2.0, Nuclei System Technology, Inc.）
+//   修改说明：宽度参数化、递增/递减计数、预分频重写
+// ============================================================================
 /*
  * basic_timer.sv - 基本定时器模块
  *
@@ -14,7 +27,6 @@
  *   - timer_clr: 定时器复位
  *   - timer_dir: 计数方向 (0=递增, 1=递减)
  *
- * 作者：基于参考代码改编
  * 日期：2026/03/31
  */
 `include "../../SoC_Config.sv"

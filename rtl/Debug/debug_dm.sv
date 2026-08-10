@@ -1,5 +1,16 @@
+// ============================================================================
+// debug_dm.sv — RISC-V Debug Module（DM）
+//
+// BD32 — RV32IM Pipelined RISC-V SoC
+// Copyright (c) 2026 BD32 Project
+// SPDX-License-Identifier: Apache-2.0
+//
+// 改编自 SparrowRV jtag_dm.v（MIT License）：
+//   Copyright (c) 2022 xiaowuzxc, https://github.com/xiaowuzxc/SparrowRV
+//   修改说明：halt/resume 状态机、SBA 子字写、Trigger 支持、
+//             Debug Spec 1.0 位域对齐（haltreq WARZ / havereset / SBA 边界等）
+// ============================================================================
 // BD32 Debug Module (DM)
-// 基于 SparrowRV jtag_dm.v 改编，系统 clk 时钟域
 // 实现：halt/resume + GPR 读写 + dcsr/dpc（单步/ebreakm）
 // System Bus Access：全字 + 字节/半字写（RMW 合并）
 `include "./../SoC_Config.sv"

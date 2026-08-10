@@ -1,0 +1,13 @@
+BD32 — RV32IM Pipelined RISC-V SoC
+Copyright (c) 2026 BD32 Project
+
+本产品在 Apache License 2.0 下发布（见 LICENSE 文件），并包含/改编了以下
+第三方开源组件的代码。各组件保留其原始版权与许可要求，完整清单及许可
+文本见 THIRD_PARTY_NOTICES。
+
+Third-party components included/derived:
+- SparrowRV  (MIT License, Copyright (c) 2022 xiaowuzxc)
+- tinyriscv  (Apache License 2.0)
+- Opensoc    (MIT License, Copyright (c) 2024 Panda)
+- E203_RTL   (Apache License 2.0, Nuclei System Technology, Inc.)
+- RISCV_PLIC (MIT License, Copyright (c) 2025 Brendan Lynskey)
