@@ -245,6 +245,10 @@ RISC_V_Core #(
     .dbg_reg_rdata      (            ),
     .dbg_dpc            (            ),
     .dbg_pc_wdata       (32'b0       ),
+    .dbg_csr_we         (1'b0        ),
+    .dbg_csr_addr       (12'b0       ),
+    .dbg_csr_wdata      (32'b0       ),
+    .dbg_csr_rdata      (            ),
     // SBA — 不接系统总线访问
     .sba_req_valid      (1'b0        ),
     .sba_addr           (32'b0       ),
@@ -268,4 +272,3 @@ RISC_V_Core #(
 
 
 endmodule
-

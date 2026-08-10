@@ -1,4 +1,4 @@
-if [file exists "work"] {vdel -all}
+if {[file exists "work"]} {file delete -force work}
 vlib work
 vmap work work
 vlog +define+GPIO_SIM -f filelist.f
@@ -7,4 +7,4 @@ set NoQuitOnFinish 1
 onbreak {resume}
 #log /* -r
 #do wave.do
-run 10us
+run 20ms

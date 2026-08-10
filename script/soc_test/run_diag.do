@@ -1,5 +1,5 @@
 # 诊断：跑 25ms，观察 MROM 启动是否越过测频循环并进入 download_mode
-if [file exists "work"] {vdel -all}
+if {[file exists "work"]} {file delete -force work}
 vlib work
 vmap work work
 vlog +define+BUS_TIMEOUT_TEST -f filelist.f

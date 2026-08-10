@@ -3,9 +3,9 @@
 BD32 project temp-file cleaner.
 
 Removes generated / temporary artifacts that are safe to regenerate:
-  - ModelSim work libraries:  script/*/work, sim/work, <repo>/work
-  - ModelSim run files:        vsim.wlf, transcript, vish_stacktrace.vstf,
-                               modelsim.ini under script/*/ and sim/
+  - ModelSim work libraries:  any */work under the repo (rtl/**, sim/, script/*/, root)
+  - ModelSim run files:        transcript, vsim.wlf, vish_stacktrace.vstf,
+                               modelsim.ini, wlftrs*, *.log under script/ and sim/
   - Python cache:              __pycache__ dirs and *.pyc (recursive)
   - Test logs:                 logs/*  (keep the logs/ directory itself)
 
@@ -23,7 +23,19 @@ import shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Working/
 
-SIM_ARTIFACTS = ("vsim.wlf", "transcript", "vish_stacktrace.vstf", "modelsim.ini")
+SIM_ARTIFACT_NAMES = ("vsim.wlf", "transcript", "vish_stacktrace.vstf", "modelsim.ini")
+SIM_ARTIFACT_PREFIXES = ("wlftrs",)
+SIM_ARTIFACT_SUFFIXES = (".log", ".wlf")
+
+
+def is_sim_artifact(name):
+    if name in SIM_ARTIFACT_NAMES:
+        return True
+    if name.startswith(SIM_ARTIFACT_PREFIXES):
+        return True
+    if name.endswith(SIM_ARTIFACT_SUFFIXES):
+        return True
+    return False
 
 
 def is_within(path, root):
@@ -37,29 +49,20 @@ def collect():
     """Return list of (kind, path) to remove."""
     targets = []
 
-    # work libraries under script/*/, sim/ and the repo root
+    # ModelSim run files (recursive under script/ and sim/)
     for base in ("script", "sim"):
         full = os.path.join(REPO, base)
         if not os.path.isdir(full):
             continue
-        for sub in os.listdir(full):
-            d = os.path.join(full, sub)
-            if os.path.isdir(d):
-                work = os.path.join(d, "work")
-                if os.path.isdir(work) and is_within(work, REPO):
-                    targets.append(("work", work))
-                for f in SIM_ARTIFACTS:
-                    p = os.path.join(d, f)
-                    if os.path.isfile(p):
-                        targets.append(("artifact", p))
-    root_work = os.path.join(REPO, "work")
-    if os.path.isdir(root_work):
-        targets.append(("work", root_work))
-    sim_wlf = os.path.join(REPO, "sim", "vsim.wlf")
-    if os.path.isfile(sim_wlf):
-        targets.append(("artifact", sim_wlf))
+        for dirpath, dirnames, filenames in os.walk(full):
+            if "work" in dirnames:
+                dirnames.remove("work")  # work 库由下方单独处理
+            for f in filenames:
+                if is_sim_artifact(f):
+                    targets.append(("artifact", os.path.join(dirpath, f)))
 
-    # __pycache__ + .pyc (recursive)
+    # work libraries (recursive: rtl/**, sim/, script/*/, repo root)
+    # + __pycache__ + .pyc
     for dirpath, dirnames, filenames in os.walk(REPO):
         # skip .git and vendored toolchains
         dirnames[:] = [
@@ -67,6 +70,9 @@ def collect():
             for d in dirnames
             if d not in (".git", "xpack-openocd-0.12.0-7", "picolibc_install")
         ]
+        if "work" in dirnames:
+            targets.append(("work", os.path.join(dirpath, "work")))
+            dirnames.remove("work")  # do not descend into the library itself
         if "__pycache__" in dirnames:
             targets.append(("pycache", os.path.join(dirpath, "__pycache__")))
         for f in filenames:

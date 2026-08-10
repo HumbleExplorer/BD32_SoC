@@ -2,7 +2,7 @@
 # Run from script/debug_test so that ../../test_data relative paths in
 # SoC_Config.sv (mrom.dat / coremark .mem) resolve correctly:
 #   vsim -batch -do run_msim_debug.do
-if {[file exists "work"]} {vdel -all}
+if {[file exists "work"]} {file delete -force work}
 vlib work
 vmap work work
 vlog -f filelist.f

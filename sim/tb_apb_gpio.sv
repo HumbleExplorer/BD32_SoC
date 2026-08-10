@@ -166,7 +166,7 @@ task welcome_text();
     $display(" |   |                                                                   |   | ");
     $display(" |___|                                                                   |___| ");
     $display("(_____)-----------------------------------------------------------------(_____)");
-    $display("APB Timer Testbench Initialized");
+    $display("APB GPIO Testbench Initialized");
 endtask : welcome_text
 
 

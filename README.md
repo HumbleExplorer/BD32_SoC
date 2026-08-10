@@ -29,6 +29,10 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 | ProgBuf | 未实现（progbufsize=0），抽象命令不经程序缓冲执行 |
 | 抽象内存访问（cmdtype=2） | 未实现：调试器内存访问走 SBA |
 | 多 hart | 未实现：单 hart |
+| 异常断点（action=0） | 未实现：硬件 trigger 命中仅进 debug mode（action=1），不会产生 breakpoint 异常；软件断点（ebreak 指令）不受影响，走 `dcsr.ebreakm` 通路 |
+| tdata1 未实现字段 | action/chain/match/timing/maskmax/hit/select 等位写入后原样读回、硬件不实现其功能（非严格 WARL；OpenOCD 0.12 仅使用 type2+dmode+execute/load/store+sizelo 子集，兼容无影响） |
+| tdata3 / textra32 | 未实现：读写返回 0（规范允许 WARL） |
+| reset halt 时序依赖 | OpenOCD 检测到 `ALLHAVERESET` 后写 `ACKHAVERESET`（该写同时清除 haltreq），依赖 CPU halt 先于该写完成；JTAG 时序裕量大，实测稳定 |
 | 跟踪调试（trace） | 未实现：仅交互式调试（halt/step/断点/观察点） |
 | 软件断点（GDB `break`） | 可设置/命中/单步越过/continue（OpenOCD 写 ebreak，需 `dcsr.ebreakm`），数量不受 4 路限制。OpenOCD 0.12 不声明 `swbreak` 特性，GDB 在 PC 位于断点地址时自动执行“删断点→单步→重插→继续”，实测 `continue` 可正常越过；回归脚本 `run_gdb_swbp_continue.bat`。若断点设在循环内反复调用的函数（如 `delay_ms`），continue 后再次命中是正常调试器行为（程序确实再次执行到该处，可观察 `$ra`/调用点区分） |
 | SPI / I2C | 地址预留，未实现 |
@@ -297,6 +301,35 @@ cd script/uart_test
 <ModelSim 安装目录>\win64\modelsim -do run.do   # 或 modelsim -do run.do（已加入 PATH）
 ```
 
+### script/ 目录脚本索引
+
+`script/` 集中存放仿真验证脚本；`SDK/` 只用于软件程序与上板工具。
+
+**script/ 根目录（工具脚本）**
+
+| 脚本 | 用途 | 用法 |
+|------|------|------|
+| `run_one.py` | 运行单个 custom_asm 测试 | `cd script && python run_one.py <test_name>` |
+| `run_all_custom_asm.py` | custom_asm 全回归（tb_core_top） | `cd script && python run_all_custom_asm.py` |
+| `run_all_riscv_tests.py` | riscv-tests ISA 兼容性回归（tb_core_top） | `cd script && python run_all_riscv_tests.py` |
+| `cleanup_temp.py` | 清理 ModelSim work 库、transcript/*.log/wlftrs*/vsim.wlf/modelsim.ini、`__pycache__`、logs/ | `cd script && python cleanup_temp.py [--apply] [--keep-logs]`（默认 dry-run） |
+| `run_periph_regression.bat` | 外设四合一 headless 回归（UART/GPIO/PLIC/Timer），输出 `logs/*_test_out.txt` | 直接运行，或任务计划程序（本机） |
+| `run_soc_test.bat` | SoC headless 仿真（tb_soc_top，CoreMark 启动），输出 `logs/soc_test_out.txt` | 直接运行，或任务计划程序（本机） |
+
+**script/<test>/ 仿真脚本**（每个测试目录含 `run.do` + `top_tb.bat` + `filelist.f` + `wave.do`）：
+
+| 目录 | 测试对象 | 脚本 | 说明 |
+|------|----------|------|------|
+| `core_test/` | 核级 tb_core_top | `run.do`（GUI）；`core_run_batch.do`（batch）；`top_tb.bat`（GUI 启动） | custom_asm / riscv-tests 由根目录 Python 脚本驱动 |
+| `debug_test/` | 调试模块 tb_debug | `run.do`（GUI）；`run_msim_debug.bat`（headless 回归，输出 `logs/msim_out.txt`）；`run_batch2.do` | Debug Spec 全功能 93 项回归 |
+| `soc_test/` | SoC 级 tb_soc_top | `run.do`（主仿真）；`run_diag.do`（MROM 启动诊断）；`run_reset_test.do` / `run_reset_fast.do`（复位后重新下载）；`run_bus_timeout_test.do` / `run_bus_timeout_fast.do`（总线超时） | 各自带波形配置，batch 场景加 `quit -f` |
+| `gpio_test/` `plic_test/` `timer_test/` `uart_test/` | 外设独立 tb_apb_* | `run.do`（GUI）；`top_tb.bat` | uart_test 另含 `run_xsim.tcl`（XSim 场景） |
+
+说明：
+- `run.do` 第一行统一用 `file delete -force work` 清理旧库，不依赖 `vdel`/`modelsim.ini`，避免 GUI 锁库时报错。
+- 本机 exec 环境 Winsock 受限，vsim 必须通过任务计划程序运行（见「OpenOCD + GDB 使用」章节说明）；`vlog`/`vopt` 可直接执行。
+- 涉及 ModelSim 的批处理脚本输出统一重定向到仓库根 `logs/`（已加入 .gitignore）。
+
 ### CoreMark 基准
 
 CoreMark 源码位于 `SDK/demos/newlib/coremark/`，分别以 -O2 和 -O3 编译验证。
@@ -391,11 +424,11 @@ Vivado 工程位于 `BD32_SoC/`，目标平台为 Xilinx FPGA。
 
 ## Debug Module（JTAG 在线调试）
 
-BD32 实现了 RISC-V Debug Specification 的 0.13 风格子集（dcsr 读回按 1.0 位域），支持通过 JTAG 接口进行在线调试，并经 GDB 完成真实程序符号级调试验证。调试子系统位于 `rtl/Debug/`，由 `bd32_board_top` 在 `BD32_DEBUG_EN` 宏开启时例化。
+BD32 实现了 RISC-V Debug Specification 1.0 子集（`dmstatus.version=3`，dcsr 按 1.0 位域读回；OpenOCD 0.12 同时接受 version 2/3），支持通过 JTAG 接口进行在线调试，并经 GDB 完成真实程序符号级调试验证。调试子系统位于 `rtl/Debug/`，由 `bd32_board_top` 在 `BD32_DEBUG_EN` 宏开启时例化。
 
 调试采用 **halt-in-place + 直接端口访问** 架构（与 tinyriscv/Ibex 同类，区别于 E203/CVA6 的 Debug ROM + Park Loop）：
 - halt 后流水线全级 stall + flush，CPU 原地冻结；无需 Debug ROM、不执行任何调试代码
-- GPR/CSR 通过专用调试端口直连（RegFile / CSR_Reg_Access），不经 CPU 执行
+- GPR/CSR 通过专用调试端口直连（RegFile / CSR_Reg_Access），不经 CPU 执行；CPU 运行中也可访问（规范允许的可选超集，OpenOCD 正常流程在 halt 后访问）
 - 内存访问走 SBA（32-bit 读；8/16/32-bit 写），在 halt 期间读写 ITCM/DTCM 以及外设总线（APB：UART/GPIO/CLINT/PLIC/Timer 等）
 
 ### 架构
@@ -453,8 +486,10 @@ FT2232H Channel A (JTAG: TCK/TDI/TDO/TMS)
 - match 模式扩展：NAPOT 地址范围 / 大于小于 / 掩码匹配，一路 trigger 可覆盖一段地址区间
 - chain：两路 trigger 条件“与”（如地址 + 数据值同时匹配）
 - timing / hit 计数：第 N 次命中才触发（循环计数场景）
+- action=0 异常断点：trigger 命中产生 breakpoint 异常（不进 debug mode），供软件无外部调试器时自用断点（当前仅支持 action=1 进 debug mode）
 - icount（type=3）：执行 N 条指令后触发
 - itrigger（type=4）/ etrigger（type=5）：中断 / 外部信号触发
+- textra32（tdata3）：scontext/mcontext 等上下文过滤，未实现（读写返回 0）
 
 **dcsr 控制位**（当前读回固定为 0）：
 
@@ -469,8 +504,9 @@ DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通
 - `tdata1` 复位值 = 0x2000_0000（type=2 mcontrol, dmode=0, 默认 disabled；dmode=0 避免 OpenOCD 0.12 枚举时清零导致 hbreak 失败）
 - OpenOCD 通过 `hbreak *<addr>` 命令编程 tdata2 = 目标地址，置 tdata1[2]（execute match enable）；tselect 越界写自动钳位，用于枚举 trigger 数量（4 路）
 - CPU 侧多路并行比较 `trigger_hit = |(trigger_en[i] & (inst_addr_if == trigger_addr[i]))`，命中后触发 halt
-- **trigger halt 锁存**：命中时 DM 自动拉高 haltreq，删除断点（清 tdata1）不会让 CPU 自动恢复运行，直到调试器发 `resumereq`
-- **ebreak 进调试**：`dcsr.ebreakm=1` 时 ID 级 ebreak 不产生异常，CPU 原地 halt（ID 保持、不冲刷），DM 锁存 haltreq 并置 `dcsr.cause=1`、`dpc=ebreak 地址`；调试器恢复原指令后 resume 即可继续执行（软件断点通路）
+- **action 语义**：仅实现 action=1（命中进 debug mode，即 halt）；action=0（异常断点）未实现。tdata1 中未实现字段（chain/match/timing/hit/select 等）写入后原样读回，但不参与硬件匹配逻辑
+- **halt 保持锁存**：CPU 一旦进入 debug mode，DM 锁存 `halt_hold_r` 保持暂停，直到调试器发 `resumereq`（Debug Spec 4.7/4.8）。因此 `haltreq` 写 0（WARZ 清除请求）、删除断点（清 tdata1）或清 `dcsr.ebreakm` 都不会让 CPU 自动恢复运行
+- **ebreak 进调试**：`dcsr.ebreakm=1` 时 ID 级 ebreak 不产生异常，CPU 原地 halt（ID 保持、不冲刷），DM 置 `dcsr.cause=1`、`dpc=ebreak 地址`；调试器恢复原指令后 resume 即可继续执行（软件断点通路）
 - **数据观察点**：EX 级访存有效地址匹配（tdata2），tdata1[0]=load（读观察点）/ tdata1[1]=store（写观察点），sizelo[17:16] 过滤访问宽度（0=任意、1=8bit、2=16bit、3=32bit）；命中时流水线停在 EX、store/load 不落盘（总线请求被抑制），`dpc` 取访存指令自身、`dcsr.cause=2`；清 trigger 后 resume 才完成访问
 
 ### OpenOCD + GDB 使用（调试功能使用手册）
@@ -648,14 +684,14 @@ bd32.cpu riscv dmi_read <addr>
 bd32.cpu riscv dmi_write <addr> <val>
 ```
 
-**DMI 寄存器地址**（Debug Spec 0.13 布局）：
+**DMI 寄存器地址**（Debug Spec 1.0 布局，与 0.13 地址一致）：
 
 | 地址 | 寄存器 | 说明 |
 |------|--------|------|
 | 0x04 | data0 | abstract command 数据 |
-| 0x10 | dmcontrol | bit0=dmactive、bit1=ndmreset、bit30=resumereq、bit31=haltreq、[25:16]=hartsel |
+| 0x10 | dmcontrol | bit0=dmactive、bit1=ndmreset、bit28=ackhavereset、bit30=resumereq、bit31=haltreq（WARZ，写 0 清除请求）、[25:16]=hartsello（HARTSELLEN=1，仅 bit0 可实现） |
 | 0x11 | dmstatus | bit8=anyhalted、bit9=allhalted、bit11=allrunning |
-| 0x16 | abstractcs | bit11=busy、[9:7]=cmderr |
+| 0x16 | abstractcs | bit12=busy、[10:8]=cmderr、[3:0]=datacount |
 | 0x17 | command | aarsize[23:20]（0=8/1=16/2=32bit）、transfer[17]、write[16]、regno[15:0] |
 | 0x38 | sbcs | [19:17]=sbaccess（0=8/1=16/2=32bit）、[20]=sbreadonaddr、[16]=sbautoincrement、[15]=sbreadondata、[14:12]=sberror、[21]=sbbusy、[22]=sbbusyerror |
 | 0x39 | sbaddress0 | SBA 地址 |

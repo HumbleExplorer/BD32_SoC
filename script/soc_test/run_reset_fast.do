@@ -1,5 +1,5 @@
 # 对照实验：复位测试（无波形），看 MROM 是否能正常启动并置位 download_en
-if [file exists "work"] {vdel -all}
+if {[file exists "work"]} {file delete -force work}
 vlib work
 vmap work work
 

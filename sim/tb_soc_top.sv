@@ -559,7 +559,16 @@ SoC_top #(
     .trigger_addr       (128'd0         ),
     .dbg_csr_we         (1'b0           ),
     .dbg_csr_addr       (12'd0          ),
-    .dbg_csr_wdata      (32'd0          )
+    .dbg_csr_wdata      (32'd0          ),
+    .dbg_csr_rdata      (               ),
+    .dbg_reg_rdata      (               ),
+    .dbg_dpc            (               ),
+    .dbg_halted         (               ),
+    .sba_rsp_valid      (               ),
+    .sba_rdata          (               ),
+    .sba_error          (               ),
+    .trigger_hit        (               ),
+    .ebreak_halt        (               )
 );
 
 // ------------------------ Write-back Trace (debug) ------------------------
@@ -583,4 +592,3 @@ end
 
 
 endmodule
-

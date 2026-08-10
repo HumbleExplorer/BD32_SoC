@@ -6,7 +6,7 @@
 #   <ModelSim 安装目录>\win64\modelsim -do run_bus_timeout_test.do
 # ============================================================
 
-if [file exists "work"] {vdel -all}
+if {[file exists "work"]} {file delete -force work}
 vlib work
 vmap work work
 

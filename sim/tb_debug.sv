@@ -1124,6 +1124,11 @@ initial begin
     #(CLK_PERIOD * 50);
     dmi_read(ADDR_SBCS, rd_data);
     check("SBA unmapped: sberror set", rd_data[14:12], 3'b010);
+    // W1C 清 sberror：Debug Spec 1.0 要求错误非零时禁止发起新 SBA 访问，
+    // 后续测试需要干净的错误状态
+    dmi_write(ADDR_SBCS, 32'h0004_7000);   // sbaccess=2 + W1C sberror
+    dmi_read(ADDR_SBCS, rd_data);
+    check("SBA unmapped: sberror cleared", rd_data[14:12], 3'b0);
     // 5) 总线访问期间 halt 状态保持
     dmi_read(ADDR_DMSTATUS, rd_data);
     check("SBA bus access: still allhalted", rd_data[9], 1'b1);
@@ -1383,10 +1388,12 @@ initial begin
     // 写保护：SBA 写 0x0 应报错
     dmi_write(ADDR_SBCS, 32'h0004_0000);   // sbaccess=2, 写模式
     dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);
-    dmi_write(ADDR_DATA0, 32'hDEAD_BEEF);  // 触发 SBA write @0x0
+    dmi_write(ADDR_SBDATA0, 32'hDEAD_BEEF);  // 触发 SBA write @0x0
     #(CLK_PERIOD * 10);
     dmi_read(ADDR_SBCS, rd_data);
     check("SBA BootROM write: sberror set", rd_data[14:12], 3'b010);
+    // W1C 清 sberror，再重新读 @0x0 验证内容未变
+    dmi_write(ADDR_SBCS, 32'h0000_7000);
     // 写失败后内容不变
     dmi_write(ADDR_SBCS, 32'h0004_0000);   // sbaccess=2, 写模式
     dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);

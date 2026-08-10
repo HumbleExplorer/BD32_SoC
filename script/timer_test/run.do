@@ -1,4 +1,4 @@
-if [file exists "work"] {vdel -all}
+if {[file exists "work"]} {file delete -force work}
 vlib work
 vmap work work
 vlog +define+TIMER_SIM -f filelist.f

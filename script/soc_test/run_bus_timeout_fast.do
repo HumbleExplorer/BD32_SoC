@@ -3,7 +3,7 @@
 # 用法: <ModelSim 安装目录>\win64\vsim -c -do run_bus_timeout_fast.do
 # ============================================================
 
-if [file exists "work"] {vdel -all}
+if {[file exists "work"]} {file delete -force work}
 vlib work
 vmap work work
 

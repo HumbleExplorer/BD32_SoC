@@ -146,6 +146,7 @@ logic        csr_we_r;          // CSR 写脉冲（一拍）
 logic [11:0] csr_addr_w;         // CSR 读写地址
 logic [31:0] csr_wdata_r;        // CSR 写数据
 logic        halt_req_r;
+logic        halt_hold_r;         // halt 保持：CPU 进入 debug mode 后锁存暂停，直到 resumereq
 logic        resume_pulse;
 logic        reg_we_r;
 logic [4:0]  reg_addr_r;
@@ -153,6 +154,7 @@ logic [31:0] reg_wdata_r;
 
 // ndmreset：复位整个 SoC（DM/JTAG 除外）
 logic        ndmreset_r;
+logic        havereset_r;         // 已复位未确认（dmstatus[19:18] / dmcontrol[28] ackhavereset）
 logic        reset_pending;     // ndmreset 释放后等待 hart 重新 halt
 
 // resumeack 逻辑：检测 dbg_halted 下降沿（CPU 恢复运行）
@@ -203,7 +205,7 @@ assign sba_wdata     = sbdata0_r;
 assign sba_write     = (sba_state == SBA_WRITE);
 assign sba_size      = sbaccess;
 
-// sbcs 读值组装（RISC-V Debug Spec 0.13 位域）
+// sbcs 读值组装（RISC-V Debug Spec 1.0 位域）
 wire [31:0] sbcs_rdata = {
     3'b001,         // [31:29] sbversion = 1
     6'b0,           // [28:23] reserved
@@ -227,13 +229,15 @@ wire [DMI_OP_BITS-1:0]   dmi_op   = rx_data_r[DMI_OP_BITS-1:0];
 wire [DMI_DATA_BITS-1:0] dmi_data = rx_data_r[DMI_OP_BITS + DMI_DATA_BITS - 1 : DMI_OP_BITS];
 wire [DMI_ADDR_BITS-1:0] dmi_addr = rx_data_r[DMI_BITS-1 : DMI_OP_BITS + DMI_DATA_BITS];
 
-// dmstatus 构建（RISC-V Debug Spec 0.13 位域）
+// dmstatus 构建（RISC-V Debug Spec 1.0 位域）
 wire [31:0] dmstatus = {
-    9'b0,           // [31:23] reserved
+    7'b0,           // [31:25] reserved
+    ndmreset_r,     // [24] ndmresetpending
+    1'b0,           // [23] stickyunavail
     1'b0,           // [22] impebreak
     2'b0,           // [21:20] reserved
-    1'b0,           // [19] allhavereset
-    1'b0,           // [18] anyhavereset
+    havereset_r,    // [19] allhavereset
+    havereset_r,    // [18] anyhavereset
     resume_ack_r,   // [17] allresumeack
     resume_ack_r,   // [16] anyresumeack
     hart_nonexistent, // [15] allnonexistent
@@ -248,11 +252,33 @@ wire [31:0] dmstatus = {
     1'b0,           // [6]  authbusy
     1'b0,           // [5]  hasresethaltreq
     1'b0,           // [4]  confstrptrvalid
-    4'h2            // [3:0] version = 2 (Spec 0.13)
+    4'h3            // [3:0] version = 3 (Debug Spec 1.0)
+};
+
+// dmcontrol 读回（Debug Spec 1.0 WARL 语义，未实现位回 0）
+//   haltreq[31](WARZ) resumereq[30](W1) hartreset[29] ackhavereset[28]
+//   ackunavail[27] hasel[26] hartsello[25:16] hartselhi[15:6]
+//   setkeepalive[5] clrkeepalive[4] setresethaltreq[3] clrresethaltreq[2]
+//   ndmreset[1] dmactive[0]
+wire [31:0] dmcontrol_rdata = {
+    1'b0,                 // [31] haltreq（WARZ，读恒 0）
+    1'b0,                 // [30] resumereq（W1）
+    1'b0,                 // [29] hartreset（未实现）
+    1'b0,                 // [28] ackhavereset（W1）
+    1'b0,                 // [27] ackunavail（W1）
+    1'b0,                 // [26] hasel（未实现，恒 0）
+    hartsel_r,            // [25:16] hartsello（仅 bit0 可实现，HARTSELLEN=1）
+    10'd0,                // [15:6]  hartselhi（未实现）
+    1'b0,                 // [5] setkeepalive（W1）
+    1'b0,                 // [4] clrkeepalive（W1）
+    1'b0,                 // [3] setresethaltreq（W1，hasresethaltreq=0）
+    1'b0,                 // [2] clrresethaltreq（W1）
+    ndmreset_r,           // [1] ndmreset（R/W）
+    dmcontrol_r[0]        // [0] dmactive（R/W）
 };
 
 // 输出
-assign dbg_halt_req   = halt_req_r;
+assign dbg_halt_req   = halt_req_r | halt_hold_r;
 assign dbg_resume_req = resume_pulse;
 assign dbg_step       = dcsr_step;
 assign dbg_ebreakm    = dcsr_ebreakm;
@@ -326,6 +352,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         dcsr_step          <= 1'b0;
         dcsr_ebreakm       <= 1'b0;
         halt_req_r         <= 1'b0;
+        halt_hold_r        <= 1'b0;
         resume_pulse       <= 1'b0;
         reg_we_r           <= 1'b0;
         reg_addr_r         <= '0;
@@ -344,6 +371,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         dpc_wr_en          <= 1'b0;
         dpc_wr_data        <= '0;
         hartsel_r          <= '0;
+        havereset_r        <= 1'b0;
         // SBA
         sbaddress0_r       <= '0;
         sbdata0_r          <= '0;
@@ -362,16 +390,16 @@ always_ff @(posedge clk or negedge rst_n) begin
         csr_we_r     <= 1'b0;
         abstract_busy <= 1'b0;  // 默认清除，写 command 时置 1
 
-        // halted 边沿检测 + resumeack + dpc 捕获
+        // halted 边沿检测 + resumeack + halt 保持锁存
         halted_d <= dbg_halted;
         if (halted_fell)
             resume_ack_r <= 1'b1;   // CPU 恢复运行，置 ack
-        // Trigger/ebreak halt 锁存：CPU 因硬件断点（trigger_match）或 ebreak
-        // （ebreakm=1）halt 时，把 haltreq 拉高，避免调试器清断点
-        // （清 tdata1 / 清 dcsr.ebreakm）后 halt 条件释放导致 CPU 自动恢复运行。
-        // 锁存后行为与普通 haltreq 一致，直到调试器写 resumereq 才释放。
-        if (~halted_d & dbg_halted && (trigger_hit || ebreak_halt))
-            halt_req_r <= 1'b1;
+        // halt 保持锁存（Debug Spec 4.1/4.7/4.8）：CPU 一旦进入 Debug Mode
+        // 就保持暂停，直到调试器写 resumereq。这样 haltreq 写 0（WARZ）清除
+        // 请求后 CPU 不会跑飞，且清断点（tdata1）/清 dcsr.ebreakm 也不会让
+        // trigger/ebreak halt 的 CPU 自动恢复。替代原先的 trigger/ebreak 专用锁存。
+        if (~halted_d & dbg_halted)
+            halt_hold_r <= 1'b1;
         // dpc 捕获在下方独立 always_ff（正常 halt 边沿 + 复位后延迟捕获）
 
         case (state)
@@ -393,9 +421,11 @@ always_ff @(posedge clk or negedge rst_n) begin
                     OP_READ: begin
                         case (dmi_addr)
                             ADDR_DMSTATUS:   dmi_rsp_data <= dmstatus;
-                            ADDR_DMCONTROL:  dmi_rsp_data <= dmcontrol_r;
+                            ADDR_DMCONTROL:  dmi_rsp_data <= dmcontrol_rdata;
                             ADDR_HARTINFO:   dmi_rsp_data <= 32'h0;
-                            ADDR_ABSTRACTCS: dmi_rsp_data <= {4'd0, 16'd0, abstract_busy, 1'b0, abstractcs_cmderr, 4'd0, 4'd1};
+                            // abstractcs（Debug Spec 1.0）：
+                            // {3'd0, progbufsize[5], 11'd0, busy, relaxedpriv, cmderr, 4'd0, datacount}
+                            ADDR_ABSTRACTCS: dmi_rsp_data <= {3'd0, 16'd0, abstract_busy, 1'b0, abstractcs_cmderr, 4'd0, 4'd1};
                             ADDR_DATA0: begin
                                 if (is_read_reg)
                                     dmi_rsp_data <= dbg_reg_rdata;
@@ -410,9 +440,20 @@ always_ff @(posedge clk or negedge rst_n) begin
                             ADDR_SBADDRESS0: dmi_rsp_data <= sbaddress0_r;
                             ADDR_SBDATA0: begin
                                 dmi_rsp_data <= sbdata0_r;
-                                // sbreadondata：读完 sbdata0 后自动发起下一次读
-                                if (sbreadondata && sba_state == SBA_IDLE)
-                                    sba_state <= SBA_READ;
+                                // Debug Spec 1.0 §3.14.27：
+                                // 忙时读数据 → sbbusyerror；错误未清除 → 不触发新访问；
+                                // sbaccess 不支持 → sberror=4 且不发起访问。
+                                if (sba_state != SBA_IDLE) begin
+                                    if (sberror == '0 && !sbbusyerror)
+                                        sbbusyerror <= 1'b1;
+                                end else if (sbreadondata) begin
+                                    if (sberror == '0 && !sbbusyerror) begin
+                                        if (sbaccess > 3'd2)
+                                            sberror <= 3'd4;
+                                        else
+                                            sba_state <= SBA_READ;
+                                    end
+                                end
                             end
                             default: dmi_rsp_data <= '0;
                         endcase
@@ -427,6 +468,8 @@ always_ff @(posedge clk or negedge rst_n) begin
                                 if (dmi_data[0] == 1'b0) begin
                                     // dmactive=0：DM 复位（恢复到复位态，含 trigger 寄存器）
                                     halt_req_r        <= 1'b0;
+                                    halt_hold_r       <= 1'b0;
+                                    havereset_r       <= 1'b0;
                                     abstractcs_cmderr <= '0;
                                     dcsr_step         <= 1'b0;
                                     dcsr_ebreakm      <= 1'b0;
@@ -442,16 +485,22 @@ always_ff @(posedge clk or negedge rst_n) begin
                                     dmcontrol_r       <= dmi_data;
                                 end else begin
                                     dmcontrol_r <= dmi_data;
-                                    hartsel_r   <= dmi_data[25:16];
+                                    // HARTSELLEN=1：单 hart 平台仅实现 hartsello bit0
+                                    hartsel_r   <= {9'd0, dmi_data[16]};
                                     // ndmreset（bit1）：复位整个 SoC（DM 自身保持）
                                     ndmreset_r <= dmi_data[1];
-                                    if (dmi_data[31]) begin
-                                        // haltreq
-                                        halt_req_r <= 1'b1;
-                                    end else if (dmi_data[30] && (halt_req_r || dbg_halted)) begin
+                                    // ackhavereset（bit28）：确认复位，清除 havereset
+                                    if (dmi_data[28])
+                                        havereset_r <= 1'b0;
+                                    // haltreq（bit31, WARZ）：写 1 请求 halt，写 0 清除请求。
+                                    // 已 halt 的 hart 由 halt_hold_r 保持暂停直到 resumereq。
+                                    halt_req_r <= dmi_data[31];
+                                    // resumereq 与 haltreq 同时写 1 时忽略 resumereq（Debug Spec 1.0）
+                                    if (dmi_data[30] && ~dmi_data[31] && (halt_req_r || dbg_halted)) begin
                                         // resumereq：CPU 处于 halt 状态即可 resume
                                         // （含外部 haltreq、单步 step-halt、ebreak 等场景）
                                         halt_req_r   <= 1'b0;
+                                        halt_hold_r  <= 1'b0;
                                         resume_pulse <= 1'b1;
                                         resume_ack_r <= 1'b0;  // 清 ack，等 CPU 真正恢复后再置
                                     end
@@ -485,19 +534,19 @@ always_ff @(posedge clk or negedge rst_n) begin
                                                     REGNO_DCSR: begin
                                                         // 读 dcsr：组装 Debug Spec 1.0 规范位域（riscv-spec 为准）
                                                         //   debugver[31:28]=4, extcause[26:24]=0,
-                                                        //   cetrig[19]/pelp[18]/lpebreak[17]/vsebreak[16]=0,
+                                                        //   cetrig[19]/pelp[18]/ebreakvs[17]/ebreakvu[16]=0,
                                                         //   ebreakm[15], ebreaks[13]/ebreaku[12]=0,
                                                         //   stepie[11]/stopcount[10]/stoptime[9]=0,
                                                         //   cause[8:6], v[5]/mprven[4]/nmip[3]=0,
-                                                        //   step[2], prv[1:0]=0
+                                                        //   step[2], prv[1:0]=3（M-mode）
                                                         data0 <= {4'd4,         // [31:28] debugver
                                                                   1'b0,         // [27]
                                                                   3'b000,       // [26:24] extcause
                                                                   4'b0000,      // [23:20]
                                                                   1'b0,         // [19] cetrig
                                                                   1'b0,         // [18] pelp
-                                                                  1'b0,         // [17] lpebreak
-                                                                  1'b0,         // [16] vsebreak
+                                                                  1'b0,         // [17] ebreakvs
+                                                                  1'b0,         // [16] ebreakvu
                                                                   dcsr_ebreakm, // [15] ebreakm
                                                                   1'b0,         // [14]
                                                                   1'b0,         // [13] ebreaks
@@ -510,7 +559,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                                                                   1'b0,         // [4] mprven
                                                                   1'b0,         // [3] nmip
                                                                   dcsr_step,    // [2] step
-                                                                  2'b00};       // [1:0] prv
+                                                                  2'b11};       // [1:0] prv = 3（M-mode）
                                                     end
                                                     REGNO_DPC:       data0 <= dpc_r;
                                                     REGNO_DSCRATCH0: data0 <= dscratch0;
@@ -556,6 +605,8 @@ always_ff @(posedge clk or negedge rst_n) begin
                                                     // 触发槽无法被复用（断点删除后资源耗尽）。
                                                     REGNO_TDATA1:    tdata1_r[tselect_r] <= (data0[31:28] == 4'h0) ? 32'h2000_0000 : data0;
                                                     REGNO_TDATA2:    tdata2_r[tselect_r] <= data0;
+                                                    // textra32（tdata3）未实现：写忽略，读回 0（规范 5.7.17 允许）
+                                                    REGNO_TDATA3:    ;
                                                     default: begin
                                                         if (dmi_data[15:0] < 16'h1000 || dmi_data[15:0] >= 16'hC000) begin
                                                             // ---- 通用 CSR 写 ----
@@ -572,7 +623,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                                     end
                                     // transfer=0：命令不传输数据，无操作
                                 end else begin
-                                    abstractcs_cmderr <= 3'b001;  // unsupported cmdtype
+                                    abstractcs_cmderr <= 3'b010;  // cmderr=2: not supported（不支持的 cmdtype）
                                 end
                             end
 
@@ -595,18 +646,35 @@ always_ff @(posedge clk or negedge rst_n) begin
                             end
 
                             // ---- sbaddress0 ----
+                            // Debug Spec 1.0 §3.14.23：
+                            // 忙时写 → sbbusyerror 且不更新地址；
+                            // sberror/sbbusyerror 非零时写地址不触发访问；
+                            // sbaccess 不支持（64/128-bit）时访问不发起、sberror=4。
                             ADDR_SBADDRESS0: begin
-                                sbaddress0_r <= dmi_data;
-                                // sbreadonaddr：写地址后自动发起读
-                                if (sbreadonaddr && sba_state == SBA_IDLE)
-                                    sba_state <= SBA_READ;
+                                if (sba_state != SBA_IDLE) begin
+                                    sbbusyerror <= 1'b1;
+                                end else begin
+                                    sbaddress0_r <= dmi_data;
+                                    if (sbreadonaddr && sberror == '0 && !sbbusyerror) begin
+                                        if (sbaccess > 3'd2)
+                                            sberror <= 3'd4;  // 不支持的访问宽度
+                                        else
+                                            sba_state <= SBA_READ;
+                                    end
+                                end
                             end
 
                             // ---- sbdata0 ----
+                            // Debug Spec 1.0 §3.14.27：
+                            // sberror/sbbusyerror 非零 → 访问 do nothing；
+                            // 忙时写 → sbbusyerror；sbaccess 不支持 → sberror=4 且不发起访问。
                             ADDR_SBDATA0: begin
-                                if (sba_state != SBA_IDLE) begin
-                                    // 忙时写入 → sbbusyerror
+                                if (sberror != '0 || sbbusyerror) begin
+                                    ;  // 错误未清除：不写数据、不发起访问
+                                end else if (sba_state != SBA_IDLE) begin
                                     sbbusyerror <= 1'b1;
+                                end else if (sbaccess > 3'd2) begin
+                                    sberror <= 3'd4;  // 不支持的访问宽度
                                 end else begin
                                     sbdata0_r <= dmi_data;
                                     sba_state <= SBA_WRITE;
@@ -633,6 +701,10 @@ always_ff @(posedge clk or negedge rst_n) begin
             default: state <= S_IDLE;
         endcase
 
+        // havereset：ndmreset 有效期间置位（hart 已复位未确认）
+        if (ndmreset_r)
+            havereset_r <= 1'b1;
+
         // ============================================================
         // SBA 状态机（独立于 DMI 状态机，每拍运行）
         // ============================================================
@@ -642,18 +714,22 @@ always_ff @(posedge clk or negedge rst_n) begin
             SBA_READ: begin
                 if (sba_rsp_valid) begin
                     sbdata0_r <= sba_rdata;
-                    if (sba_error) sberror <= 3'b010;  // bus error
-                    if (sbautoincrement)
+                    if (sba_error) begin
+                        sberror <= 3'b010;  // bad address / bus error
+                    end else if (sbautoincrement) begin
                         sbaddress0_r <= sbaddress0_r + (32'd1 << sbaccess);
+                    end
                     sba_state <= SBA_IDLE;
                 end
             end
 
             SBA_WRITE: begin
                 if (sba_rsp_valid) begin
-                    if (sba_error) sberror <= 3'b010;
-                    if (sbautoincrement)
+                    if (sba_error) begin
+                        sberror <= 3'b010;
+                    end else if (sbautoincrement) begin
                         sbaddress0_r <= sbaddress0_r + (32'd1 << sbaccess);
+                    end
                     sba_state <= SBA_IDLE;
                 end
             end
@@ -681,9 +757,12 @@ always_ff @(posedge clk or negedge rst_n) begin
         if (halted_rose) begin
             // Debug Spec 1.0 Table 8：
             // 1=ebreak 2=trigger 3=haltreq 4=step 5=resethaltreq 6=halt group 7=critical error
+            // 优先级从高到低：resethaltreq > halt group > haltreq > trigger > ebreak > step。
+            // 未实现 halt group；兼容性条款要求 trigger>ebreak>step 相对顺序保持。
             if (reset_pending)        dcsr_cause_r <= 3'd5;  // resethaltreq
-            else if (ebreak_halt)     dcsr_cause_r <= 3'd1;  // ebreak
+            else if (halt_req_r)      dcsr_cause_r <= 3'd3;  // haltreq
             else if (trigger_hit)     dcsr_cause_r <= 3'd2;  // trigger
+            else if (ebreak_halt)     dcsr_cause_r <= 3'd1;  // ebreak
             else if (stepped)         dcsr_cause_r <= 3'd4;  // step
             else                      dcsr_cause_r <= 3'd3;  // haltreq
             stepped <= 1'b0;

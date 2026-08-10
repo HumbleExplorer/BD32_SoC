@@ -1,6 +1,6 @@
 // BD32 JTAG TAP + DTM (Debug Transport Module)
 // 基于 SparrowRV jtag_driver.v 改编，TCK 时钟域
-// 实现 IEEE 1149.1 TAP 状态机 + RISC-V Debug Spec 0.13 DMI 接口
+// 实现 IEEE 1149.1 TAP 状态机 + RISC-V Debug Spec 1.0 DMI 接口
 `include "./../SoC_Config.sv"
 timeunit 1ns;
 timeprecision 1ps;
@@ -36,7 +36,7 @@ module jtag_tap #(
 // [0]     = 1'b1 (JTAG 标准要求)
 // ============================================================
 localparam [31:0] IDCODE = {4'h1, 16'hBD32, 11'h001, 1'b1};
-localparam DTM_VERSION = 4'h1;  // Debug Spec 0.13
+localparam DTM_VERSION = 4'h1;  // dtmcs.version=1（Spec 0.13 与 1.0 相同）
 
 // IR 寄存器定义
 localparam IR_BITS      = 5;
@@ -80,8 +80,11 @@ logic [DMI_BITS-1:0]    rx_data;
 
 // 组合逻辑
 wire is_busy = sticky_busy | dm_is_busy;
-wire [1:0] dmi_stat = is_busy ? 2'b01 : 2'b00;
-wire dtm_reset = shift_reg[16];
+// dtmcs.dmistat（Debug Spec 1.0）：0=success，3=busy（sticky）
+wire [1:0] dmi_stat = is_busy ? 2'b11 : 2'b00;
+// dtmcs 写位：bit16=dmireset（只清 sticky 错误），bit17=dtmhardreset（忘掉所有未完成事务）
+wire dtm_reset      = shift_reg[16];
+wire dtm_hard_reset = shift_reg[17];
 
 wire [31:0] dtmcs = {14'b0,
                      1'b0,              // dmihardreset
@@ -189,7 +192,7 @@ end
 always_ff @(posedge tck or negedge rst_n) begin
     if (!rst_n)
         sticky_busy <= 1'b0;
-    else if (tap_state == UPDATE_DR && ir_reg == REG_DTMCS && dtm_reset)
+    else if (tap_state == UPDATE_DR && ir_reg == REG_DTMCS && (dtm_reset || dtm_hard_reset))
         sticky_busy <= 1'b0;
     else if (tap_state == CAPTURE_DR && ir_reg == REG_DMI)
         sticky_busy <= is_busy;
@@ -202,8 +205,8 @@ always_ff @(posedge tck or negedge rst_n) begin
     if (!rst_n) begin
         dm_resp_latch <= '0;
         dm_is_busy    <= 1'b0;
-    end else if (tap_state == UPDATE_DR && ir_reg == REG_DTMCS && dtm_reset) begin
-        // DTMCS dmireset: clear DMI busy as well, so a lost response cannot wedge DMI forever
+    end else if (tap_state == UPDATE_DR && ir_reg == REG_DTMCS && dtm_hard_reset) begin
+        // dtmhardreset：忘记所有未完成 DMI 事务（含进行中事务与响应锁存）
         dm_resp_latch <= '0;
         dm_is_busy    <= 1'b0;
     end else begin

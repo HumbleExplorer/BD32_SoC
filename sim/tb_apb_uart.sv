@@ -49,7 +49,14 @@ apb_uart #(
     .PRDATA      (PRDATA),
     .PREADY      (PREADY),
     .PSLVERR     (PSLVERR),
-    .irq_o       (irq_o)
+    .irq_o       (irq_o),
+    // 下载接口输出：外设独立仿真不检查，留空
+    .itcm_download_en_o    (),
+    .itcm_download_addr_o  (),
+    .itcm_download_data_o  (),
+    .dtcm_download_en_o    (),
+    .dtcm_download_addr_o  (),
+    .dtcm_download_data_o  ()
 );
 
 // =================== 时钟 ===================

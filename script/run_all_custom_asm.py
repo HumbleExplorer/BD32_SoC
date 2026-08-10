@@ -87,11 +87,16 @@ def find_vlog():
 def clean_work_dir():
     work_dir = os.path.join(CORE_TEST_DIR, "work")
     if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
+        shutil.rmtree(work_dir, ignore_errors=True)
+        if os.path.exists(work_dir):
+            print("  [warn] work dir partially locked, continuing anyway")
     for f in ["vsim.wlf", "transcript", "vish_stacktrace.vstf"]:
         fp = os.path.join(CORE_TEST_DIR, f)
-        if os.path.exists(fp):
-            os.remove(fp)
+        try:
+            if os.path.exists(fp):
+                os.remove(fp)
+        except OSError:
+            pass
 
 
 def compile_design(vlog_exe):
@@ -111,7 +116,7 @@ def compile_design(vlog_exe):
         result = subprocess.run(cmd, cwd=CORE_TEST_DIR, capture_output=True,
                                 text=True, timeout=120)
         errors = [l for l in result.stdout.split("\n")
-                  if "Error" in l and not l.startswith("** Note")]
+                  if "Error" in l and "Errors:" not in l and not l.startswith("** Note")]
         warnings = [l for l in result.stdout.split("\n") if "Warning" in l]
 
         for e in errors[:10]:
