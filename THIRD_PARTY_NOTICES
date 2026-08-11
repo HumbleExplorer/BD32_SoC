@@ -1,116 +1,20 @@
 BD32 Third-Party Notices
 ========================
 
-BD32 项目主体以 Apache License 2.0 发布（见 LICENSE）。
-以下第三方组件的代码被参考/改编进本仓库，需保留各自许可要求。
+Copyright (c) 2026 BD32 Project
 
---------------------------------------------------------------------------------
-1. SparrowRV — MIT License
---------------------------------------------------------------------------------
-影响文件:
-  - rtl/Debug/debug_dm.sv   (改编自 jtag_dm.v)
-  - rtl/Debug/jtag_tap.sv   (改编自 jtag_driver.v)
+本产品以 Apache License 2.0 发布（见 LICENSE）。以下第三方开源组件的代码被
+参考或改编进本仓库，各组件版权归其作者，许可要求如下（原版权声明同时保留
+在对应源文件头部）：
 
-来源: https://github.com/xiaowuzxc/SparrowRV
+| 组件 | 来源 | 许可证 | 版权行 | 受影响文件 |
+|------|------|--------|--------|------------|
+| SparrowRV | https://github.com/xiaowuzxc/SparrowRV | MIT | Copyright (c) 2022 xiaowuzxc | rtl/Debug/debug_dm.sv, jtag_tap.sv |
+| tinyriscv | https://github.com/liangkangnan/tinyriscv | Apache-2.0 | — | rtl/Debug/debug_cdc.sv |
+| Opensoc | https://github.com/Opensoc-org/Opensoc | MIT | Copyright (c) 2024 Panda | rtl/Periph/timer/basic_timer.sv |
+| E203_RTL | https://github.com/riscv-mcu/e203_hbirdv2 | Apache-2.0 | Copyright 2018-2020 Nuclei System Technology, Inc. | rtl/Periph/timer/basic_timer.sv |
+| RISCV_PLIC | https://github.com/BLynskey/RISCV_PLIC | MIT | Copyright (c) 2025 Brendan Lynskey | rtl/Periph/plic/plic_gateway.sv, plic_target.sv |
 
-MIT License
-
-Copyright (c) 2022 xiaowuzxc
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
---------------------------------------------------------------------------------
-2. tinyriscv — Apache License 2.0
---------------------------------------------------------------------------------
-影响文件:
-  - rtl/Debug/debug_cdc.sv   (改编自 full_handshake_tx/rx)
-
-来源: https://github.com/liangkangnan/tinyriscv
-许可: Apache License 2.0（全文见 https://www.apache.org/licenses/LICENSE-2.0）
-
---------------------------------------------------------------------------------
-3. Opensoc — MIT License
---------------------------------------------------------------------------------
-影响文件:
-  - rtl/Periph/timer/basic_timer.sv  (大幅改编自 107_apb_timer/basic_timer.v)
-
-来源: https://github.com/Opensoc-org/Opensoc
-
-MIT License
-
-Copyright (c) 2024 Panda, 2257691535@qq.com
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
---------------------------------------------------------------------------------
-4. E203_RTL — Apache License 2.0
---------------------------------------------------------------------------------
-影响文件:
-  - rtl/Periph/timer/basic_timer.sv  (参考其 timer 寄存器/计数设计)
-
-来源: https://github.com/riscv-mcu/e203_hbirdv2 (Nuclei System Technology)
-许可: Apache License 2.0（全文见 https://www.apache.org/licenses/LICENSE-2.0）
-版权: Copyright 2018-2020 Nuclei System Technology, Inc.
-
---------------------------------------------------------------------------------
-5. RISCV_PLIC — MIT License
---------------------------------------------------------------------------------
-影响文件:
-  - rtl/Periph/plic/plic_gateway.sv  (改编)
-  - rtl/Periph/plic/plic_target.sv   (改编)
-
-来源: https://github.com/BLynskey/RISCV_PLIC
-
-MIT License
-
-Copyright (c) 2025 Brendan Lynskey
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+许可证全文：
+- MIT License: https://opensource.org/licenses/MIT
+- Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0

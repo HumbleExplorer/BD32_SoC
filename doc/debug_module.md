@@ -23,7 +23,7 @@ FT2232H Channel A (JTAG: TCK/TDI/TDO/TMS)
 │  debug_top                                      │
 │  ┌───────────┐    ┌──────────┐   ┌───────────┐  │
 │  │ jtag_tap  │──▶│ debug_dm │──▶│ debug_cdc │──│──▶ CPU (halt/resume/step)
-│  │ (TAP+DTM) │◀──│ (DM)     │◀──│ (TCK↔CLK) │◀─│──◀ CPU (dbg_halted)
+│  │ (TAP+DTM) │◀──│ (DM)     │◀──│ (TCK↔CLK) │◀─│── CPU (dbg_halted)
 │  └───────────┘    └──────────┘   └───────────┘  │
 └─────────────────────────────────────────────────┘
 ```

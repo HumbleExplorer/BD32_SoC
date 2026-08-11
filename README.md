@@ -4,10 +4,6 @@
 
 BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采用经典 5 级流水线架构并配备乱序退休机制（OITF），支持乘法/除法指令与短指令并行执行。项目包含完整的 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
 
-## 开源许可
-
-本项目以 **Apache License 2.0** 发布（全文见 [LICENSE](LICENSE)）。除下述第三方改编文件外均为自研：自研文件不逐文件标注，统一以本项目 Apache-2.0 许可发布。包含/改编的第三方开源组件及其许可要求见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) 与 [NOTICE](NOTICE)。
-
 ## 特性
 
 - RV32IM 指令集（含 M 扩展乘除法）
@@ -143,7 +139,7 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 
 ## 文档
 
-详细内容已拆分至 `doc/`（索引见 [doc/README.md](doc/README.md)）：
+详细内容已拆分至 `doc/`：
 
 | 文档 | 内容 |
 |------|------|
