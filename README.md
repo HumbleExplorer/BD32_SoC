@@ -59,42 +59,17 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 
 ```
 ./
-├── rtl/                        # RTL 源码
-│   ├── SoC_Config.sv          # 全局配置（宏定义、内存映射、仿真文件路径）
-│   ├── RV32_Inst_Define.sv    # 指令编码定义
-│   ├── SoC_top.sv             # SoC 顶层（纯数字 IP）
-│   ├── Core/                  # CPU 核
-│   │   ├── RISC_V_Core.sv    # 核顶层（流水线连线）
-│   │   ├── Pipeline_Ctrl.sv  # 流水线控制（stall/flush/OITF 调度）
-│   │   ├── RegFile.sv        # 32×32 寄存器堆（双写端口 + 旁路）
-│   │   ├── OITF.sv           # 乱序退休 FIFO
-│   │   ├── Decoder.sv        # 指令译码
-│   │   ├── Executer.sv       # ALU 执行单元
-│   │   ├── Data_Hazard_Forward.sv  # 数据前递
-│   │   ├── Dynamic_Branch_Predictor.sv  # 分支预测
-│   │   ├── Mem_Access.sv     # 访存控制
-│   │   ├── CSR_Reg_Access.sv # CSR 读写
-│   │   ├── IF_ID/ID_EX/EX_MEM/MEM_WB.sv  # 流水级寄存器
-│   │   ├── ITCM.sv / DTCM.sv / BootROM.sv  # 片上存储
-│   │   └── Mul_Div/          # 乘法器 + 除法器
-│   ├── Debug/                 # 调试模块
-│   │   ├── jtag_tap.sv       # JTAG TAP（IEEE 1149.1 + DTM）
-│   │   ├── debug_dm.sv       # Debug Module（abstract cmd / SBA / trigger）
-│   │   ├── debug_top.sv      # 调试子系统顶层（TAP + DM + CDC）
-│   │   └── debug_cdc.sv      # 跨时钟域同步（JTAG TCK ↔ CPU CLK）
-│   ├── Bus/                   # AXI-Lite 总线基础设施
+├── rtl/                      # RTL 源码
+│   ├── SoC_Config.sv         # 全局配置（宏定义、内存映射、仿真文件路径）
+│   ├── RV32_Inst_Define.sv   # 指令编码定义
+│   ├── SoC_top.sv            # SoC 顶层（纯数字 IP）
+│   ├── Core/                 # CPU 核
+│   ├── Debug/                # 调试模块
+│   ├── Bus/                  # AXI-Lite 总线基础设施
 │   ├── Periph/               # 外设
-│   │   ├── CLINT.sv          # Core-Local Interruptor
-│   │   ├── apb_gpio.sv       # GPIO
-│   │   ├── plic/             # 中断控制器
-│   │   ├── timer/            # APB Timer / PWM
-│   │   └── uart/             # UART（TX/RX/FIFO/Download）
-│   └── Common/               # 时钟/复位工具模块
-├── sim/                       # Testbench
-│   ├── tb_core_top.sv        # 核级 TB（x26/x27 判定，加载 .dat）
-│   ├── tb_soc_top.sv         # SoC 级 TB（UART 输出、WB_TRACE、PWM 监测）
-│   └── tb_debug.sv           # Debug Module TB（DMI 激励、halt/step/GPR/trigger）
-├── script/                    # 仿真脚本
+│   └── Common/               # 常用基础模块
+├── sim/                      # Testbench
+├── script/                   # 仿真脚本
 │   ├── core_test/            # 核级仿真（filelist.f, run.do）
 │   ├── soc_test/             # SoC 级仿真
 │   ├── debug_test/           # Debug Module 仿真（run_msim_debug.bat 一键回归）
@@ -108,31 +83,9 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 │   └── soc/c/                # CoreMark 内存文件（.mem）
 ├── SDK/
 │   ├── tools/                # 构建与在线控制工具
-│   │   ├── build.py         # C 程序构建（GCC/Clang）
-│   │   ├── build_riscv_tests.py  # riscv-tests 编译
-│   │   ├── fpga_reset.py    # FPGA 远程复位（FTDI ADBUS5）
-│   │   ├── uart_send.py     # UART 程序烧录（发送 .uartbin）
-│   │   ├── uart_cmd.py / uart_recv.py / uart_log.py  # UART 交互工具
-│   │   ├── auto_coremark.py # CoreMark 自动化测试（复位+下载+解析）
-│   │   ├── bd32_openocd.cfg       # OpenOCD 配置（FT2232H + BD32 TAP）
-│   │   ├── bd32_debug_test.cfg    # DMI 全功能一键测试（OpenOCD TCL 脚本）
-│   │   ├── bd32_new_feat_test.cfg # 新功能专项：SBA 8/16bit、双断点、ebreak
-│   │   ├── bd32_sba_periph.cfg    # SBA 外设总线上板测试
-│   │   ├── bd32_debug_test.gdb    # GDB 全功能调试套件
-│   │   ├── run_gdb_debug_test.bat # GDB 套件 runner
-│   │   ├── bd32_demo_debug.gdb    # 真实 demo（breathing）在线调试脚本
-│   │   ├── run_demo_debug.bat     # demo 调试 runner
-│   │   ├── bd32_watchpoint_test.cfg  # 数据观察点上板测试
-│   │   ├── bd32_watchpoint_test.gdb  # GDB 在线 watchpoint 脚本
-│   │   ├── run_gdb_watchpoint.bat    # GDB watchpoint 管道模式 runner
-│   │   ├── run_watchpoint_test.bat   # watchpoint TCL runner
-│   │   └── bd32_clean_itcm.cfg       # ITCM 清理维护工具
 │   ├── bsp/                  # 板级支持包（startup, drivers, trap, linker）
-│   ├── demos/nolibc/         # 裸机 demo（breathing, blink, uart_echo, cpuinfo）
-│   ├── demos/newlib/coremark/ # CoreMark 基准测试（build_O2/ + build_O3/）
-│   └── isa/env/p/            # riscv_test.h + link.ld
+│   ├── demos/                # 测试demo
 ├── BD32_SoC/                  # Vivado FPGA 工程（Xilinx）
-├── ip_repo/                   # 自定义 AXI IP 仓库
 └── doc/                       # 文档（架构/调试/外设/验证，见 doc/README.md）
 ```
 
