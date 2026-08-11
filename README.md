@@ -13,7 +13,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - 32 周期迭代恢复除法器
 - 动态分支预测器 + 返回地址栈（RAS）
 - AXI-Lite 总线 + APB 外设子系统
-- 外设：UART（含 NCO 波特率发生器和程序数据下载）、CLINT（mtime/mtip）、PLIC 中断控制器、APB Timer（PWM）、GPIO
+- 外设：CLINT、PLIC 中断控制器、UART（含 NCO 波特率发生器和程序数据下载）、APB Timer（PWM）、GPIO
 - CoreMark 验证通过
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）、硬件断点 Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择）、ebreak 进调试模式（dcsr.ebreakm）、数据观察点
 - 完整调试回归：DMI 一键测试、GDB 全功能套件、真实 demo 符号级在线调试
@@ -162,10 +162,7 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 确保 vlog 编译时传入 `+define+DIRECT_LOAD`。
 
 **Q: CoreMark 仿真输出不完整**
-CoreMark 为 500 次迭代的 performance run，完整 CRC 输出需约 2.4s 仿真时间（55ms 只能看到启动输出 `CoreMark running...`）；完整验证请上板运行。
-
-**Q: 修改 SoC_Config.sv 后其他测试异常**
-`ITCM_FILE`/`DTCM_FILE` 是全局宏，改完后记得恢复默认值。
+CoreMark 为 500 次迭代的 performance run，完整 CRC 输出需约几秒仿真时间，若要仿真验证建议将轮数改为1；完整验证请上板运行。
 
 **Q: `--clang` 链接报错找不到 `libclang_rt.builtins.a`**
 预期行为。链接阶段一律走 xPack GCC，不要加 `-fuse-ld=lld`。
