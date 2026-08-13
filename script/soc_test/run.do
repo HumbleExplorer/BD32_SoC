@@ -7,4 +7,4 @@ set NoQuitOnFinish 1
 onbreak {resume}
 #log /* -r
 do wave.do
-run 15ms
+run 17ms

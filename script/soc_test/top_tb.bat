@@ -1,4 +1,14 @@
 @echo off
-rem GUI 启动入口：依赖 run.do 第一行清理 work 库（file delete -force），
-rem 其余临时文件由 cleanup_temp.py 统一清理。
-if defined MODELSIM_PATH ("%MODELSIM_PATH%\modelsim" -do run.do) else (modelsim -do run.do)
+rem BD32 SoC ModelSim GUI launcher.
+rem run.do handles the work library cleanup; temp files are handled by cleanup_temp.py.
+rem Always cd to this script's folder so "-do run.do" resolves correctly,
+rem and keep this file ASCII-only (cmd uses the ANSI codepage to parse .bat).
+cd /d "%~dp0"
+if not defined MODELSIM_PATH set MODELSIM_PATH=D:\modeltech64_2020.4\win64
+if not defined MGLS_LICENSE_FILE set MGLS_LICENSE_FILE=%MODELSIM_PATH%\..\LICENSE.TXT
+"%MODELSIM_PATH%\modelsim.exe" -do run.do
+if errorlevel 1 (
+    echo.
+    echo [ModelSim failed to start - please share the error above]
+    pause
+)

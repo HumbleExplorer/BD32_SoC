@@ -6,7 +6,7 @@
 #include "bsp.h"
 
 #define PLIC_SRC_TIMER 3
-#define BLINK_INTERVAL 500   /* 50 次中断 = 0.5s (10ms × 50) */
+#define BLINK_INTERVAL 10    /* 仿真观察：10 次中断翻转一次 LED */
 
 static volatile uint32_t blink_cnt;
 
@@ -38,7 +38,8 @@ int main(void)
     GPIO_DIR |= PIN_LED0;
     GPIO_CLR(PIN_LED0);
 
-    /* Timer: PSC=89 → 90MHz/90=1MHz, ARR=999 → 1kHz PWM */
+    /* 崩溃复现配方（慢）：PSC=80/ARR=1000 → 约 1ms/次中断，第 3 次中断（~16.34ms）触发
+     * dtcm_rvalid 陈旧写回 bug。快速观察配置：TIM_PSC=4-1、TIM_ARR=100-1（不触发该 bug） */
     TIM_PSC  = 80 - 1;
     TIM_ARR  = 1000 - 1;
     TIM_CCMR = 0x01;            /* PWM mode 1 */

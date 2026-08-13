@@ -1,11 +1,14 @@
 /*
- * PLIC IRQ Demo — KEY0 按键中断（已修 PLIC claim bug）
- * 进 ISR 时翻 LED0 + 打印，3 次后 PASS
+ * PLIC IRQ Demo — KEY0 按键中断
+ * 每次按下 KEY0 打印一次信息（仿 gpio_input），3 次后 PASS
+ * 消抖：ISR 只置标志；主循环延时 10ms 后复检电平，确认仍按下才计数
  */
 #include "bsp.h"
 
 #define PLIC_SRC_GPIO 2
+#define KEY_DEBOUNCE_MS   10       /* 消抖延时：等机械抖动稳定 */
 static volatile int btn_cnt = 0;
+static volatile int key_pressed = 0;   /* 中断标志：ISR 置位，主循环消抖确认 */
 
 void ext_irq_handler(void)
 {
@@ -14,7 +17,7 @@ void ext_irq_handler(void)
         /* Opensoc 方式: 先读状态再清标志 */
         (void)GPIO_TR_STAT;        /* 读状态（确认触发源） */
         GPIO_TR_STAT = 0xFF;       /* 写全 1 清所有 pending */
-        btn_cnt++;
+        key_pressed = 1;           /* 置按键标志，主循环做消抖确认 */
     }
     PLIC_CLAIM = claim;
 }
@@ -41,8 +44,15 @@ int main(void)
 
     uart_puts("Waiting...\r\n");
     while (btn_cnt < 3) {
-        uart_puts(".");               /* 主循环打印点，证明活着 */
-        delay_ms(500);
+        if (key_pressed) {
+            key_pressed = 0;
+            delay_ms(KEY_DEBOUNCE_MS);          /* 等抖动稳定 */
+            if ((GPIO_IN & PIN_KEY0) == 0) {    /* 复检：仍按住才算一次 */
+                btn_cnt++;
+                uart_puts("KEY0 #"); uart_putdec(btn_cnt); uart_puts("\r\n");
+            }
+        }
+        delay_ms(10);
     }
 
     uart_puts("\r\nPASS!\r\n");

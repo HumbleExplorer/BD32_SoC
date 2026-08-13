@@ -117,8 +117,8 @@
 // ============================================================
 `ifdef DIRECT_LOAD
     // 直接加载：.mem 文件初始化 ITCM/DTCM
-    `define ITCM_FILE "coremark_o2_itcm.mem"
-    `define DTCM_FILE "coremark_o2_dtcm.mem"
+    `define ITCM_FILE "breathing_o0_itcm.mem"
+    `define DTCM_FILE "breathing_o0_dtcm.mem"
 `else
     // UART 下载：BootROM 等待串口发送 .uartbin
     `ifdef BUS_TIMEOUT_TEST

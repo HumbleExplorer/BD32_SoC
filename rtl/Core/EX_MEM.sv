@@ -55,6 +55,11 @@ always_ff @(posedge clk or negedge rst_n) begin
             inst_o          <= #1 `INST_NOP;
             access_en_o     <= #1 1'b0;
             reg_rd_wen_o    <= #1 1'b0;
+            // 冲刷时清掉残留的写回目标/数据：否则中断/异常进入时被取消指令的
+            // 陈旧 waddr 会配合保持的 dtcm_rvalid 被强制写回（ra 被垃圾覆盖，
+            // breathing 第 3 次中断崩溃根因）。清成 x0 后写回被 RegFile 丢弃。
+            reg_rd_waddr_o  <= #1 'h0;
+            reg_rd_wdata_o  <= #1 'h0;
             inst_type_o     <= #1 3'd0;
         end else if(!stall) begin
             inst_addr_o     <= #1 inst_addr_i;

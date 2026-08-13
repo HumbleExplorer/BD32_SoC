@@ -65,6 +65,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         end
         // stall/flush 期间不清零 rvalid（保持旧值，等 stall 解除后再
         // 被新的 load/store 覆盖），确保 DTCM 同步读 1 拍延迟的数据不被丢弃
+        // 即保持rvalid至读出数据
     end
 end
 
