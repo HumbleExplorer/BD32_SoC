@@ -27,7 +27,7 @@ python tools/build_riscv_tests.py          # GCC
 python tools/build_riscv_tests.py --clang  # Clang 汇编
 ```
 
-产物输出到 `test_data/riscv-tests/`（.dat 格式）。
+产物输出到 `test_data/riscv-tests/`：`<test>.elf`、`<test>.dump`、`<test>.dat`（readmemh 字流）。这些构建产物已加入 `.gitignore`，克隆后需先运行本脚本再跑回归。
 
 ## LLVM/Clang 集成
 

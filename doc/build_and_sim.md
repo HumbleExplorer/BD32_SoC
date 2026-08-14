@@ -26,11 +26,11 @@
 ```bash
 cd test_data/custom_asm
 python build_asm.py <test_name>    # 单个测试
-python build_asm.py all            # 全部 36 个测试
+python build_asm.py all            # 全部 38 个测试
 ```
 
 编译参数：`-march=rv32im -mabi=ilp32 -O0 -mno-relax -nostdlib -static`
-产物：`.elf`、`.dump`、`.dat`（readmemh 格式）
+产物：`.elf`、`.dump`、`.dat`（readmemh 格式）——均为构建产物，已加入 .gitignore，新克隆环境需先构建再回归。
 
 ## 构建 C 程序 / CoreMark
 
@@ -77,7 +77,9 @@ python run_all_custom_asm.py               # custom_asm 全回归
 python run_all_riscv_tests.py              # riscv-tests ISA 兼容性
 ```
 
-riscv-tests 回归已知限制：`rv32ui-p-fence_i` 与 `rv32ui-p-ma_data` 未通过——BD32 **不支持自修改代码**（FENCE.I 不刷新取指路径）与**非对齐访存**（不产生 misaligned 异常），其余通过，属预期行为。
+riscv-tests 的 `.dat` / `.elf` / `.dump` 由 `SDK/tools/build_riscv_tests.py` 生成（见 [SDK 构建工具与协议](sdk.md)），产物不入库，新克隆环境先构建再回归。
+
+riscv-tests 回归：`rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过，50/50 全过。
 
 判定约定：x26=1 表示完成，x27=1 表示通过；x3(gp) 记录失败的子测试编号。
 

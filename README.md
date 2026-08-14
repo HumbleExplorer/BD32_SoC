@@ -15,6 +15,9 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：CLINT、PLIC 中断控制器、UART（含 NCO 波特率发生器和程序数据下载）、APB Timer（PWM）、GPIO
 - CoreMark 验证通过
+- 自修改代码（FENCE.I）：ITCM 字节写使能 + FENCE.I 冲刷取指路径，`rv32ui-p-fence_i` 通过
+- 非对齐访存：DTCM/总线内存由 Mem_Access 拆分为两次对齐访问，`rv32ui-p-ma_data` 通过
+- ITCM 单端口化：取指 / LSU load/store / SBA 共用读口（LSU 访问时取指让路 1 拍），CPU 可通过 load/store 指令直接读写 ITCM
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）、硬件断点 Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择）、ebreak 进调试模式（dcsr.ebreakm）、数据观察点
 - 完整调试回归：DMI 一键测试、GDB 全功能套件、真实 demo 符号级在线调试
 
@@ -22,8 +25,8 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 
 | 项目 | 说明 |
 |------|------|
-| 自修改代码（FENCE.I） | 不支持：FENCE.I 不刷新取指路径，`rv32ui-p-fence_i` 未通过（预期行为） |
-| 非对齐访存 | 不支持：不产生 misaligned 异常，`rv32ui-p-ma_data` 未通过（预期行为） |
+| 自修改代码（FENCE.I） | 支持：ITCM 字节写 + FENCE.I 冲刷取指路径，`rv32ui-p-fence_i` 通过；自修改仅对 ITCM 内代码生效 |
+| 非对齐访存 | 支持：DTCM/总线内存拆分为两次对齐访问，`rv32ui-p-ma_data` 通过；ITCM/BootROM/APB 外设仍按规范产生 misaligned 异常 |
 | Debug ROM / Park Loop | 未实现：采用 halt-in-place + 直接端口访问架构 |
 | ProgBuf | 未实现（progbufsize=0），抽象命令不经程序缓冲执行 |
 | 抽象内存访问（cmdtype=2） | 未实现：调试器内存访问走 SBA |
@@ -55,6 +58,8 @@ cd ..
 python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 ```
 
+> 提示：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均由构建脚本生成（已加入 .gitignore），新克隆仓库后请先运行 `python SDK/tools/build_riscv_tests.py` 与 `cd test_data/custom_asm && python build_asm.py all`，再跑核级回归。
+
 ## 目录结构
 
 ```
@@ -75,11 +80,11 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 │   ├── debug_test/           # Debug Module 仿真（run_msim_debug.bat 一键回归）
 │   ├── uart_test/ gpio_test/ plic_test/ timer_test/  # 外设独立仿真
 │   ├── run_one.py            # 运行单个 custom_asm 测试
-│   ├── run_all_custom_asm.py # custom_asm 全回归（36 个测试）
+│   ├── run_all_custom_asm.py # custom_asm 全回归（38 个测试）
 │   └── run_all_riscv_tests.py # riscv-tests 全回归（rv32ui + rv32um）
 ├── test_data/
-│   ├── custom_asm/           # 36 个自定义流水线压力测试（.S + .dat）
-│   ├── riscv-tests/          # 标准 riscv-tests .dat（rv32ui 42个 + rv32um 8个；fence_i/ma_data 已知不过）
+│   ├── custom_asm/           # 38 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
+│   ├── riscv-tests/          # riscv-tests 构建产物（rv32ui 42 + rv32um 8 全过；由 build_riscv_tests.py 生成）
 │   └── soc/c/                # CoreMark 内存文件（.mem）
 ├── SDK/
 │   ├── tools/                # 构建与在线控制工具
@@ -103,6 +108,26 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 | [构建与仿真](doc/build_and_sim.md) | 环境依赖、测试构建、仿真运行、CoreMark、Spike 差分测试 |
 | [FPGA 原型验证与在线工具](doc/fpga.md) | 上板验证、硬件连接、UART 自动化工具 |
 | [SDK 构建工具与协议](doc/sdk.md) | build.py、riscv-tests、MROM、uartbin 协议 |
+
+## TODO_LIST
+
+> 后续计划（关闭已知缺口、ISA 扩展、RTOS、SoC 外设、工程化）。
+
+- [x] **FENCE.I / 自修改代码**：已实现（ITCM 字节写使能 + FENCE.I 冲刷取指路径），`rv32ui-p-fence_i` 通过
+- [x] **非对齐访存**：已实现（DTCM/总线内存拆分为两次对齐访问），`rv32ui-p-ma_data` 通过
+- [ ] **RV32C：C 压缩指令扩展**（取指 2/4 字节对齐 + 译码改造，代码体积大幅减小）
+- [ ] **RV32A：A 原子扩展**（LR/SC + AMO，为 RTOS/多核同步铺路）
+- [ ] **RV32F / D：F/D 浮点扩展**（FPU 数据通路 + ABI 切换）
+- [ ] **RT-Thread 移植**：只有M-mode（tick 驱动 + 串口 console + 上下文切换/陷阱桥接）
+- [ ] **SPI / QSPI Flash 启动**：片外 Flash 引导
+- [ ] **总线取指（XIP）**：支持经 AXI 总线从 Flash/DDR 取指执行，而非仅从 ITCM 取指
+- [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
+- [ ] **自定义指令**：AI加速器或加解密协处理器
+- [ ] **SV 工程化重构**：package 、interface等高级语法特性
+- [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
+- [ ] **其他外设**：I2C / WDT / RTC / PMU……
+- [ ] **详细设计文档**：正在写……
+
 ## 常见问题
 
 **Q: 编译报错 `riscv-none-elf-gcc: command not found`**

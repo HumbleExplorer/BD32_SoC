@@ -118,10 +118,11 @@ def make_dat(elf_path, dat_path):
 # ===== 编译一个测试 =====
 def compile_test(test_name, src_file, useclang=False):
     os.makedirs(OUT_DIR, exist_ok=True)
-    elf = os.path.join(OUT_DIR, test_name)
-    dump = elf + ".dump"
-    dat = elf + ".dat"
-    obj = elf + ".o"
+    base = os.path.join(OUT_DIR, test_name)
+    elf  = base + ".elf"
+    dump = base + ".dump"
+    dat  = base + ".dat"
+    obj = base + ".o"
 
     print(f"\n--- {test_name} ---")
 

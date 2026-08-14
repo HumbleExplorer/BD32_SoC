@@ -1,11 +1,13 @@
 # 验证方法
 
+> 说明：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均为构建产物（已 gitignore），新克隆环境先运行 `SDK/tools/build_riscv_tests.py` 与 `test_data/custom_asm/build_asm.py` 再执行以下回归。
+
 ## 仿真（ModelSim，无需板子）
 
 | 套件 | 顶层 | 运行 | 判定 |
 |---|---|---|---|
 | custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 每项输出 pass/fail |
-| riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 通过（fence_i/ma_data 未过） |
+| riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 50/50 全过（含 fence_i / ma_data） |
 | Debug 模块 | tb_debug | `script/debug_test/run_msim_debug.bat` | 通过 |
 | 外设 | tb_apb_* | `script/xxx_test/top_tb.bat` | 通过 |
 | SoC | tb_soc_top | `run 55ms`（CoreMark 启动） | 启动输出通过 |
@@ -32,7 +34,7 @@ JTAG 四线（TCK/TDI/TDO/TMS）+ GND，adapter speed 500kHz（杜邦线）。
 
 ## 已知限制
 
-- 不支持自修改代码（FENCE.I 不刷新取指路径）与非对齐访存。
+- 自修改代码（FENCE.I）与非对齐访存已支持（分别对应 `rv32ui-p-fence_i` / `rv32ui-p-ma_data`）。
 - 无 ProgBuf / Debug ROM；抽象内存访问未实现（走 SBA）。
 - 单 hart；无跟踪调试。
 

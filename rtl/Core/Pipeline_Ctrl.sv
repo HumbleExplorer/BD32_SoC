@@ -31,6 +31,8 @@ module Pipeline_Ctrl #(
     input   logic                       trigger_match,     // trigger 地址匹配（硬件断点）
     input   logic                       ebreak_halt,       // ebreak 进入 debug 模式（ID 级）
     input   logic                       sba_bus_active,    // SBA 外设总线访问中（halt 保持）
+    input   logic                       mem_split_stall,   // MEM 级非对齐拆分访问进行中
+    input   logic                       itcm_data_stall,   // EX 级访问 ITCM（单端口让路）
     // from Forward
     input   logic                       load_use_flag,
     // from EX
@@ -182,6 +184,13 @@ localparam STEP_HALT  = 2'b11;  // 重新 halt
 logic [1:0] step_state;
 logic [2:0] step_drain_cnt;
 
+// ITCM 单端口让路：访问拍（N）停 PC，数据返回拍（N+1）停 IF_ID，防止捕获 LSU 数据
+logic itcm_data_stall_d;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) itcm_data_stall_d <= 1'b0;
+    else        itcm_data_stall_d <= itcm_data_stall;
+end
+
 wire step_halt         = (step_state == STEP_HALT);
 wire step_run_active   = (step_state == STEP_RUN);
 wire step_drain_active = (step_state == STEP_DRAIN);
@@ -263,7 +272,10 @@ wire hp_stall = (dbg_halt_req | step_halt | trigger_match | ebreak_halt)
               | waiting_int;
 
 // 低优先级 stall（来自数据通路，但不再被 trap/branch 屏蔽）
-wire lp_stall = oitf_stall | ~bus_ready | load_use_flag;
+// 注意 ITCM 让路只停返回拍（itcm_data_stall_d）而非访问拍（itcm_data_stall）：
+// 访问拍 PC 照常前进，使 inst_addr 停在"被抢占的那条指令"上，返回拍再取回；
+// 若访问拍就停 PC，会把已被 IF_ID 取走的指令地址冻住，load-use 停顿顺路重读 → 重复执行
+wire lp_stall = oitf_stall | ~bus_ready | load_use_flag | mem_split_stall | itcm_data_stall_d;
 
 // step_drain_release 期间强制释放 PC（覆盖 lp_stall）
 assign pc_stall = (hp_stall | lp_stall) & ~step_drain_release;
@@ -339,6 +351,12 @@ always_comb begin
         ex_mem_flush = (sel_stage >= 2'd2);
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = trap_jump_addr;
+    end else if (mem_split_stall) begin
+        // 非对齐拆分访问：停 IF/ID/EX_MEM，保持 EX 级访存参数与 EX_MEM 中的 rd；
+        // 不停 MEM_WB，保证 P3 合并拍能正常写回
+        if_id_stall     = 1'b1;
+        id_ex_stall     = 1'b1;
+        ex_mem_stall    = 1'b1;
     end else if (oitf_stall) begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
@@ -349,6 +367,15 @@ always_comb begin
         id_ex_flush  = 1'b1;
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = branch_jump_addr;
+    end else if (itcm_data_stall_d) begin
+        // ITCM 单端口：数据返回拍禁止 IF_ID 捕获（取指在访问拍已停 PC），并冲刷 ID_EX：
+        // IF_ID 保持时 ID 内容若继续被派发会重复执行；冲刷后下拍再正常派发（仅一次）。
+        // 不能用 id_ex_stall：会把刚派发还未离开 EX 的长指令冻在 EX，
+        // 触发 OITF RAW/WAW 对自身条目的自匹配死锁。
+        // 注意必须位于 oitf_stall / branch_jump_en 之后：OITF 停顿需要 EX_MEM/MEM_WB 全停，
+        // 分支冲刷需优先于让路，否则会被本分支抢先而丢失
+        if_id_stall     = 1'b1;
+        id_ex_flush     = 1'b1;
     end else if (~bus_ready) begin
         if_id_stall     = 1'b1;
         id_ex_flush     = 1'b1;

@@ -270,8 +270,31 @@ logic                       access_wr_mem;                  // EX/MEM delayed, u
 logic   [DATA_WIDTH-1:0]    dtcm_rdata;
 logic                       dtcm_sel;
 logic                       bus_sel;
-logic                       dtcm_rvalid;
+logic                       apb_sel;
+logic                       tcm_rvalid;
 logic                       bus_rvalid;
+// 非对齐拆分访问（Mem_Access FSM）
+logic                       itcm_sel_ma;
+logic                       itcm_load_sel;
+logic                       itcm_lsu_access;   // EX 级访问 ITCM（load/store，取指让路）
+wire                        itcm_access_active; // 未停顿的 ITCM 访问
+logic                       split_misaligned;
+logic                       split_active;
+logic                       split_p2;
+logic                       split_xfer;
+logic                       split_xfer2;
+logic                       split_xfer_off;
+logic   [ADDR_WIDTH-1:0]    split_base;
+logic   [ADDR_WIDTH-1:0]    split_addr;
+logic   [ADDR_WIDTH-1:0]    split_addr_use;
+logic                       split_stall;
+logic                       split_wen_p1;
+logic                       split_wen;
+logic                       split_wr;
+logic   [DATA_WIDTH-1:0]    split_wdata_p1;
+logic   [ALIGN_BYTES-1:0]   split_wmask_p1;
+logic   [DATA_WIDTH-1:0]    split_wdata;
+logic   [ALIGN_BYTES-1:0]   split_wmask;
 wire                        cpu_bus_transfer;   // CPU 总线请求（SBA 外设访问时覆盖）
 // MEM/WB bypass for bus loads (reg_rd_wen/addr from EX stage, bypassing EX/MEM)
 logic                       reg_rd_wen_selected_mem;
@@ -314,6 +337,10 @@ assign bus_error = bus_tran_done_cpu && (bus_resp != 2'b00);
 // 异常编码（统一在顶层完成，子模块只报 1-bit 条件）
 // 约定：无异常 = {31{1'b1}}（bit[30]=1 为哨兵），有效异常码 bit[30]=0
 // =========================================================================
+// 非对齐异常抑制：DTCM / 总线内存（Flash/DDR）由 Mem_Access 拆分访问透明处理（不产生异常）；
+// ITCM store / BootROM / APB 外设仍按规范产生 mcause=4/6 异常
+wire mem_split_ok        = dtcm_sel | (bus_sel & ~apb_sel);
+wire access_misalign_ex  = ex_addr_misalign & ~mem_split_ok;
 // IF 级：指令访问错误 > 指令地址未对齐
 assign exception_code_if = if_access_fault  ? {{DATA_WIDTH-5{1'b0}}, 4'd1}
                          : if_addr_misalign ? {{DATA_WIDTH-5{1'b0}}, 4'd0}
@@ -334,12 +361,12 @@ assign exception_code_ex = bus_error        ? (bus_write_q ? {{DATA_WIDTH-5{1'b0
                                                            : {{DATA_WIDTH-5{1'b0}}, 4'd5})
                          : ex_access_illegal ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, 4'd7}
                                                              : {{DATA_WIDTH-5{1'b0}}, 4'd5})
-                         : ex_addr_misalign  ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, 4'd6}
+                         : access_misalign_ex ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, 4'd6}
                                                              : {{DATA_WIDTH-5{1'b0}}, 4'd4})
                          : ex_illegal_csr    ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
                          : {DATA_WIDTH-1{1'b1}};
 assign exception_val_ex  = bus_error                    ? bus_addr_q
-                         : (ex_access_illegal | ex_addr_misalign) ? access_addr_ex
+                         : (ex_access_illegal | access_misalign_ex) ? access_addr_ex
                          : ex_illegal_csr               ? inst_ex
                          : 'h0;
 
@@ -423,6 +450,8 @@ Pipeline_Ctrl #(
     .ex_mem_flush        	(ex_mem_flush         ),
     .mem_wb_stall        	(mem_wb_stall         ),
     .mem_wb_flush        	(mem_wb_flush         ),
+    .mem_split_stall        (split_stall          ),
+    .itcm_data_stall        (itcm_access_active   ),
     .oitf_flush          	(oitf_flush           ),
     .exception_inst_addr 	(exception_inst_addr  ),
     .exception_trap      	(exception_trap       ),
@@ -544,11 +573,20 @@ wire sba_any_sel     = sba_bootrom_sel | sba_itcm_sel | sba_dtcm_sel | sba_bus_s
 // BootROM read-addr mux: switch to sba_addr only for SBA read of 0x0000 (PC frozen while halted)
 assign bootrom_rd_addr = (sba_req_valid && sba_bootrom_sel) ? sba_addr : pc;
 
-// ITCM 读地址 mux：SBA 覆盖 PC
-wire [ADDR_WIDTH-1:0] itcm_rd_addr = (sba_req_valid && sba_itcm_sel) ? sba_addr : pc;
-
 // ITCM 子字写 RMW：ITCM 写口无字节使能，8/16 位写先读 word 再合并写回
 logic itcm_rmw_active;   // RMW 写 phase（下一拍执行写）
+
+// ITCM 单端口读/写地址 mux：SBA（含 RMW 写相位） > LSU load/store（仅访问首拍） > 取指 PC
+// 注意：CORE_TEST 共享窗口（ITCM/DTCM 同 tag）下 load 由 DTCM 服务，不占 ITCM 读口，无需让路；
+// store 因镜像写 ITCM 仍需让路。正常配置（ITCM/DTCM 分址）load/store 均让路。
+assign itcm_lsu_access = (itcm_sel_ma | itcm_load_sel) & ~(itcm_load_sel & dtcm_sel);
+// 未停顿的 ITCM 访问（电平）：每个访问在 EX 的未停顿拍都占用单端口；
+// 停顿（ex_mem_stall/flush）期间不占端口
+assign itcm_access_active = itcm_lsu_access & ~(ex_mem_stall | ex_mem_flush);
+wire [ADDR_WIDTH-1:0] itcm_rd_addr = ((sba_req_valid && sba_itcm_sel) || itcm_rmw_active) ? sba_addr :
+                                      itcm_access_active ? access_addr_ex :
+                                      pc;
+
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) itcm_rmw_active <= 1'b0;
     else        itcm_rmw_active <= sba_req_valid & sba_itcm_sel & sba_write & (sba_size != 3'd2);
@@ -577,20 +615,31 @@ always_comb begin
     end
 end
 
-// ITCM 写 mux：SBA 复用 download 端口（全字直写；子字写经 RMW）
-wire                    itcm_wr_en_sba   = itcm_download_en
-                                         | (sba_req_valid & sba_itcm_sel & sba_write & (sba_size == 3'd2))
-                                         | itcm_rmw_active;
-wire [ADDR_WIDTH-1:0]  itcm_wr_addr_sba = ((sba_req_valid & sba_itcm_sel) || itcm_rmw_active) ? sba_addr : itcm_download_addr;
-wire [DATA_WIDTH-1:0]  itcm_wr_data_sba = itcm_rmw_active ? itcm_rmw_data :
-                                          (sba_req_valid & sba_itcm_sel & sba_write) ? sba_wdata : itcm_download_data;
+// ITCM 写 mux：SBA 全字直写 / 子字 RMW，CPU store 按字节写（自修改代码）；
+// UART 下载走 ITCM 模块内部 download 端口（模块内优先，与 DTCM 一致）
+wire [ALIGN_BYTES-1:0] itcm_wr_en_sba = ((sba_req_valid & sba_itcm_sel & sba_write & (sba_size == 3'd2)) ? {ALIGN_BYTES{1'b1}} : '0)
+                                       | (itcm_rmw_active ? sba_be : '0);
+// CPU store 写使能：itcm_sel_ma 为目标译码，未停顿的访问拍写（每个访问一拍）；
+// 非对齐 ITCM store 将抛异常，先抑制写，避免 trap 前污染指令内存
+wire [ALIGN_BYTES-1:0] itcm_wr_en_cpu  = (itcm_sel_ma && itcm_access_active && ~access_misalign_ex) ? access_wmask_ex : '0;
+wire [ALIGN_BYTES-1:0] itcm_wr_en       = itcm_wr_en_cpu | itcm_wr_en_sba;
+wire [DATA_WIDTH-1:0]  itcm_wr_data     = itcm_wr_en_cpu ? access_wdata_ex :
+                                          itcm_rmw_active ? itcm_rmw_data :
+                                          (sba_req_valid & sba_itcm_sel & sba_write) ? sba_wdata : '0;
 
 // DTCM 访问 mux：SBA 覆盖 EX 级（DTCM 自带字节使能 wmask）
-wire [ADDR_WIDTH-1:0]  dtcm_addr_sba  = (sba_req_valid & sba_dtcm_sel) ? sba_addr : access_addr_ex;
+wire [ADDR_WIDTH-1:0]  dtcm_addr_sba  = (sba_req_valid & sba_dtcm_sel) ? sba_addr :
+                                         split_active ? split_addr_use : access_addr_ex;
 wire                    dtcm_wen_sba   = (sba_req_valid & sba_dtcm_sel & sba_write) ? 1'b1 :
-                                          (access_wr_ex && dtcm_sel && ~(ex_mem_stall || ex_mem_flush));
-wire [DATA_WIDTH-1:0]  dtcm_wdata_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_wdata_lane : access_wdata_ex;
-wire [ALIGN_BYTES-1:0] dtcm_wmask_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_be : access_wmask_ex;
+                                          split_wen_p1 ? 1'b1 :
+                                          split_wen ? 1'b1 :
+                                          (access_wr_ex && dtcm_sel && ~(ex_mem_stall || ex_mem_flush) && ~split_misaligned);
+wire [DATA_WIDTH-1:0]  dtcm_wdata_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_wdata_lane :
+                                         split_wen_p1 ? split_wdata_p1 :
+                                         split_wen ? split_wdata : access_wdata_ex;
+wire [ALIGN_BYTES-1:0] dtcm_wmask_sba = (sba_req_valid & sba_dtcm_sel & sba_write) ? sba_be :
+                                         split_wen_p1 ? split_wmask_p1 :
+                                         split_wen ? split_wmask : access_wmask_ex;
 
 // SBA 外设总线访问：注入 CPU 总线通路（CPU halt 期间无总线活动，直接覆盖）
 assign sba_bus_active = sba_req_valid & sba_bus_sel;
@@ -637,11 +686,13 @@ ITCM #(
 )u_ITCM(
     .clk            (clk),
     .rst_n          (rst_n),
-    .itcm_download_en     (itcm_wr_en_sba),
-    .itcm_download_addr   (itcm_wr_addr_sba),
-    .itcm_download_data   (itcm_wr_data_sba),
-    .inst_addr      (itcm_rd_addr),      // SBA 时覆盖 PC
-    .inst_o         (itcm_inst)         // 同步读，下一拍输出
+    .itcm_access_addr     (itcm_rd_addr),
+    .itcm_wr_en           (itcm_wr_en),
+    .itcm_wr_data         (itcm_wr_data),
+    .itcm_inst            (itcm_inst),
+    .itcm_download_en     (itcm_download_en),
+    .itcm_download_addr   (itcm_download_addr),
+    .itcm_download_data   (itcm_download_data)
 );
 
 // 指令选择：BootROM → ITCM → NOP（非本地地址，未来走总线取指时扩展）
@@ -940,8 +991,10 @@ EX_MEM #(
 );
 
 Mem_Access #(
-    .ADDR_WIDTH (ADDR_WIDTH),
-    .DATA_WIDTH (DATA_WIDTH)
+    .ADDR_WIDTH     (ADDR_WIDTH),
+    .DATA_WIDTH     (DATA_WIDTH),
+    .ALIGN_WIDTH    (ALIGN_WIDTH),
+    .ALIGN_BYTES    (ALIGN_BYTES)
 )u_Mem_Access(
     .clk                        (clk),
     .rst_n                      (rst_n),
@@ -952,12 +1005,34 @@ Mem_Access #(
     .access_wr                  (access_wr_ex),
     .bus_tran_done              (bus_tran_done_cpu),
     .dtcm_rdata                 (dtcm_rdata),
+    .itcm_rdata                 (itcm_inst),
     .rd_bus_data                (bus_rdata),
     .access_func3               (access_func3_ex),
+    .access_wdata_raw           (access_wdata_temp),
     .dtcm_sel                   (dtcm_sel),
     .bus_sel                    (bus_sel),
+    .apb_sel                    (apb_sel),
+    .itcm_sel                   (itcm_sel_ma),
+    .itcm_load_sel              (itcm_load_sel),
+    .split_misaligned           (split_misaligned),
+    .split_active               (split_active),
+    .split_p2                   (split_p2),
+    .split_xfer                 (split_xfer),
+    .split_xfer2                (split_xfer2),
+    .split_xfer_off             (split_xfer_off),
+    .split_base                 (split_base),
+    .split_addr                 (split_addr),
+    .split_addr_use             (split_addr_use),
+    .split_stall                (split_stall),
+    .split_wen_p1               (split_wen_p1),
+    .split_wen                  (split_wen),
+    .split_wr                   (split_wr),
+    .split_wdata_p1             (split_wdata_p1),
+    .split_wmask_p1             (split_wmask_p1),
+    .split_wdata                (split_wdata),
+    .split_wmask                (split_wmask),
     .func3_expanded_data        (func3_expanded_data),
-    .dtcm_rvalid                (dtcm_rvalid),
+    .tcm_rvalid                 (tcm_rvalid),
     .bus_rvalid                 (bus_rvalid)
 );
 
@@ -983,12 +1058,13 @@ DTCM #(
 
 // MUX2: load data only for LOAD instructions, ALU result for everything else
 // bus_rvalid 只对 load 指令选择 func3_expanded_data，非 load 指令（如 lui）固定传 ALU 结果
-assign reg_rd_wdata_selected_mem = (dtcm_rvalid || bus_rvalid) ? func3_expanded_data : reg_rd_wdata_mem;
+assign reg_rd_wdata_selected_mem = (tcm_rvalid || bus_rvalid) ? func3_expanded_data : reg_rd_wdata_mem;
 
 // MEM/WB reg_rd_wen/reg_rd_waddr bypass: bus loads skip EX/MEM, DTCM/ALU go through EX/MEM
 // 总线错误（bus_error）时禁止写回，避免把超时返回的垃圾数据写入寄存器
-assign reg_rd_wen_selected_mem   = (dtcm_rvalid || (bus_rvalid && ~bus_error)) ? 1'b1 : reg_rd_wen_mem;
-assign reg_rd_waddr_selected_mem = bus_rvalid ? bus_load_waddr : reg_rd_waddr_mem;
+assign reg_rd_wen_selected_mem   = (tcm_rvalid || (bus_rvalid && ~bus_error)) ? 1'b1 : reg_rd_wen_mem;
+// 非对齐拆分期间 EX_MEM 被 mem_split_stall 保持，rd 仍有效，无需走 bus_load_waddr 旁路
+assign reg_rd_waddr_selected_mem = (bus_rvalid && ~split_active) ? bus_load_waddr : reg_rd_waddr_mem;
 
 MEM_WB #(
     .ADDR_WIDTH     (ADDR_WIDTH),
@@ -1061,11 +1137,14 @@ assign reg_rd_wen   = reg_rd_wen_wb;
 assign reg_rd_waddr = reg_rd_waddr_wb;
 
 // CPU 总线请求（SBA 外设访问时覆盖，CPU halt 期间无总线活动）
-assign cpu_bus_transfer = bus_sel && ~(waiting_int || oitf_stall) && ~trigger_hit;
-assign bus_transfer      = sba_bus_active ? 1'b1 : cpu_bus_transfer;
-assign bus_access_write  = sba_bus_active ? sba_write  : access_wr_ex;
-assign bus_access_wdata  = sba_bus_active ? sba_wdata_lane : access_wdata_ex;
-assign bus_access_addr   = sba_bus_active ? sba_addr   : access_addr_ex;
-assign bus_access_wstrb  = sba_bus_active ? sba_be     : access_wmask_ex;
+// 非对齐拆分访问由 Mem_Access FSM 直接驱动：检测拍（IDLE）不发总线请求，
+// P1/P2 分别访问 base / base+4（地址/写数据/字节使能全部由 FSM 锁存值驱动）
+// 非对齐 APB 访问将抛 misaligned 异常：不发总线事务，避免 trap 前对外设产生副作用
+assign cpu_bus_transfer = bus_sel && ~(waiting_int || oitf_stall) && ~trigger_hit && ~split_misaligned && ~access_misalign_ex;
+assign bus_transfer      = sba_bus_active ? 1'b1 : (split_xfer && ~split_xfer_off) ? 1'b1 : cpu_bus_transfer;
+assign bus_access_write  = sba_bus_active ? sba_write  : split_xfer ? split_wr   : access_wr_ex;
+assign bus_access_wdata  = sba_bus_active ? sba_wdata_lane : split_xfer ? (split_xfer2 ? split_wdata : split_wdata_p1) : access_wdata_ex;
+assign bus_access_addr   = sba_bus_active ? sba_addr   : split_xfer ? split_addr_use : access_addr_ex;
+assign bus_access_wstrb  = sba_bus_active ? sba_be     : split_xfer ? (split_xfer2 ? split_wmask : split_wmask_p1) : access_wmask_ex;
 
 endmodule

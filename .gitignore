@@ -40,8 +40,14 @@ SDK/tools/*.zip
 # --- 调试会话临时日志 ---
 SDK/tools/ocd_*.txt
 
-# --- riscv-tests 源码（外部仓库；编译产物 .dat 在 test_data/ 中跟踪）---
+# --- SDK/isa 生成文件（env 由构建脚本从外部 riscv-tests 补齐）---
 **/isa/*
+
+# --- 测试构建产物（build_asm.py / build_riscv_tests.py 生成，不入库；克隆后需先构建再跑测试）---
+*.elf
+*.dump
+*.dat
+*.o
 
 # --- Python ---
 **/__pycache__/

@@ -100,7 +100,9 @@ assign  access_addr = alu_op1 + imm;
 assign  access_func3 = func3;
 assign  lp_is_div = func3[2];
 
-assign access_illegal = access_en ? (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG): 1'b0;
+// ITCM 可读写（自修改代码 / LSU 读代码区）；其余低于 DTCM 基址的区域（BootROM/未映射）为非法访问
+assign access_illegal = access_en ? ((access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG)
+                                    && (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] != `ITCM_BASE_TAG)) : 1'b0;
 assign ex_access_illegal = access_illegal;
 assign ex_addr_misalign  = access_addr_misalign;
 assign branch_predict_success = ((predict_taken && branch_taken) && (predict_target == branch_target)) 
@@ -218,18 +220,24 @@ always_comb begin
                 end
                 `INST_SH: begin
                     access_addr_misalign = access_addr[0];
-                    case (access_addr[1])
-                        1'b0: begin
+                    case (access_addr[1:0])
+                        2'b00: begin
                             access_wdata = {16'h0,access_wdata_temp[15:0]};
                             access_wmask = 4'b0011;
                         end
-                        1'b1: begin
+                        2'b01: begin
+                            // 字内偏移 1：半字落在 lanes 1:2（原实现按 addr[1] 摆位会错写 lanes 0:1）
+                            access_wdata = {8'h0,access_wdata_temp[15:0],8'h0};
+                            access_wmask = 4'b0110;
+                        end
+                        2'b10: begin
                             access_wdata = {access_wdata_temp[15:0],16'h0};
                             access_wmask = 4'b1100;
                         end
                         default: begin
-                            access_wdata = {16'h0,access_wdata_temp[15:0]};
-                            access_wmask = 4'b0011;
+                            // off=3 跨字：正常通路摆位由 Mem_Access 拆分 FSM 覆盖
+                            access_wdata = {access_wdata_temp[15:0],16'h0};
+                            access_wmask = 4'b1100;
                         end
                     endcase
                 end
