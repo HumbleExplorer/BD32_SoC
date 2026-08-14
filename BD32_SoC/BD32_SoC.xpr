@@ -602,6 +602,7 @@
       <Filter Type="Srcs"/>
       <File Path="$PPRDIR/../sim/tb_soc_top.sv">
         <FileInfo>
+          <Attr Name="AutoDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>

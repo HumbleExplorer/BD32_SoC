@@ -103,14 +103,14 @@ DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通
 
 **工具链**
 
-- OpenOCD（xPack 0.12.0+dev）：`./SDK/tools/xpack-openocd-0.12.0-7/bin/openocd.exe`
+- OpenOCD（xPack 0.12.0+dev）：`./third_party/xpack-openocd-0.12.0-7/bin/openocd.exe`（从 [xPack OpenOCD Releases](https://github.com/xpack-dev-tools/openocd-xpack/releases) 下载 win32-x64 版本，解压到 `third_party/` 即可，无需安装）
 - GDB（xPack GDB 16.3）：`<xPack 工具链>/bin/riscv-none-elf-gdb.exe`
 - 目标程序 ELF：如 `./SDK/demos/nolibc/breathing/build/breathing.elf`
 
 **启动 OpenOCD**（默认开 gdb 3333 / telnet 4444 / tcl 6666 端口）：
 
 ```bash
-.\SDK\tools\xpack-openocd-0.12.0-7\bin\openocd.exe -f .\SDK\tools\bd32_openocd.cfg
+.\third_party\xpack-openocd-0.12.0-7\bin\openocd.exe -f .\SDK\tools\bd32_openocd.cfg
 ```
 
 正常日志应出现 `tap/device found: 0x1bd32003`。随后启动 GDB：
@@ -333,7 +333,7 @@ dcsr 位域（1.0 布局）：`[31:28]=debugver(4)`、`[15]=ebreakm`、`[8:6]=ca
 
 #### 10. 一键回归脚本
 
-SDK/tools/ 下所有脚本输出统一到仓库根 `logs/` 目录（已加入 .gitignore）：
+SDK/tools/ 下所有脚本输出统一到仓库根 `logs/` 目录：
 
 | 脚本 | 内容 | 结果文件 |
 |------|------|----------|
@@ -386,7 +386,7 @@ cd ./script/debug_test
 vsim -do run.do
 ```
 
-Testbench `sim/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物理连接，覆盖：
+Testbench `tb/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物理连接，覆盖：
 - Test 1~12：IDCODE、halt/resume、GPR/CSR 读写、SBA、单步
 - Test 13：reset halt（停在复位向量）
 - Test 14：reset halt 后改 dpc 再 resume 的取指对齐（`resume_hold` 回归）
@@ -410,4 +410,3 @@ Testbench `sim/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物�
 - GDB 在线数据观察点（`run_gdb_watchpoint.bat`：watch 0x20000 → continue → 命中停止，SBA 读 BootROM 判定路径完整）
 
 当前回归结果：**ModelSim 仿真全部通过**；上板 DMI、新功能、外设 SBA、watchpoint、GDB 在线 watchpoint 全部 PASS。
-

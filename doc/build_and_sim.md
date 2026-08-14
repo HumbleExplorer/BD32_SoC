@@ -9,15 +9,16 @@
 
 | 工具 | 用途 | 版本/路径 | 许可证 | 环境变量 |
 |------|------|-----------|--------|----------|
-| xPack RISC-V GCC | 固件编译（riscv-none-elf-gcc） | 15.2.0（`<工具链目录>/bin`，见 build.py 顶部 TOOLCHAIN） | GPL-3.0（工具链） | `RISCV_TOOLCHAIN` |
-| LLVM/Clang（可选） | 固件编译 | 22.1.8（`<LLVM 目录>/bin`，见 build.py 顶部 LLVM_BIN） | Apache-2.0（工具链） | `LLVM_BIN` |
+| xPack RISC-V GCC | 固件编译（riscv-none-elf-gcc） | 15.2.0（[xPack riscv-none-elf-gcc Releases](https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases)，`<工具链目录>/bin` 见 build.py 顶部 TOOLCHAIN） | GPL-3.0（工具链） | `RISCV_TOOLCHAIN` |
+| LLVM/Clang（可选） | 固件编译 | 22.1.8（[llvm-project Releases](https://github.com/llvm/llvm-project/releases)，Windows 安装包 `LLVM-22.1.8-win64.exe`，`<LLVM 目录>/bin` 见 build.py 顶部 LLVM_BIN） | Apache-2.0（工具链） | `LLVM_BIN` |
 | ModelSim | RTL 仿真 | SE-64 2020.4（`<ModelSim 安装目录>/win64`，见各脚本顶部 MODELSIM_PATH） | Siemens EULA | `MODELSIM_PATH` |
 | GDB | JTAG 在线调试 | `<工具链目录>/bin/riscv-none-elf-gdb`（随 xPack GCC 工具链） | GPL-3.0（工具链） | `RISCV_GDB` |
-| OpenOCD | JTAG 在线调试（xPack 发行版） | 0.12.0（`SDK/tools/xpack-openocd-0.12.0-7/bin`，本体需单独下载） | GPL-2.0 | — |
+| OpenOCD | JTAG 在线调试（xPack 发行版） | 0.12.0（`third_party/xpack-openocd-0.12.0-7/bin`，从 [xPack OpenOCD Releases](https://github.com/xpack-dev-tools/openocd-xpack/releases) 下载 win32-x64 包解压到 `third_party/` 即可） | GPL-2.0 | `OPENOCD`（fpga_reset.py） |
 | Xilinx Vivado | FPGA 综合/实现/烧录 | 2023.1 | Xilinx EULA（WebPACK 免费版可用） | — |
 | Python | 脚本/自动化 | 3.x | PSF License | — |
+| riscv-tests 源码 | ISA 兼容性测试用例（rv32ui / rv32um / rv64ui） | `third_party/riscv-tests`（脚本默认，clone 官方仓库 [riscv/riscv-tests](https://github.com/riscv/riscv-tests) 后使用，构建时同步到 `SDK/isa`） | BSD-3-Clause | `RISCV_TESTS_SRC` |
 
-工具路径可用环境变量覆盖：`RISCV_TOOLCHAIN`、`LLVM_BIN`、`MODELSIM_PATH`、`RISCV_GDB`；未设置时使用各脚本内的默认值。仓库内的 `SDK/tools/*.cfg` 为自研 OpenOCD 配置，随项目以 Apache-2.0 发布。
+工具路径可用环境变量覆盖：`RISCV_TOOLCHAIN`、`LLVM_BIN`、`MODELSIM_PATH`、`RISCV_GDB`，构建测试用例时另有 `RISCV_TESTS_SRC`（见 [SDK 构建工具与协议](sdk.md)）；未设置时使用各脚本内的默认值。仓库内的 `SDK/tools/*.cfg` 为自研 OpenOCD 配置，随项目以 Apache-2.0 发布。
 
 目标架构：`-march=rv32im_zicsr -mabi=ilp32`
 
@@ -30,7 +31,7 @@ python build_asm.py all            # 全部 38 个测试
 ```
 
 编译参数：`-march=rv32im -mabi=ilp32 -O0 -mno-relax -nostdlib -static`
-产物：`.elf`、`.dump`、`.dat`（readmemh 格式）——均为构建产物，已加入 .gitignore，新克隆环境需先构建再回归。
+产物：`.elf`、`.dump`、`.dat`（readmemh 格式）——均为构建产物。
 
 ## 构建 C 程序 / CoreMark
 
@@ -77,7 +78,7 @@ python run_all_custom_asm.py               # custom_asm 全回归
 python run_all_riscv_tests.py              # riscv-tests ISA 兼容性
 ```
 
-riscv-tests 的 `.dat` / `.elf` / `.dump` 由 `SDK/tools/build_riscv_tests.py` 生成（见 [SDK 构建工具与协议](sdk.md)），产物不入库，新克隆环境先构建再回归。
+riscv-tests 的 `.dat` / `.elf` / `.dump` 由 `SDK/tools/build_riscv_tests.py` 生成（见 [SDK 构建工具与协议](sdk.md)）。
 
 riscv-tests 回归：`rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过，50/50 全过。
 
@@ -97,9 +98,9 @@ vsim -c -voptargs=+acc tb_soc_top -do "run 55ms; quit -f"
 UART 输出通过 TB 中的 `$write("%c", ...)` 打印到控制台。
 添加 `+define+WB_TRACE` 可启用写回追踪（输出到 `wb_trace.log`）。
 
-#### 外设独立仿真
+#### 各测试目录直接运行（GUI / 命令行）
 
-各 `script/xxx_test/` 目录下双击 `top_tb.bat` 或命令行运行：
+每个 `script/xxx_test/` 目录（含 `core_test`、`soc_test` 与外设测试）都可以双击 `top_tb.bat` 打开 ModelSim GUI，或在命令行执行 `run.do`：
 ```bash
 cd script/uart_test
 <ModelSim 安装目录>\win64\modelsim -do run.do   # 或 modelsim -do run.do（已加入 PATH）
@@ -116,7 +117,7 @@ cd script/uart_test
 | `run_one.py` | 运行单个 custom_asm 测试 | `cd script && python run_one.py <test_name>` |
 | `run_all_custom_asm.py` | custom_asm 全回归（tb_core_top） | `cd script && python run_all_custom_asm.py` |
 | `run_all_riscv_tests.py` | riscv-tests ISA 兼容性回归（tb_core_top） | `cd script && python run_all_riscv_tests.py` |
-| `cleanup_temp.py` | 清理 ModelSim work 库、transcript/*.log/wlftrs*/vsim.wlf/modelsim.ini、`__pycache__`、logs/ | `cd script && python cleanup_temp.py [--apply] [--keep-logs]`（默认 dry-run） |
+| `cleanup_temp.py` | 清理 ModelSim work 库、transcript/*.log/wlftrs*/vsim.wlf/modelsim.ini、`__pycache__`、logs/ | `cd script && python cleanup_temp.py [--apply] [--dry-run] [--keep-logs]`（默认先列出并确认；`--apply` 跳过确认直接删；`--dry-run` 只列出） |
 | `run_periph_regression.bat` | 外设四合一 headless 回归（UART/GPIO/PLIC/Timer），输出 `logs/*_test_out.txt` | 直接运行，或任务计划程序（本机） |
 | `run_soc_test.bat` | SoC headless 仿真（tb_soc_top，CoreMark 启动），输出 `logs/soc_test_out.txt` | 直接运行，或任务计划程序（本机） |
 
@@ -124,15 +125,15 @@ cd script/uart_test
 
 | 目录 | 测试对象 | 脚本 | 说明 |
 |------|----------|------|------|
-| `core_test/` | 核级 tb_core_top | `run.do`（GUI）；`core_run_batch.do`（batch）；`top_tb.bat`（GUI 启动） | custom_asm / riscv-tests 由根目录 Python 脚本驱动 |
-| `debug_test/` | 调试模块 tb_debug | `run.do`（GUI）；`run_msim_debug.bat`（headless 回归，输出 `logs/msim_out.txt`）；`run_batch2.do` | Debug Spec 全功能 93 项回归 |
-| `soc_test/` | SoC 级 tb_soc_top | `run.do`（主仿真）；`run_diag.do`（MROM 启动诊断）；`run_reset_test.do` / `run_reset_fast.do`（复位后重新下载）；`run_bus_timeout_test.do` / `run_bus_timeout_fast.do`（总线超时） | 各自带波形配置，batch 场景加 `quit -f` |
+| `core_test/` | 核级 tb_core_top | `run.do`（GUI）；`core_run_batch.do` / `run_core.do`（batch）；`top_tb.bat`（GUI 启动） | custom_asm / riscv-tests 由根目录 Python 脚本驱动 |
+| `debug_test/` | 调试模块 tb_debug | `run.do`（GUI）；`run_msim_debug.bat`（headless 回归，输出 `logs/msim_out.txt`）；`run_batch.do` | Debug Spec 全功能 94 项回归（默认加载 breathing，可用 `BD32_ITCM_FILE` / `BD32_DTCM_FILE` 环境变量指定 .mem） |
+| `soc_test/` | SoC 级 tb_soc_top | `top_tb.bat`（GUI 启动）；`run.do`（主仿真）；`run_diag.do`（MROM 启动诊断）；`run_reset_test.do` / `run_reset_fast.do`（复位后重新下载）；`run_bus_timeout_test.do` / `run_bus_timeout_fast.do`（总线超时） | 各自带波形配置，batch 场景加 `quit -f` |
 | `gpio_test/` `plic_test/` `timer_test/` `uart_test/` | 外设独立 tb_apb_* | `run.do`（GUI）；`top_tb.bat` | 独立于CPU的外设仿真 |
 
 说明：
 - `run.do` 第一行统一用 `file delete -force work` 清理旧库，不依赖 `vdel`/`modelsim.ini`，避免 GUI 锁库时报错。
 - 本机 exec 环境 Winsock 受限，vsim 必须通过任务计划程序运行（见「OpenOCD + GDB 使用」章节说明）；`vlog`/`vopt` 可直接执行。
-- 涉及 ModelSim 的批处理脚本输出统一重定向到仓库根 `logs/`（已加入 .gitignore）。
+- 涉及 ModelSim 的批处理脚本输出统一重定向到仓库根 `logs/`。
 
 ## CoreMark 基准
 
@@ -152,6 +153,8 @@ python tools/build.py demos/newlib/coremark --newlib --opt O3   # → build_O3/
 | -O3 | `coremark_o3.elf`、`coremark_o3_itcm.mem`、`coremark_o3_dtcm.mem`、`coremark_o3.uartbin` |
 
 `test_data/soc/c/` 中同时保留两套 .mem 文件，通过 `SoC_Config.sv` 的 `ITCM_FILE`/`DTCM_FILE` 切换加载哪一套。
+
+> 注：`build_O2/`、`build_O3/` 等目录为 `build.py` 生成的构建产物（.elf / .dump / .mem / .uartbin）。
 
 预期正确输出（2K 规模，标准种子）：
 ```

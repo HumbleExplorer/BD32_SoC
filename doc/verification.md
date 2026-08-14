@@ -1,6 +1,6 @@
 # 验证方法
 
-> 说明：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均为构建产物（已 gitignore），新克隆环境先运行 `SDK/tools/build_riscv_tests.py` 与 `test_data/custom_asm/build_asm.py` 再执行以下回归。
+> 说明：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均为构建产物，新克隆环境先获取 riscv-tests 源码（见 [SDK 构建工具与协议](sdk.md)）并运行 `SDK/tools/build_riscv_tests.py` 与 `test_data/custom_asm/build_asm.py`，再执行以下回归。
 
 ## 仿真（ModelSim，无需板子）
 

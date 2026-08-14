@@ -9,7 +9,7 @@ BD32 FPGA 复位控制工具
     python tools/fpga_reset.py --assert          # 仅拉高（保持复位）
     python tools/fpga_reset.py --release         # 仅释放
     python tools/fpga_reset.py --method ftd2xx   # 强制走 ftd2xx（仅当不插 JTAG 且已装 VCP 驱动）
-环境变量：OPENOCD（openocd 可执行文件路径，默认仓库内 xpack-openocd）
+环境变量：OPENOCD（openocd 可执行文件路径，默认 third_party/xpack-openocd）
 """
 import subprocess
 import sys
@@ -22,7 +22,7 @@ RST_BIT = 0x20          # ADBUS5，高有效复位
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 OPENOCD = os.environ.get("OPENOCD", os.path.join(
-    REPO_ROOT, "SDK", "tools", "xpack-openocd-0.12.0-7", "bin", "openocd.exe"))
+    REPO_ROOT, "third_party", "xpack-openocd-0.12.0-7", "bin", "openocd.exe"))
 OCD_CFG = os.path.join(REPO_ROOT, "SDK", "tools", "bd32_reset.cfg")
 
 

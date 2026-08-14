@@ -23,6 +23,10 @@ OBJCOPY = os.path.join(TOOLCHAIN, "riscv-none-elf-objcopy.exe")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT  = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 
+sys.path.insert(0, os.path.join(REPO_ROOT, "SDK", "tools"))
+from isa_env import ensure_sdk_isa
+ensure_sdk_isa(REPO_ROOT, os.environ.get("RISCV_TESTS_SRC"))
+
 LINK = os.path.join(REPO_ROOT, "SDK", "isa", "env", "p", "link.ld")
 INC1 = os.path.join(REPO_ROOT, "SDK", "isa", "env", "p")
 INC2 = os.path.join(REPO_ROOT, "SDK", "isa", "macros", "scalar")

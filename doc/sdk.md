@@ -21,13 +21,26 @@
 
 ## build_riscv_tests.py — riscv-tests 编译
 
+riscv-tests 源码不随本仓库分发，需先获取到 `third_party/riscv-tests`（官方仓库 [riscv/riscv-tests](https://github.com/riscv/riscv-tests)，BSD-3-Clause）：
+
+```bash
+git clone https://github.com/riscv/riscv-tests.git third_party/riscv-tests
+```
+
+构建以 `SDK/isa` 为工作目录，`third_party/riscv-tests` 只作为第三方源码来源（路径可用环境变量 `RISCV_TESTS_SRC` 覆盖）：
+
+- `SDK/isa/env/`（`link.ld`、`riscv_test.h`、`encoding.h`）是仓库内维护的 BD32 测试环境，随仓库提交；
+- `SDK/isa/rv32ui`、`rv32um`、`rv64ui`、`macros` 是可再生成的官方源码与宏（不入库），缺失时脚本自动从 `third_party/riscv-tests/isa/` 复制补齐；`build_asm.py`（custom_asm）首次运行也会做同样处理。
+
+其中 `riscv_test.h` 基于官方版本精简：去掉 PMP/SATP/陷阱向量等特权初始化，pass/fail 上报改为 x26/x27 以匹配 tb_core_top 判定；CSR/异常编码使用官方 `env/encoding.h`。
+
 ```bash
 cd SDK
 python tools/build_riscv_tests.py          # GCC
 python tools/build_riscv_tests.py --clang  # Clang 汇编
 ```
 
-产物输出到 `test_data/riscv-tests/`：`<test>.elf`、`<test>.dump`、`<test>.dat`（readmemh 字流）。这些构建产物已加入 `.gitignore`，克隆后需先运行本脚本再跑回归。
+产物输出到 `test_data/riscv-tests/`：`<test>.elf`、`<test>.dump`、`<test>.dat`（readmemh 字流）。
 
 ## LLVM/Clang 集成
 

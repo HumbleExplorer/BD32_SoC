@@ -16,7 +16,7 @@ set confirm off
 set architecture riscv:rv32
 set breakpoint auto-hw on
 file SDK/demos/nolibc/breathing/build/breathing.elf
-target extended-remote | SDK/tools/xpack-openocd-0.12.0-7/bin/openocd.exe -c "gdb port pipe" -c "log_output logs/gdb_c_debug_ocd.log" -c "telnet port disabled" -c "tcl port disabled" -f SDK/tools/bd32_openocd.cfg
+target extended-remote | third_party/xpack-openocd-0.12.0-7/bin/openocd.exe -c "gdb port pipe" -c "log_output logs/gdb_c_debug_ocd.log" -c "telnet port disabled" -c "tcl port disabled" -f SDK/tools/bd32_openocd.cfg
 
 monitor reset halt
 flushregs

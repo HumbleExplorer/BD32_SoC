@@ -38,7 +38,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 
 ## 快速开始
 
-前置：安装 RISC-V 工具链、ModelSim、Python（见 [构建与仿真](doc/build_and_sim.md)「环境依赖与第三方工具」）。
+前置：安装 RISC-V 工具链、ModelSim、Python（见 [构建与仿真](doc/build_and_sim.md)「环境依赖与第三方工具」）；riscv-tests 测试源码需获取到 `third_party/riscv-tests`（见 [SDK 构建工具与协议](doc/sdk.md)）。
 
 ```bash
 # 1) 编译固件（hello，产物同步到 test_data/soc/c/）
@@ -58,7 +58,7 @@ cd ..
 python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 ```
 
-> 提示：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均由构建脚本生成（已加入 .gitignore），新克隆仓库后请先运行 `python SDK/tools/build_riscv_tests.py` 与 `cd test_data/custom_asm && python build_asm.py all`，再跑核级回归。
+> 提示：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均由构建脚本生成。
 
 ## 目录结构
 
@@ -73,7 +73,7 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 │   ├── Bus/                  # AXI-Lite 总线基础设施
 │   ├── Periph/               # 外设
 │   └── Common/               # 常用基础模块
-├── sim/                      # Testbench
+├── tb/                       # Testbench
 ├── script/                   # 仿真脚本
 │   ├── core_test/            # 核级仿真（filelist.f, run.do）
 │   ├── soc_test/             # SoC 级仿真
@@ -84,14 +84,16 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 │   └── run_all_riscv_tests.py # riscv-tests 全回归（rv32ui + rv32um）
 ├── test_data/
 │   ├── custom_asm/           # 38 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
-│   ├── riscv-tests/          # riscv-tests 构建产物（rv32ui 42 + rv32um 8 全过；由 build_riscv_tests.py 生成）
+│   ├── riscv-tests/          # riscv-tests 测试产物（rv32ui 42 + rv32um 8 全过；源码来自官方 riscv-tests 仓库，见 doc/sdk.md）
 │   └── soc/c/                # CoreMark 内存文件（.mem）
+├── third_party/              # 第三方源码依赖（riscv-tests，clone 后使用，不随仓库分发）
 ├── SDK/
 │   ├── tools/                # 构建与在线控制工具
+│   ├── isa/                  # 测试环境（env 随仓库提交；rv32ui 等源码由脚本从 third_party 同步）
 │   ├── bsp/                  # 板级支持包（startup, drivers, trap, linker）
 │   ├── demos/                # 测试demo
 ├── BD32_SoC/                  # Vivado FPGA 工程（Xilinx）
-└── doc/                       # 文档（架构/调试/外设/验证，见 doc/README.md）
+└── doc/                       # 文档（架构/调试/外设/验证，索引见 README「文档」表）
 ```
 
 
@@ -111,19 +113,19 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 
 ## TODO_LIST
 
-> 后续计划（关闭已知缺口、ISA 扩展、RTOS、SoC 外设、工程化）。
+> 后续计划（ISA 扩展、RTOS、SoC 外设、工程化）。
 
 - [x] **FENCE.I / 自修改代码**：已实现（ITCM 字节写使能 + FENCE.I 冲刷取指路径），`rv32ui-p-fence_i` 通过
 - [x] **非对齐访存**：已实现（DTCM/总线内存拆分为两次对齐访问），`rv32ui-p-ma_data` 通过
 - [ ] **RV32C：C 压缩指令扩展**（取指 2/4 字节对齐 + 译码改造，代码体积大幅减小）
 - [ ] **RV32A：A 原子扩展**（LR/SC + AMO，为 RTOS/多核同步铺路）
 - [ ] **RV32F / D：F/D 浮点扩展**（FPU 数据通路 + ABI 切换）
-- [ ] **RT-Thread 移植**：只有M-mode（tick 驱动 + 串口 console + 上下文切换/陷阱桥接）
+- [ ] **RT-Thread 移植**：只有M-mode
 - [ ] **SPI / QSPI Flash 启动**：片外 Flash 引导
 - [ ] **总线取指（XIP）**：支持经 AXI 总线从 Flash/DDR 取指执行，而非仅从 ITCM 取指
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器
-- [ ] **SV 工程化重构**：package 、interface等高级语法特性
+- [ ] **SV 工程化重构**：package 、interface、SVA等高级语法特性
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……
 - [ ] **详细设计文档**：正在写……

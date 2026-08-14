@@ -9,7 +9,7 @@
 **/*.vstf
 **/wlft*
 **/modelsim.ini
-sim/sim_output.txt
+tb/sim_output.txt
 
 # --- Vivado 工程（保留 .xpr + 约束 + IP .xci，忽略生成产物）---
 BD32_SoC/BD32_SoC.cache/
@@ -33,29 +33,31 @@ BD32_SoC/BD32_SoC.srcs/utils_1/
 # --- IP 仓库（外部 IP，不纳入版本管理）---
 ip_repo/
 
-# --- OpenOCD 二进制发行版（保留 .cfg 配置文件）---
-SDK/tools/xpack-openocd-*/
-SDK/tools/*.zip
+# --- 第三方源码依赖（riscv-tests 等，获取后使用；不随仓库分发）---
+third_party/
 
 # --- 调试会话临时日志 ---
 SDK/tools/ocd_*.txt
 
-# --- SDK/isa 生成文件（env 由构建脚本从外部 riscv-tests 补齐）---
+# --- SDK/isa（env 随仓库提交；rv32ui/rv32um/rv64ui/macros 由脚本从 third_party 同步）---
 **/isa/*
+!**/isa/env/
 
 # --- 测试构建产物（build_asm.py / build_riscv_tests.py 生成，不入库；克隆后需先构建再跑测试）---
-*.elf
-*.dump
-*.dat
-*.o
+test_data/soc/c/*.mem
+test_data/soc/c/*.uartbin
+!**/mrom.*
+test_data/riscv-tests/
+test_data/custom_asm/*.dat
+test_data/custom_asm/*.elf
+test_data/custom_asm/*.dump
 
 # --- Python ---
 **/__pycache__/
 *.pyc
 
-# --- 本地编译产物（仅忽略名为 build/ 的目录，不影响 build_O2/ 等已跟踪产物）---
-**/build/
-**/picolibc_install/
+# --- 本地编译产物（build/ 与 build_O*/build_clang_* 等优化变体目录，均不入库；克隆后由 build.py 重新生成）---
+**/build*/
 
 # --- 编辑器 / OS 临时文件 ---
 **/~$*
@@ -78,7 +80,7 @@ logs/
 # --- 日志 ---
 **/*.log
 
-# --- 二进制文档（按需 git add -f 强制跟踪）---
+# --- 表格文档---
 *.xlsx
 
 # --- 归档 ---

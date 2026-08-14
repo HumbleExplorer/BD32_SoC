@@ -274,7 +274,7 @@ logic                       apb_sel;
 logic                       tcm_rvalid;
 logic                       bus_rvalid;
 // 非对齐拆分访问（Mem_Access FSM）
-logic                       itcm_sel_ma;
+logic                       itcm_store_sel_ma;
 logic                       itcm_load_sel;
 logic                       itcm_lsu_access;   // EX 级访问 ITCM（load/store，取指让路）
 wire                        itcm_access_active; // 未停顿的 ITCM 访问
@@ -542,11 +542,11 @@ PC_counter #(
 logic [DATA_WIDTH-1:0]    bootrom_inst;
 logic [DATA_WIDTH-1:0]    itcm_inst;
 logic                     bootrom_sel;
-logic                     itcm_sel;
+logic                     itcm_store_sel;
 wire  [ADDR_WIDTH-1:0]    bootrom_rd_addr;   // BootROM read addr: sba_addr when SBA hits 0x0000 region
 
 assign bootrom_sel = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
-assign itcm_sel    = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
+assign itcm_store_sel    = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
 
 BootROM #(
     .MROM_DEPTH     (`MROM_DEPTH),
@@ -566,10 +566,10 @@ BootROM #(
 // 译码与 CPU 一致：BOOT=0x0000, ITCM=0x0001, DTCM=0x0002, tag>=0x8000 走 AXI/APB 总线
 // ============================================================
 wire sba_bootrom_sel = (sba_addr[ADDR_WIDTH-1:16] == `BOOT_BASE_TAG);
-wire sba_itcm_sel    = (sba_addr[ADDR_WIDTH-1:16] == `ITCM_BASE_TAG);
+wire sba_itcm_store_sel    = (sba_addr[ADDR_WIDTH-1:16] == `ITCM_BASE_TAG);
 wire sba_dtcm_sel    = (sba_addr[ADDR_WIDTH-1:16] == `DTCM_BASE_TAG);
 wire sba_bus_sel     = (sba_addr[ADDR_WIDTH-1:16] >= `BUS_BASE_ADDR);
-wire sba_any_sel     = sba_bootrom_sel | sba_itcm_sel | sba_dtcm_sel | sba_bus_sel;
+wire sba_any_sel     = sba_bootrom_sel | sba_itcm_store_sel | sba_dtcm_sel | sba_bus_sel;
 // BootROM read-addr mux: switch to sba_addr only for SBA read of 0x0000 (PC frozen while halted)
 assign bootrom_rd_addr = (sba_req_valid && sba_bootrom_sel) ? sba_addr : pc;
 
@@ -579,17 +579,17 @@ logic itcm_rmw_active;   // RMW 写 phase（下一拍执行写）
 // ITCM 单端口读/写地址 mux：SBA（含 RMW 写相位） > LSU load/store（仅访问首拍） > 取指 PC
 // 注意：CORE_TEST 共享窗口（ITCM/DTCM 同 tag）下 load 由 DTCM 服务，不占 ITCM 读口，无需让路；
 // store 因镜像写 ITCM 仍需让路。正常配置（ITCM/DTCM 分址）load/store 均让路。
-assign itcm_lsu_access = (itcm_sel_ma | itcm_load_sel) & ~(itcm_load_sel & dtcm_sel);
+assign itcm_lsu_access = (itcm_store_sel_ma | itcm_load_sel) & ~(itcm_load_sel & dtcm_sel);
 // 未停顿的 ITCM 访问（电平）：每个访问在 EX 的未停顿拍都占用单端口；
 // 停顿（ex_mem_stall/flush）期间不占端口
 assign itcm_access_active = itcm_lsu_access & ~(ex_mem_stall | ex_mem_flush);
-wire [ADDR_WIDTH-1:0] itcm_rd_addr = ((sba_req_valid && sba_itcm_sel) || itcm_rmw_active) ? sba_addr :
+wire [ADDR_WIDTH-1:0] itcm_rd_addr = ((sba_req_valid && sba_itcm_store_sel) || itcm_rmw_active) ? sba_addr :
                                       itcm_access_active ? access_addr_ex :
                                       pc;
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) itcm_rmw_active <= 1'b0;
-    else        itcm_rmw_active <= sba_req_valid & sba_itcm_sel & sba_write & (sba_size != 3'd2);
+    else        itcm_rmw_active <= sba_req_valid & sba_itcm_store_sel & sba_write & (sba_size != 3'd2);
 end
 // 子字写数据 lane 重排：把 sba_wdata 低字节/半字移到 be 指示的目标 lane
 // （DTCM 直写 wmask、ITCM RMW 合并、外设 PSTRB 均使用该重排后的数据）
@@ -617,15 +617,15 @@ end
 
 // ITCM 写 mux：SBA 全字直写 / 子字 RMW，CPU store 按字节写（自修改代码）；
 // UART 下载走 ITCM 模块内部 download 端口（模块内优先，与 DTCM 一致）
-wire [ALIGN_BYTES-1:0] itcm_wr_en_sba = ((sba_req_valid & sba_itcm_sel & sba_write & (sba_size == 3'd2)) ? {ALIGN_BYTES{1'b1}} : '0)
+wire [ALIGN_BYTES-1:0] itcm_wr_en_sba = ((sba_req_valid & sba_itcm_store_sel & sba_write & (sba_size == 3'd2)) ? {ALIGN_BYTES{1'b1}} : '0)
                                        | (itcm_rmw_active ? sba_be : '0);
-// CPU store 写使能：itcm_sel_ma 为目标译码，未停顿的访问拍写（每个访问一拍）；
+// CPU store 写使能：itcm_store_sel_ma 为目标译码，未停顿的访问拍写（每个访问一拍）；
 // 非对齐 ITCM store 将抛异常，先抑制写，避免 trap 前污染指令内存
-wire [ALIGN_BYTES-1:0] itcm_wr_en_cpu  = (itcm_sel_ma && itcm_access_active && ~access_misalign_ex) ? access_wmask_ex : '0;
+wire [ALIGN_BYTES-1:0] itcm_wr_en_cpu  = (itcm_store_sel_ma && itcm_access_active && ~access_misalign_ex) ? access_wmask_ex : '0;
 wire [ALIGN_BYTES-1:0] itcm_wr_en       = itcm_wr_en_cpu | itcm_wr_en_sba;
 wire [DATA_WIDTH-1:0]  itcm_wr_data     = itcm_wr_en_cpu ? access_wdata_ex :
                                           itcm_rmw_active ? itcm_rmw_data :
-                                          (sba_req_valid & sba_itcm_sel & sba_write) ? sba_wdata : '0;
+                                          (sba_req_valid & sba_itcm_store_sel & sba_write) ? sba_wdata : '0;
 
 // DTCM 访问 mux：SBA 覆盖 EX 级（DTCM 自带字节使能 wmask）
 wire [ADDR_WIDTH-1:0]  dtcm_addr_sba  = (sba_req_valid & sba_dtcm_sel) ? sba_addr :
@@ -660,8 +660,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else begin
         sba_req_d  <= sba_req_valid;
         sba_bootrom_d <= sba_bootrom_sel;
-        sba_itcm_d <= sba_itcm_sel;
-        sba_rmw_d  <= sba_req_valid & sba_itcm_sel & sba_write & (sba_size != 3'd2);
+        sba_itcm_d <= sba_itcm_store_sel;
+        sba_rmw_d  <= sba_req_valid & sba_itcm_store_sel & sba_write & (sba_size != 3'd2);
         sba_bus_d  <= sba_bus_sel;
     end
 end
@@ -698,12 +698,12 @@ ITCM #(
 // 指令选择：BootROM → ITCM → NOP（非本地地址，未来走总线取指时扩展）
 `ifdef XILINX
 assign inst = bootrom_sel ? bootrom_inst :
-              itcm_sel    ? itcm_inst    :
+              itcm_store_sel    ? itcm_inst    :
               `INST_NOP;
 `else
 // 若取出的指令含不定态 X，替换为 NOP 防止 X 传播
 assign inst = bootrom_sel ? ($isunknown(bootrom_inst) ? `INST_NOP : bootrom_inst) :
-              itcm_sel    ? ($isunknown(itcm_inst)    ? `INST_NOP : itcm_inst)    :
+              itcm_store_sel    ? ($isunknown(itcm_inst)    ? `INST_NOP : itcm_inst)    :
               `INST_NOP;
 `endif
 IF_ID #(
@@ -1012,7 +1012,7 @@ Mem_Access #(
     .dtcm_sel                   (dtcm_sel),
     .bus_sel                    (bus_sel),
     .apb_sel                    (apb_sel),
-    .itcm_sel                   (itcm_sel_ma),
+    .itcm_store_sel                   (itcm_store_sel_ma),
     .itcm_load_sel              (itcm_load_sel),
     .split_misaligned           (split_misaligned),
     .split_active               (split_active),

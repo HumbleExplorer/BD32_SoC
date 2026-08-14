@@ -1,4 +1,4 @@
-../../sim/tb_soc_top.sv
+../../tb/tb_soc_top.sv
 ../../rtl/*.sv
 ../../rtl/Bus/*.sv
 ../../rtl/Common/*.sv

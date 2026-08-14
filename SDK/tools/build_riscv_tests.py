@@ -1,15 +1,23 @@
 """
-编译 riscv-tests（rv32ui + rv32um）到 Working/test_data/riscv-tests/
+编译 riscv-tests（rv32ui + rv32um）到 test_data/riscv-tests/
+
+工作目录为 SDK/isa：
+  - env/ 使用仓库内维护的 BD32 文件（link.ld / riscv_test.h / encoding.h）；
+  - rv32ui / rv32um / rv64ui / macros 若缺失，自动从 third_party/riscv-tests/isa
+    复制补齐（第三方源码位置可用环境变量 RISCV_TESTS_SRC 覆盖）。
+
 BD32 内存布局：ITCM @ 0x00010000, DTCM @ 0x00020000
 """
-import subprocess, os, shutil, struct, re, sys
+import subprocess, os, struct, sys
+from isa_env import ensure_sdk_isa
 
 # ===== 路径 =====
-RISCV_TESTS = os.environ.get("RISCV_TESTS_SRC", r"D:\Desktop\毕业设计\参考资料和工具\RISC-V软件\riscv-tests")
-ISA_SRC     = os.path.join(RISCV_TESTS, "isa")
-ENV_P       = os.path.join(RISCV_TESTS, "env", "p")
-TINY_ENV    = os.environ.get("TINY_RISCV_ISA", r"D:\Desktop\OpenClaw_Workspace\Ref\tinyriscv-master\tests\isa")
-OUT_DIR     = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "test_data", "riscv-tests"))
+REPO_ROOT   = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+RISCV_TESTS = os.environ.get("RISCV_TESTS_SRC", os.path.join(REPO_ROOT, "third_party", "riscv-tests"))
+SDK_ISA     = os.path.join(REPO_ROOT, "SDK", "isa")
+ISA_SRC     = SDK_ISA
+ENV_P       = os.path.join(SDK_ISA, "env", "p")
+OUT_DIR     = os.path.join(REPO_ROOT, "test_data", "riscv-tests")
 LD_SCRIPT   = os.path.join(ENV_P, "link.ld")
 
 _TC = os.environ.get("RISCV_TOOLCHAIN", r"D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin")
@@ -40,45 +48,13 @@ SECTIONS
 }
 """
 
-# ===== 补齐 env/p =====
+# ===== 准备 SDK/isa 工作目录 =====
+ensure_sdk_isa(REPO_ROOT, RISCV_TESTS)
 os.makedirs(ENV_P, exist_ok=True)
-for f in os.listdir(ENV_P):
-    fp = os.path.join(ENV_P, f)
-    if os.path.isfile(fp):
-        os.remove(fp)
 
 with open(LD_SCRIPT, "w") as f:
     f.write(LD_CONTENT)
 
-shutil.copy2(os.path.join(TINY_ENV, "riscv_test.h"), os.path.join(ENV_P, "riscv_test.h"))
-
-# 剥离 TEST_* 宏（与原始 macros/scalar/test_macros.h 冲突）
-with open(os.path.join(ENV_P, "riscv_test.h"), "r") as f:
-    content = f.read()
-
-lines = content.split('\n')
-new_lines = []
-in_test_section = False
-for line in lines:
-    if line.strip().startswith('#define TEST_'):
-        in_test_section = True
-        continue
-    if in_test_section:
-        stripped = line.strip()
-        if stripped == '' or stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*/') or stripped.startswith('#'):
-            continue
-        else:
-            in_test_section = False
-            new_lines.append(line)
-    else:
-        new_lines.append(line)
-
-content = '\n'.join(new_lines)
-content = re.sub(r'\n{3,}', '\n\n', content)
-with open(os.path.join(ENV_P, "riscv_test.h"), "w") as f:
-    f.write(content)
-
-print("  [已从 riscv_test.h 剥离 TEST_* 宏]")
 print("  [link.ld: 指令 @ 0x10000 / 数据 @ 0x11000]")
 
 # ===== 编译选项 =====
@@ -86,7 +62,7 @@ CFLAGS = [
     "-march=rv32im_zicsr_zifencei", "-mabi=ilp32",
     "-static", "-mcmodel=medlow",
     "-nostdlib", "-nostartfiles", "-ffreestanding",
-    "-I", os.path.join(RISCV_TESTS, "env", "p"),
+    "-I", ENV_P,
     "-I", os.path.join(ISA_SRC, "macros", "scalar"),
 ]
 LDFLAGS = [

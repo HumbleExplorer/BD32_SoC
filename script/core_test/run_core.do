@@ -1,5 +1,5 @@
 # BD32 Core 裸核仿真脚本 (ModelSim)
-# 用法: 在 sim/ 目录下执行 vsim -c -do run_core.do
+# 用法: 在 script/core_test/ 目录下执行 vsim -c -do run_core.do
 
 quit -sim
 
@@ -8,7 +8,7 @@ if {[file exists work]} {
 }
 vlib work
 
-set RTL ../rtl
+set RTL ../../rtl
 set DEFS "+define+CORE_TEST+CUSTOM_ASM+DIRECT_LOAD"
 
 vlog -sv $DEFS +incdir+$RTL $RTL/SoC_Config.sv
@@ -55,7 +55,7 @@ vlog -sv $DEFS +incdir+$RTL $RTL/Core/Mem_Access.sv
 vlog -sv $DEFS +incdir+$RTL $RTL/Core/RISC_V_Core.sv
 
 # Testbench
-vlog -sv $DEFS +incdir+$RTL tb_core_top.sv
+vlog -sv $DEFS +incdir+$RTL ../../tb/tb_core_top.sv
 
 # vopt + run
 vopt tb_core_top -o tb_core_opt +acc

@@ -28,7 +28,7 @@ module Mem_Access #(
     output  logic                       dtcm_sel,
     output  logic                       bus_sel,
     output  logic                       apb_sel,        // APB 外设区域（非对齐访问不拆分，按规范抛异常）
-    output  logic                       itcm_sel,       // CPU store 目标为 ITCM（自修改代码）
+    output  logic                       itcm_store_sel, // CPU store 目标为 ITCM（自修改代码）
     output  logic                       itcm_load_sel,  // CPU load 目标为 ITCM（LSU 读指令区）
     // 非对齐拆分访问控制（拆成两次对齐访问）
     output  logic                       split_misaligned, // 当前 EX 级访问需要拆分（IDLE 检测拍有效）
@@ -61,8 +61,8 @@ logic [DATA_WIDTH-1:0] tcm_rdata;
 assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `DTCM_BASE_TAG) ;
 assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) ;
 assign apb_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= APB_BASE_ADDR[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]);
-assign itcm_sel     = access_en & access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
-assign itcm_load_sel = access_en & ~access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
+assign itcm_store_sel   = access_en & access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
+assign itcm_load_sel    = access_en & ~access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
 
 // ============================================
 // 非对齐访问拆分 FSM（DTCM / 总线内存）

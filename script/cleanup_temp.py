@@ -3,17 +3,18 @@
 BD32 project temp-file cleaner.
 
 Removes generated / temporary artifacts that are safe to regenerate:
-  - ModelSim work libraries:  any */work under the repo (rtl/**, sim/, script/*/, root)
+  - ModelSim work libraries:  any */work under the repo (rtl/**, tb/, script/*/, root)
   - ModelSim run files:        transcript, vsim.wlf, vish_stacktrace.vstf,
-                               modelsim.ini, wlftrs*, *.log under script/ and sim/
+                               modelsim.ini, wlftrs*, *.log under script/ and tb/
   - Python cache:              __pycache__ dirs and *.pyc (recursive)
   - Test logs:                 logs/*  (keep the logs/ directory itself)
 
-Never touches tracked sources (rtl/, sim/*.sv, SDK/, doc/, README.md ...).
+Never touches tracked sources (rtl/, tb/*.sv, SDK/, doc/, README.md ...).
 
 Usage:
-  python script/cleanup_temp.py            # dry run (only lists)
-  python script/cleanup_temp.py --apply    # actually delete
+  python script/cleanup_temp.py            # list files, ask [y/N] then delete
+  python script/cleanup_temp.py --apply    # delete without asking
+  python script/cleanup_temp.py --dry-run  # list only, delete nothing
   python script/cleanup_temp.py --apply --keep-logs
 """
 
@@ -49,8 +50,8 @@ def collect():
     """Return list of (kind, path) to remove."""
     targets = []
 
-    # ModelSim run files (recursive under script/ and sim/)
-    for base in ("script", "sim"):
+    # ModelSim run files (recursive under script/ and tb/)
+    for base in ("script", "tb"):
         full = os.path.join(REPO, base)
         if not os.path.isdir(full):
             continue
@@ -61,14 +62,14 @@ def collect():
                 if is_sim_artifact(f):
                     targets.append(("artifact", os.path.join(dirpath, f)))
 
-    # work libraries (recursive: rtl/**, sim/, script/*/, repo root)
+    # work libraries (recursive: rtl/**, tb/, script/*/, repo root)
     # + __pycache__ + .pyc
     for dirpath, dirnames, filenames in os.walk(REPO):
         # skip .git and vendored toolchains
         dirnames[:] = [
             d
             for d in dirnames
-            if d not in (".git", "xpack-openocd-0.12.0-7", "picolibc_install")
+            if d not in (".git", "third_party")
         ]
         if "work" in dirnames:
             targets.append(("work", os.path.join(dirpath, "work")))
@@ -84,7 +85,8 @@ def collect():
 
 def main():
     ap = argparse.ArgumentParser(description="BD32 temp-file cleaner")
-    ap.add_argument("--apply", action="store_true", help="actually delete (default: dry run)")
+    ap.add_argument("--apply", action="store_true", help="delete without confirmation prompt")
+    ap.add_argument("--dry-run", action="store_true", help="list only, do not delete")
     ap.add_argument("--keep-logs", action="store_true", help="do not clear logs/")
     args = ap.parse_args()
 
@@ -106,24 +108,47 @@ def main():
             uniq.append((kind, p))
     uniq.sort(key=lambda x: x[1])
 
+    mode = "DRY-RUN" if args.dry_run else ("APPLY" if args.apply else "CONFIRM")
     print("BD32 temp cleaner")
     print("  repo: %s" % REPO)
-    print("  mode: %s" % ("APPLY" if args.apply else "DRY-RUN"))
+    print("  mode: %s" % mode)
     print("  targets: %d" % len(uniq))
     for kind, p in uniq:
         rel = os.path.relpath(p, REPO)
         print("    [%s] %s" % (kind, rel))
 
-    if args.apply:
-        for kind, p in uniq:
+    if not uniq:
+        print("  nothing to clean.")
+        return 0
+
+    if args.dry_run:
+        print("  (dry run, nothing deleted)")
+        return 0
+
+    if not args.apply:
+        try:
+            ans = input("  Delete %d items? [y/N]: " % len(uniq))
+        except EOFError:
+            ans = ""
+        if ans.strip().lower() not in ("y", "yes"):
+            print("  aborted, nothing deleted.")
+            return 0
+
+    deleted = 0
+    for kind, p in uniq:
+        if not is_within(p, REPO):
+            print("  [skip] outside repo: %s" % p)
+            continue
+        try:
             if kind in ("work", "pycache"):
                 shutil.rmtree(p, ignore_errors=True)
             else:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
-        print("done.")
+                os.remove(p)
+            deleted += 1
+        except OSError:
+            pass
+    print("  deleted %d items." % deleted)
+    return 0
 
 
 if __name__ == "__main__":

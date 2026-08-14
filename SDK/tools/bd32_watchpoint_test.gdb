@@ -1,7 +1,7 @@
 set pagination off
 set confirm off
 set architecture riscv:rv32
-target extended-remote | SDK/tools/xpack-openocd-0.12.0-7/bin/openocd.exe -c "gdb port pipe" -c "log_output logs/gdb_watchpoint_ocd.log" -c "telnet port disabled" -c "tcl port disabled" -f SDK/tools/bd32_openocd.cfg
+target extended-remote | third_party/xpack-openocd-0.12.0-7/bin/openocd.exe -c "gdb port pipe" -c "log_output logs/gdb_watchpoint_ocd.log" -c "telnet port disabled" -c "tcl port disabled" -f SDK/tools/bd32_openocd.cfg
 
 printf "\n==== [0] reset halt ====\n"
 monitor reset halt

@@ -1,4 +1,4 @@
-../../sim/tb_debug.sv
+../../tb/tb_debug.sv
 ../../rtl/*.sv
 ../../rtl/Bus/*.sv
 ../../rtl/Common/*.sv

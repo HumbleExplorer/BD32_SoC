@@ -116,9 +116,14 @@
 // 6. 加载文件选择
 // ============================================================
 `ifdef DIRECT_LOAD
-    // 直接加载：.mem 文件初始化 ITCM/DTCM
-    `define ITCM_FILE "breathing_o0_itcm.mem"
-    `define DTCM_FILE "breathing_o0_dtcm.mem"
+    // 直接加载：.mem 文件初始化 ITCM/DTCM（默认 breathing，
+    // 可用 +define+ITCM_FILE="xxx.mem" / +define+DTCM_FILE="xxx.mem" 覆盖）
+    `ifndef ITCM_FILE
+        `define ITCM_FILE "breathing_itcm.mem"
+    `endif
+    `ifndef DTCM_FILE
+        `define DTCM_FILE "breathing_dtcm.mem"
+    `endif
 `else
     // UART 下载：BootROM 等待串口发送 .uartbin
     `ifdef BUS_TIMEOUT_TEST

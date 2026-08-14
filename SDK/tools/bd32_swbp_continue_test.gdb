@@ -12,8 +12,8 @@ set pagination off
 set confirm off
 set architecture riscv:rv32
 set breakpoint auto-hw off
-file D:/Desktop/OpenClaw_Workspace/Working/SDK/demos/nolibc/breathing/build/breathing.elf
-target extended-remote | D:/Desktop/OpenClaw_Workspace/Working/SDK/tools/xpack-openocd-0.12.0-7/bin/openocd.exe -c "gdb port pipe" -c "log_output D:/Desktop/OpenClaw_Workspace/Working/logs/swbp_continue_ocd.log" -c "telnet port disabled" -c "tcl port disabled" -f D:/Desktop/OpenClaw_Workspace/Working/SDK/tools/bd32_openocd.cfg
+file SDK/demos/nolibc/breathing/build/breathing.elf
+target extended-remote | third_party/xpack-openocd-0.12.0-7/bin/openocd.exe -c "gdb port pipe" -c "log_output logs/swbp_continue_ocd.log" -c "telnet port disabled" -c "tcl port disabled" -f SDK/tools/bd32_openocd.cfg
 
 printf "\n==== S1: 软件断点直接 continue ====\n"
 monitor reset halt
@@ -149,4 +149,3 @@ printf "\n==== 清理 ====\n"
 delete breakpoints
 detach
 quit
-

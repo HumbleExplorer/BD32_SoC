@@ -14,7 +14,11 @@ Copyright (c) 2026 BD32 Project
 | Opensoc | https://github.com/Opensoc-org/Opensoc | MIT | Copyright (c) 2024 Panda | rtl/Periph/timer/basic_timer.sv |
 | E203_RTL | https://github.com/riscv-mcu/e203_hbirdv2 | Apache-2.0 | Copyright 2018-2020 Nuclei System Technology, Inc. | rtl/Periph/timer/basic_timer.sv |
 | RISCV_PLIC | https://github.com/BLynskey/RISCV_PLIC | MIT | Copyright (c) 2025 Brendan Lynskey | rtl/Periph/plic/plic_gateway.sv, plic_target.sv |
+| riscv-tests| https://github.com/riscv/riscv-tests | BSD-3-Clause | Copyright (c) 2012-2015, The Regents of the University of California | SDK/isa/env/p/riscv_test.h |
+| encoding.h | https://github.com/riscv/riscv-opcodes | BSD-3-Clause | Copyright (c) 2023 RISC-V International | SDK/isa/env/encoding.h |
+| CoreMark | https://github.com/eembc/coremark | Apache-2.0 | Copyright 2018 EEMBC | SDK/demos/newlib/coremark/src/（core_portme.c/h 为 BD32 移植） |
 
 许可证全文：
 - MIT License: https://opensource.org/licenses/MIT
 - Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+- BSD 3-Clause License: https://opensource.org/licenses/BSD-3-Clause
