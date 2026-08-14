@@ -8,7 +8,7 @@ BD32 FPGA 复位控制工具
     python tools/fpga_reset.py --hold 3         # 保持复位 3 秒后释放
     python tools/fpga_reset.py --assert          # 仅拉高（保持复位）
     python tools/fpga_reset.py --release         # 仅释放
-    python tools/fpga_reset.py --method ftd2xx   # 强制走 ftd2xx（仅当不插 JTAG 且已装 VCP 驱动）
+    python tools/fpga_reset.py --method ftd2xx   # 强制走 ftd2xx（OpenOCD 不可用时回退）
 环境变量：OPENOCD（openocd 可执行文件路径，默认 third_party/xpack-openocd）
 """
 import subprocess
@@ -89,12 +89,12 @@ def main():
 
     assert_flag = getattr(args, "assert")
     if args.release or assert_flag:
-        # OpenOCD 会话退出后引脚回到默认态，无法跨会话保持复位
-        # （--assert/--release 语义需要常驻句柄，仅 ftd2xx 支持）
-        if args.method != "ftd2xx":
-            print("[WARN] --assert/--release 需要 ftd2xx（FTDI VCP 驱动）；"
-                  "默认脉冲复位请直接运行本脚本（OpenOCD/WinUSB，无需切换驱动）")
-        ok = reset_ftd2xx(args.hold, assert_flag, args.release)
+        # 优先 OpenOCD（WinUSB 模式即可）；若 OpenOCD 失败再回退 ftd2xx
+        action = "release" if args.release else "assert"
+        ok = reset_openocd(int(args.hold * 1000), action)
+        if not ok and args.method != "openocd":
+            print("[WARN] OpenOCD assert/release 失败，回退 ftd2xx（需 FTDI VCP 驱动）…")
+            ok = reset_ftd2xx(args.hold, assert_flag, args.release)
     elif args.method == "ftd2xx":
         ok = reset_ftd2xx(args.hold, False, False)
     else:

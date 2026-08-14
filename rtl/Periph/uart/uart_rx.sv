@@ -4,11 +4,11 @@ module uart_rx (
     input  logic          clk,            // 系统时钟
     input  logic          sample_pulse,      // NCO 采样使能脉冲
     input  logic          rst_n,
-    (* mark_debug = "true" *)input  logic          rx_i,
+    input  logic          rx_i,
     input  logic [7:0]    lcr,
     input  logic          rx_fifo_wr_full,
-    (* mark_debug = "true" *)output logic [7:0]    rx_o,
-    (* mark_debug = "true" *)output logic          rx_valid_o,
+    output logic [7:0]    rx_o,
+    output logic          rx_valid_o,
     output logic [3:0]    rx_err
 );
 
@@ -29,14 +29,14 @@ typedef enum logic[4:0] {
     RX_STOP    = 5'b10000
 } uart_rx_state_e;
 
-(* mark_debug = "true" *)logic[2:0]           rx_in_sync_reg;    // RX信号三级同步，消除亚稳态
-(* mark_debug = "true" *)logic                rx_in_sync_fall;   // 同步后RX下降沿（检测起始位）
-(* mark_debug = "true" *)logic[3:0]           sample_cnt;        // 16倍过采样计数器
+logic[2:0]           rx_in_sync_reg;    // RX信号三级同步，消除亚稳态
+logic                rx_in_sync_fall;   // 同步后RX下降沿（检测起始位）
+logic[3:0]           sample_cnt;        // 16倍过采样计数器
 logic[2:0]           data_bit_cnt;      // 数据位计数器
 logic                stop_bit_cnt;      // 停止位计数器
 logic[3:0]           vote_cnt_1;        // 中间8周期高电平计数（多数判决）
-(* mark_debug = "true" *)logic                bit_val;           // 多数判决后的比特值
-(* mark_debug = "true" *)uart_rx_state_e      rx_state;          // 接收状态机
+logic                bit_val;           // 多数判决后的比特值
+uart_rx_state_e      rx_state;          // 接收状态机
 logic[7:0]           rx_shift;          // 接收移位寄存器
 logic                parity_calc;       // 计算的校验位
 

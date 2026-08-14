@@ -2,22 +2,20 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采用经典 5 级流水线架构并配备乱序退休机制（OITF），支持乘法/除法指令与短指令并行执行。项目包含完整的 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
+BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采用经典 5 级流水线架构并配备乱序执行机制（OITF），支持乘法/除法指令与短指令并行执行。项目包含完整的 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
 
 ## 特性
 
 - RV32IM 指令集（含 M 扩展乘除法）
 - 5 级流水线：IF → ID → EX → MEM → WB
-- OITF（Out-of-order Instruction Termination Facility）：深度 4 的 FIFO，允许多周期乘除法指令乱序退休
-- 流水 Booth-4 乘法器
-- 32 周期迭代恢复除法器
-- 动态分支预测器 + 返回地址栈（RAS）
+- OITF（Out-of-order Instruction Termination Facility）：深度 4 的 FIFO，允许多周期乘除法指令乱序执行
+- 流水线型 Booth-4 乘法器
+- 32 周期迭代恢复余数除法器
+- 基于Gshare的动态分支预测器：GHR+BTB+RAS
 - AXI-Lite 总线 + APB 外设子系统
-- 外设：CLINT、PLIC 中断控制器、UART（含 NCO 波特率发生器和程序数据下载）、APB Timer（PWM）、GPIO
-- CoreMark 验证通过
-- 自修改代码（FENCE.I）：ITCM 字节写使能 + FENCE.I 冲刷取指路径，`rv32ui-p-fence_i` 通过
-- 非对齐访存：DTCM/总线内存由 Mem_Access 拆分为两次对齐访问，`rv32ui-p-ma_data` 通过
-- ITCM 单端口化：取指 / LSU load/store / SBA 共用读口（LSU 访问时取指让路 1 拍），CPU 可通过 load/store 指令直接读写 ITCM
+- 外设：CLINT、PLIC 中断控制器、UART（含程序、数据下载功能）、APB Timer（含输入捕获和输出比较功能）、GPIO
+- CoreMark 验证通过，跑分达2.8CoreMark/MHz
+- 支持自修改代码和非对齐访存
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）、硬件断点 Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择）、ebreak 进调试模式（dcsr.ebreakm）、数据观察点
 - 完整调试回归：DMI 一键测试、GDB 全功能套件、真实 demo 符号级在线调试
 
@@ -25,8 +23,6 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 
 | 项目 | 说明 |
 |------|------|
-| 自修改代码（FENCE.I） | 支持：ITCM 字节写 + FENCE.I 冲刷取指路径，`rv32ui-p-fence_i` 通过；自修改仅对 ITCM 内代码生效 |
-| 非对齐访存 | 支持：DTCM/总线内存拆分为两次对齐访问，`rv32ui-p-ma_data` 通过；ITCM/BootROM/APB 外设仍按规范产生 misaligned 异常 |
 | Debug ROM / Park Loop | 未实现：采用 halt-in-place + 直接端口访问架构 |
 | ProgBuf | 未实现（progbufsize=0），抽象命令不经程序缓冲执行 |
 | 抽象内存访问（cmdtype=2） | 未实现：调试器内存访问走 SBA |
@@ -38,7 +34,24 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 
 ## 快速开始
 
-前置：安装 RISC-V 工具链、ModelSim、Python（见 [构建与仿真](doc/build_and_sim.md)「环境依赖与第三方工具」）；riscv-tests 测试源码需获取到 `third_party/riscv-tests`（见 [SDK 构建工具与协议](doc/sdk.md)）。
+### 1. 环境准备
+
+- **RISC-V 工具链（必需）**：安装 xPack RISC-V GCC 15.2.0（可选 LLVM/Clang 22.1.8），并配置环境变量：
+  - `RISCV_TOOLCHAIN` → xPack GCC 的 `bin` 目录（如 `<安装目录>/xpack-riscv-none-elf-gcc-15.2.0-1/bin`）
+  - `LLVM_BIN` → LLVM/Clang 的 `bin` 目录（可选，`--clang` 构建用）
+  - `RISCV_GDB` → `riscv-none-elf-gdb.exe` 路径（在线调试用）
+- **ModelSim / Vivado / Python**：自行安装；ModelSim 用 `MODELSIM_PATH` 指向其 `win64` 目录。下载来源见 [构建与仿真](doc/build_and_sim.md)「环境依赖与第三方工具」。
+- **第三方源码**（统一放在 `third_party/`，不随仓库分发）：
+
+  ```bash
+  mkdir third_party && cd third_party
+  git clone https://github.com/riscv/riscv-tests.git       # ISA 测试源码
+  # OpenOCD（在线调试用）：从 https://github.com/xpack-dev-tools/openocd-xpack/releases
+  # 下载 xpack-openocd-0.12.0-7-win32-x64.zip，解压到 third_party/
+  cd ..
+  ```
+
+### 2. 构建与仿真
 
 ```bash
 # 1) 编译固件（hello，产物同步到 test_data/soc/c/）
@@ -46,16 +59,14 @@ cd SDK
 python tools/build.py demos/newlib/hello --newlib
 cd ..
 
-# 2) Debug 模块仿真回归（无需板子，ModelSim）
-./script/debug_test/run_msim_debug.bat      # 结果：logs/msim_out.txt
-
-# 3) 核级 ISA 回归（custom_asm）
+# 2) 核级 ISA 回归（custom_asm）
 cd script
-python run_all_custom_asm.py
+python run_all_custom_asm.py               # custom_asm 全回归
+python run_all_riscv_tests.py              # riscv-tests ISA 兼容性
 cd ..
 
-# 4) 上板（可选）：UART 下载固件并观察串口输出
-python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
+# 4) 上板（可选）：UART 下载固件并观察串口输出（--idle-timeout 3：输出空闲 3 秒后停止并打印）
+python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset --idle-timeout 3
 ```
 
 > 提示：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均由构建脚本生成。
@@ -128,7 +139,7 @@ python SDK/tools/uart_send.py test_data/soc/c/hello.uartbin --reset
 - [ ] **SV 工程化重构**：package 、interface、SVA等高级语法特性
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……
-- [ ] **详细设计文档**：正在写……
+- [ ] **详细PDF设计文档**：正在写……
 
 ## 常见问题
 

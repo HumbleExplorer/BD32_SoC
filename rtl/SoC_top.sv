@@ -32,12 +32,12 @@ module SoC_top #(
     localparam APB_NUM_SLAVES = `APB_NUM_SLAVES
 )(
     // System
-    (* mark_debug = "true" *)input   logic   sys_clk,
+    input   logic   sys_clk,
     input   logic   sys_rst_n,
     input   logic   timer_clk_i,   // CLINT 1MHz 独立时钟域
     // UART
-    (* mark_debug = "true" *)input   logic   uart_rx,
-    (* mark_debug = "true" *)output  logic   uart_tx,
+    input   logic   uart_rx,
+    output  logic   uart_tx,
     // GPIO
     inout  [GPIO_NUM-1:0]  gpio_io,
     // Timer

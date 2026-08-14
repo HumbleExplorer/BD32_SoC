@@ -32,15 +32,9 @@
 前置：板卡烧录含调试子系统的 bitstream；FT2232H Channel A 绑定 WinUSB；
 JTAG 四线（TCK/TDI/TDO/TMS）+ GND，adapter speed 500kHz（杜邦线）。
 
-## 已知限制
-
-- 自修改代码（FENCE.I）与非对齐访存已支持（分别对应 `rv32ui-p-fence_i` / `rv32ui-p-ma_data`）。
-- 无 ProgBuf / Debug ROM；抽象内存访问未实现（走 SBA）。
-- 单 hart；无跟踪调试。
-
 ## 回归建议
 
-- 每次 RTL 改动：custom_asm + riscv-tests + tb_debug 全量回归。
+- 每次 RTL 改动：custom_asm + riscv-tests + tb_debug 全量回归 + 全部 demo + CoreMark + 上板串口验证。
 - 每次固件改动：编译全部 demo + CoreMark（`SDK/tools/build.py`）+ 上板串口验证。
 - 上板改动后：DMI / 新功能 / SBA / watchpoint / GDB 套件逐一回归。
 
@@ -56,7 +50,7 @@ JTAG 四线（TCK/TDI/TDO/TMS）+ GND，adapter speed 500kHz（杜邦线）。
 |---|---|---|
 | `empty` | 最小启动 + UART 输出 | 串口打印 |
 | `blink` | GPIO 输出、CLINT mtime 延时 | LED 闪烁 |
-| `breathing` | Timer PWM 呼吸灯 | LED 呼吸 |
+| `breathing` | Timer PWM 呼吸灯 | LED 呼吸和呼吸 |
 | `gpio_input` | GPIO 输入、按键消抖轮询 | 按键控制 LED |
 | `uart_echo` | UART TX/RX 全双工 | 串口回显 |
 | `apb_timer_irq` | APB Timer 中断 | LED 按定时翻转 |

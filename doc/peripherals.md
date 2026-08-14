@@ -1,7 +1,7 @@
 # 外设编程指南
 
 所有外设挂载于 APB 总线（经 AXI-APB 桥），寄存器按 32-bit 字访问，地址以
-SoC 配置宏为准（见 `rtl/SoC_Config.sv` 与 `rtl/Bus/APB_Interconnect.sv`）。
+SoC 配置宏为准（见 `rtl/SoC_Config.sv`）。
 驱动代码参考 `SDK/bsp/drivers/`，demo 见 `SDK/demos/`。
 
 ## 地址映射
@@ -34,7 +34,7 @@ SoC 配置宏为准（见 `rtl/SoC_Config.sv` 与 `rtl/Bus/APB_Interconnect.sv`�
 | 0x24 | BOP_SET | 原子置位（只写，写 1 置位对应输出位） |
 | 0x28 | BOP_CLR | 原子复位（只写，写 1 清零对应输出位） |
 
-对应 demo：`blink`（GPIO 输出 LED 闪烁）、`gpio_input`（按键轮询，STM32 风格消抖）。
+对应 demo：`blink`（GPIO 输出 LED 闪烁）、`gpio_input`（按键轮询，含消抖）。
 
 ## UART（apb_uart.sv + uart_rx/tx + uart_download）
 
@@ -83,9 +83,8 @@ ITCM/DTCM 下载：帧头 `0xBBAABBAA`，随后 ITCM 指令个数与指令数据
 
 ## CLINT（CLINT.sv）
 
-核本地中断控制器，管理软件中断（msip）与定时器中断（mtime ≥ mtimecmp）。
-mtime 由独立 1MHz 定时器时钟驱动（`timer_clk_i`），`time`/`timeh` CSR（0xC01/0xC81）
-为只读影子；软件中断由向 msip 写 1 产生、写 0 清除。
+核本地中断控制器，管理软件中断（msip）与定时器中断（mtime，mtimecmp）。
+mtime 由独立 1MHz 定时器时钟驱动（timer_clk_i），mtime CSR（0xC01/0xC81）为只读影子，mtime ≥ mtimecmp时触发定时器中断；软件中断由向 msip 写 1 产生、写 0 清除。
 
 | 地址 | 寄存器 | 说明 |
 |---|---|---|
@@ -95,13 +94,11 @@ mtime 由独立 1MHz 定时器时钟驱动（`timer_clk_i`），`time`/`timeh` C
 | +0xBFF8 | mtime[31:0] | 自增计数器低 32 位（只读） |
 | +0xBFFC | mtime[63:32] | 自增计数器高 32 位（只读） |
 
-对应 demo：`blink`（用 mtime 实现延时）、`cpuinfo`（CSR dump）。
+对应 demo：`blink`（用 mtime 实现延时）、`cpuinfo`（CSR读取）。
 
 ## PLIC（plic/PLIC.sv）
 
-最多 16 个中断源、7 级优先级（0=禁用，1~7 有效），单目标输出。结构：中断网关
-（电平/边沿检测 + Pending 维护，Claim/Complete 握手防重复）→ 优先级仲裁 →
-目标（阈值过滤 + Claim/Complete）。
+最多 16 个中断源、7 级优先级（0=禁用，1~7 有效），单目标输出。
 
 | 地址偏移 | 寄存器 | 说明 |
 |---|---|---|
@@ -115,8 +112,9 @@ mtime 由独立 1MHz 定时器时钟驱动（`timer_clk_i`），`time`/`timeh` C
 
 ## 中断优先级
 
-处理器核接收三类中断，优先级：**外部中断（PLIC）> 软件中断（CLINT msip）>
-定时器中断（CLINT mtime）**；由 CSR `mie` 使能位与 `mip` 挂起位共同控制。
+处理器核接收三类中断，优先级：**外部中断（PLIC）> 软件中断（CLINT msip）> 定时器中断（CLINT mtime）**；由 CSR `mie` 使能位与 `mip` 挂起位共同控制。
+
+调试（Debug Module 的 halt / 单步 / trigger 命中 / ebreak）**不经过中断控制器**：由流水线直接冻结（`Pipeline_Ctrl` 的 `hp_stall` 通路），不产生 trap、不写 `mcause`，因此不在中断优先级之中。
 
 ## 上电流程
 

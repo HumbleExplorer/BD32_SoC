@@ -39,12 +39,12 @@ typedef enum logic [5:0] {
     NORMAL_MODE    = 6'b100000
 } state_t;
 
-(* mark_debug = "true" *) state_t current_state, next_state;
+state_t current_state, next_state;
 
-(* mark_debug = "true" *) logic [1:0]       byte_cnt;
-(* mark_debug = "true" *) logic [31:0]      recv_data_q, recv_data_n;
-(* mark_debug = "true" *) logic [31:0]      word_count;      // 待接收的字数
-(* mark_debug = "true" *) logic             start_frame_det;
+logic [1:0]       byte_cnt;
+logic [31:0]      recv_data_q, recv_data_n;
+logic [31:0]      word_count;      // 待接收的字数
+logic             start_frame_det;
 logic             uart_rx_valid_d, uart_rx_valid_pos;
 
 // 寄存器输出打拍

@@ -5,6 +5,9 @@ UART 程序烧录工具 — 将 .uartbin 文件通过串口下载到 FPGA
     python tools/uart_send.py <file.uartbin>              # 自动检测串口
     python tools/uart_send.py coremark_o2.uartbin --port COM8 --baud 115200
     python tools/uart_send.py coremark_o2.uartbin --reset   # 先复位再下载
+    python tools/uart_send.py uart_echo.uartbin --reset --idle-timeout 3   # 下载后监听，输出空闲 3s 停止
+    python tools/uart_send.py coremark_o2.uartbin --reset --until "Correct operation validated."
+    # 监听输出默认自动写入 logs/uart_send_<程序>_<时间戳>.log，可用 --log 指定路径
 """
 import serial
 import serial.tools.list_ports
@@ -12,6 +15,11 @@ import time
 import argparse
 import os
 import sys
+
+# Windows 控制台（GBK）无法打印原始字节解码出的替换字符时避免崩溃
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import subprocess
 
 def find_port():
@@ -38,6 +46,10 @@ def main():
     parser.add_argument("--chunk", type=int, default=256, help="Chunk size in bytes (default: 256)")
     parser.add_argument("--delay", type=float, default=0.01, help="Delay between chunks in seconds (default: 0.01)")
     parser.add_argument("--reset", action="store_true", help="Reset FPGA before sending (requires fpga_reset.py)")
+    parser.add_argument("--idle-timeout", type=float, default=None, help="开启监听：连续 N 秒无数据即停止（默认 3s）")
+    parser.add_argument("--timeout", type=float, default=None, help="监听总时长上限（默认 30s）")
+    parser.add_argument("--until", default=None, help="可选精确结束标记：命中后截断到标记末尾并停止")
+    parser.add_argument("--log", default=None, help="监听输出写入的日志文件路径（默认 logs/uart_send_<程序>_<时间戳>.log）")
     args = parser.parse_args()
 
     # 自动检测串口
@@ -49,8 +61,15 @@ def main():
         print(f"[AUTO] Detected UART: {args.port}")
 
     if not os.path.exists(args.file):
-        print(f"[ERROR] File not found: {args.file}")
-        sys.exit(1)
+        alt = os.path.normpath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "test_data", "soc", "c", args.file))
+        if os.path.exists(alt):
+            print(f"[INFO] 在 test_data/soc/c 下找到: {alt}")
+            args.file = alt
+        else:
+            print(f"[ERROR] File not found: {args.file}")
+            sys.exit(1)
 
     # 可选：先复位
     if args.reset:
@@ -83,6 +102,50 @@ def main():
         print(f"\r    {done}/{total} bytes ({pct}%)", end="", flush=True)
 
     ser.flush()
+
+    # 发送后在同一串口会话内继续监听：Windows 串口独占，跨进程“先监听后发送”
+    # 无法并发；先发送完再另开监听又会丢掉程序开头的输出，因此在本进程内读。
+    if args.idle_timeout is not None or args.until is not None:
+        idle = args.idle_timeout if args.idle_timeout is not None else 3.0
+        timeout = args.timeout if args.timeout is not None else 30.0
+        cond = "idle=%gs timeout=%gs" % (idle, timeout) + (" until='%s'" % args.until if args.until else "")
+        print(f"[{step}] Listening ({cond})...")
+        if args.log:
+            log_path = args.log
+        else:
+            stem = os.path.splitext(os.path.basename(args.file))[0]
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, "uart_send_%s_%s.log" % (stem, ts))
+        print(f"  log → {os.path.abspath(log_path)}")
+        buf = b""
+        last_data = time.time()
+        start = time.time()
+        try:
+            while time.time() - start < timeout:
+                if ser.in_waiting > 0:
+                    buf += ser.read(ser.in_waiting)
+                    last_data = time.time()
+                    if args.until:
+                        marker = args.until.encode()
+                        idx = buf.find(marker)
+                        if idx >= 0:
+                            buf = buf[:idx + len(marker)]
+                            break
+                else:
+                    if time.time() - last_data >= idle:
+                        break
+                    time.sleep(0.05)
+        except KeyboardInterrupt:
+            pass
+        if buf:
+            text = buf.decode("utf-8", errors="replace")
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            print(text, end="", flush=True)
+        print(f"\n[LISTEN DONE] captured {len(buf)} bytes → {log_path}")
+
     ser.close()
     print(f"\n[DONE] {args.file} → {args.port} sent successfully.")
 

@@ -4,7 +4,8 @@ BD32 CoreMark 自动化测试脚本
 
 用法：
     python tools/auto_coremark.py                          # 跑全部9个配置
-    python tools/auto_coremark.py --config coremark_o2     # 只跑一个
+    python tools/auto_coremark.py --compiler gcc --opt o2  # 只跑 GCC O2
+    python tools/auto_coremark.py --compiler clang         # 只跑 LLVM/Clang 全部配置
     python tools/auto_coremark.py --port COM8 --baud 115200
 """
 import subprocess
@@ -32,8 +33,8 @@ CONFIGS = [
     ("GCC O1",   "coremark_o1.uartbin"),
     ("GCC O2",   "coremark_o2.uartbin"),
     ("GCC O3",   "coremark_o3.uartbin"),
-    ("LLVM Os",  "coremark_clang_os.uartbin"),
     ("LLVM Oz",  "coremark_clang_oz.uartbin"),
+    ("LLVM Os",  "coremark_clang_os.uartbin"),
     ("LLVM O1",  "coremark_clang_o1.uartbin"),
     ("LLVM O2",  "coremark_clang_o2.uartbin"),
     ("LLVM O3",  "coremark_clang_o3.uartbin"),
@@ -174,7 +175,10 @@ def main():
     parser = argparse.ArgumentParser(description="BD32 CoreMark Auto Test")
     parser.add_argument("--port", default=None, help="UART COM port (default: auto-detect CH340)")
     parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default: 115200)")
-    parser.add_argument("--config", default=None, help="Run single config by name prefix (e.g. coremark_o2)")
+    parser.add_argument("--compiler", choices=["gcc", "clang"], default=None,
+                        help="只跑 GCC 或 LLVM/Clang 编译的配置（默认全部）")
+    parser.add_argument("--opt", choices=["oz", "os", "o1", "o2", "o3"], default=None,
+                        help="只跑指定优化等级（默认全部）")
     parser.add_argument("--data-dir", default=None, help="Path to uartbin files")
     args = parser.parse_args()
 
@@ -197,12 +201,20 @@ def main():
     print(f"UART: {args.port} @ {args.baud}")
     print(f"Data: {data_dir}")
 
-    # 筛选配置
+    # 筛选配置：--compiler / --opt
     configs = CONFIGS
-    if args.config:
-        configs = [(n, f) for n, f in CONFIGS if args.config in f]
+    if args.compiler or args.opt:
+        def match(f):
+            if args.compiler == "gcc" and "clang" in f:
+                return False
+            if args.compiler == "clang" and "clang" not in f:
+                return False
+            if args.opt and (args.opt + ".uartbin") not in f:
+                return False
+            return True
+        configs = [(n, f) for n, f in CONFIGS if match(f)]
         if not configs:
-            print(f"[ERROR] No config matching '{args.config}'")
+            print(f"[ERROR] No config matching compiler='{args.compiler}' opt='{args.opt}'")
             sys.exit(1)
 
     # 打开串口

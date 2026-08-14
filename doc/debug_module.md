@@ -9,6 +9,7 @@ BD32 实现了 RISC-V Debug Specification 1.0 子集（`dmstatus.version=3`，dc
 - halt 后流水线全级 stall + flush，CPU 原地冻结；无需 Debug ROM、不执行任何调试代码
 - GPR/CSR 通过专用调试端口直连（RegFile / CSR_Reg_Access），不经 CPU 执行；CPU 运行中也可访问（规范允许的可选超集，OpenOCD 正常流程在 halt 后访问）
 - 内存访问走 SBA（32-bit 读；8/16/32-bit 写），在 halt 期间读写 ITCM/DTCM 以及外设总线（APB：UART/GPIO/CLINT/PLIC/Timer 等）
+- Debug Module 自身不映射到系统地址空间（非内存映射外设），调试器经 JTAG DMI 访问；SBA 按地址在核内分发：BootROM/ITCM/DTCM 直连，总线区（APB 外设等）与 CPU 访存共用同一条 AXI 主机通路（AXI 互联层仅一个主机）
 
 ## 架构
 
@@ -98,7 +99,7 @@ DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通
 |------|------|
 | 板卡 | 烧录含调试子系统的 bitstream（`BD32_DEBUG_EN` 宏开启，`rtl/Debug/` 例化） |
 | 调试器 | Sipeed RV-Debugger（FT2232H），Channel A 四线 JTAG：TCK / TDI / TDO / TMS + GND |
-| 驱动 | FT2232H Channel A 需绑定 WinUSB（Zadig），否则 libusb 无法访问；与 Vivado hw_server 冲突时先关闭 Hardware Target |
+| 驱动 | FT2232H Channel A 需一次性绑定 WinUSB（Zadig）；之后保持 WinUSB 即可（JTAG 与复位均走 OpenOCD，无需切换驱动）；与 Vivado hw_server 冲突时先关闭 Hardware Target |
 | 速率 | 杜邦线连接时 `adapter speed 500`（`bd32_openocd.cfg` 已配置），正式 PCB 可提高 |
 
 **工具链**
@@ -368,7 +369,7 @@ openocd -f ./SDK/tools/bd32_watchpoint_test.cfg
   - `schtasks /run /tn BD32_GDB` —— GDB 全功能套件
   - `schtasks /run /tn GDBDEMO2` —— demo 在线调试
   - `schtasks /run /tn BD32_MSIM` —— ModelSim 回归（结果 `logs/msim_out.txt`）
-- FT2232H Channel A 必须绑定 WinUSB 驱动（Zadig），否则 libusb 无法访问
+- FT2232H Channel A 需一次性绑定 WinUSB 驱动（Zadig），否则 libusb 无法访问；绑定后保持 WinUSB 即可，复位不再需要切换到 VCP/ftd2xx（教程见 [fpga.md](fpga.md)「使用 Zadig 绑定 WinUSB」）
 - Vivado hw_server 会占用 JTAG 适配器，使用前需关闭 Hardware Target
 - 强制终止 OpenOCD 后可能需要拔插 USB 释放设备句柄
 - adapter speed 设为 500 kHz（杜邦线连接），正式 PCB 可提高

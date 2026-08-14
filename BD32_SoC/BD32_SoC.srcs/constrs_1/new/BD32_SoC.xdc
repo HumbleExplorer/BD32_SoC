@@ -1,3 +1,9 @@
+# =============================================================================
+# BD32_SoC 引脚约束（XDC）
+# 目标器件：Xilinx ZYNQ-7020 (xc7z020clg400-2)
+# 注意：以下 PACKAGE_PIN 按当前板卡（ZYNQ7020CLG400-2）编写，
+#       更换板卡时必须自行修改引脚与 IOSTANDARD。
+# =============================================================================
 create_clock -period 20.000 -name sys_clk [get_ports sys_clk]
 set_property -dict {PACKAGE_PIN U18 IOSTANDARD LVCMOS33} [get_ports sys_clk]
 set_property -dict {PACKAGE_PIN N16 IOSTANDARD LVCMOS33} [get_ports sys_rst_n]
