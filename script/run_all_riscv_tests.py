@@ -169,7 +169,7 @@ def run_single_test(vsim_exe, test_name, sim_time_us=SIM_TIME_US, timeout=TIMEOU
     """
     do_cmd = f"run {sim_time_us}us; quit -f"
     cmd = [
-        vsim_exe, "-c", "-voptargs=+acc", "tb_core_top",
+        vsim_exe, "-batch", "-voptargs=+acc", "tb_core_top",
         "-G", f"ITCM_FILE={test_name}",
         "-G", f"DTCM_FILE={test_name}",
         "-do", do_cmd,
@@ -215,7 +215,7 @@ def get_test_list():
 def check_license(vsim_exe):
     try:
         result = subprocess.run(
-            [vsim_exe, "-c", "-do", "quit -f", "tb_core_top"],
+            [vsim_exe, "-batch", "-do", "quit -f", "tb_core_top"],
             cwd=CORE_TEST_DIR, capture_output=True, text=True, timeout=15)
         output = result.stdout + result.stderr
         if "Invalid license" in output or "Unable to checkout" in output:

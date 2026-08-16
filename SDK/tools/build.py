@@ -55,23 +55,89 @@ BSP_C    = ["board/init.c", "drivers/bd32_uart.c", "trap/trap_handler.c"]
 NEWLIB_BSP_C = ["board/init.c", "drivers/bd32_uart.c", "trap/trap_handler.c", "porting/syscalls.c", "utils/printf_fixed.c"]
 BSP_ASM  = ["startup/vector_table.S", "drivers/bd32_clint_asm.S"]
 
+# ============ RT-Thread 模式（--rtthread [--rtthread-version]） ============
+# 内核取自 third_party/rt-thread-3.1.5（lts-v3.1.x，默认）或
+# third_party/rt-thread-5.1.0（只读），BSP 移植文件在 bsp/rtthread 或
+# bsp/rtthread51（BD32 适配文件跟随仓库）。
+def get_rtt_config(version):
+    """返回 (RTT_ROOT, RTT_INC, RTT_KERNEL_SRC, RTT_LIBCPU_C, RTT_BSP_ASM)"""
+    if version == "315":
+        root = os.path.join(os.path.dirname(SDK_ROOT), "third_party", "rt-thread-3.1.5")
+        inc = [
+            os.path.join(root, "include"),
+            os.path.join(root, "include", "libc"),
+            os.path.join(BSP_DIR, "rtthread"),
+        ]
+        # 单核所需内核源（v3.1.5 为单文件 scheduler.c；无 src/klibc）
+        kern = ["clock.c", "components.c", "cpu.c", "idle.c", "ipc.c", "irq.c",
+                "kservice.c", "mem.c", "object.c",
+                "scheduler.c", "thread.c", "timer.c"]
+        kern_c = [os.path.join(root, "src", f) for f in kern]
+        # BD32 适配的 3.1.5 libcpu + 中断入口（bsp/rtthread，随仓库跟踪）
+        libcpu_c = [os.path.join(BSP_DIR, "rtthread", "cpuport.c")]
+        bsp_asm = [
+            os.path.join(BSP_DIR, "rtthread", "rt_trap.S"),
+            os.path.join(BSP_DIR, "rtthread", "context_gcc.S"),
+            os.path.join(BSP_DIR, "rtthread", "interrupt_gcc.S"),
+        ]
+    else:  # "51"
+        root = os.path.join(os.path.dirname(SDK_ROOT), "third_party", "rt-thread-5.1.0")
+        inc = [
+            os.path.join(root, "include"),
+            os.path.join(root, "include", "libc"),
+            os.path.join(root, "libcpu", "risc-v", "common"),
+            os.path.join(BSP_DIR, "rtthread51"),
+        ]
+        # 单核所需内核源（v5.1.0，SMP 专用 scheduler_mp 不编）
+        kern = ["clock.c", "components.c", "cpu.c", "idle.c", "ipc.c", "irq.c",
+                "kservice.c", "mem.c", "object.c",
+                "scheduler_comm.c", "scheduler_up.c", "thread.c", "timer.c"]
+        # src/klibc：字符串/格式化（v5.1 的 rt_vsnprintf 在 kstdio.c）
+        kern += ["klibc/kstdio.c", "klibc/kstring.c"]
+        kern_c = [os.path.join(root, "src", f) for f in kern]
+        # 官方 v5.1 libcpu cpuport.c
+        libcpu_c = [os.path.join(root, "libcpu", "risc-v", "common", "cpuport.c")]
+        bsp_asm = [
+            os.path.join(BSP_DIR, "rtthread51", "rt_trap.S"),
+            os.path.join(root, "libcpu", "risc-v", "common", "context_gcc.S"),
+            os.path.join(root, "libcpu", "risc-v", "common", "interrupt_gcc.S"),
+        ]
+    return root, inc, kern_c, libcpu_c, bsp_asm
+
 def run(cmd, desc=""):
     if desc: print(f"  [{desc}]")
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         print(f"  ERROR: {r.stderr}")
         sys.exit(1)
     return r.stdout
 
-def compile(src_dir, out, usenewlib=False, useclang=False):
+def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver="315", irq_mode="ch32"):
     build_dir = os.path.dirname(out)
     os.makedirs(build_dir, exist_ok=True)
 
     # Select config
-    cflags = NEWLIB_CFLAGS if usenewlib else CFLAGS
-    ldflags = NEWLIB_LDFLAGS if usenewlib else LDFLAGS
-    libs = NEWLIB_LIBS if usenewlib else LIBS
-    bsp_c = NEWLIB_BSP_C if usenewlib else BSP_C
+    if usertt:
+        rtt_root, rtt_inc, rtt_kern_c, rtt_libcpu_c, rtt_bsp_asm = get_rtt_config(rtt_ver)
+        rtt_cflags = ["-DRT_USING_RTTHREAD"] + ["-I" + p for p in rtt_inc]
+        if irq_mode == "unified":
+            # 统一入口：3/7/11 全部全量保存 + 中断返回直接切换（无软件中断依赖）
+            rtt_cflags.append("-DRT_USING_UNIFIED_IRQ")
+        if rtt_ver == "315":
+            rtt_bsp_c = NEWLIB_BSP_C + ["rtthread/board.c"]
+        else:
+            rtt_bsp_c = NEWLIB_BSP_C + ["rtthread51/board.c"]
+        cflags = NEWLIB_CFLAGS + rtt_cflags
+        ldflags = NEWLIB_LDFLAGS
+        libs = NEWLIB_LIBS
+        bsp_c = rtt_bsp_c
+        bsp_asm = rtt_bsp_asm
+    else:
+        cflags = NEWLIB_CFLAGS if usenewlib else CFLAGS
+        ldflags = NEWLIB_LDFLAGS if usenewlib else LDFLAGS
+        libs = NEWLIB_LIBS if usenewlib else LIBS
+        bsp_c = NEWLIB_BSP_C if usenewlib else BSP_C
+        bsp_asm = BSP_ASM
 
     # .c 编译器选择：默认 xpack gcc；--clang 时改用官方 clang 做前端代码生成
     # (.S 启动文件与链接始终用 gcc，保证启动代码/link.ld 行为与现状完全一致)
@@ -105,10 +171,24 @@ def compile(src_dir, out, usenewlib=False, useclang=False):
         objs.append(obj)
 
     # Compile BSP .S (始终用 gcc 汇编 .S)
-    for s in BSP_ASM:
+    for s in bsp_asm:
+        s_full = s if os.path.isabs(s) else os.path.join(BSP_DIR, s)
         obj = obj_path(obj_name(s))
-        run([CC] + cflags + ["-c", os.path.join(BSP_DIR, s), "-o", obj], f"AS {s}")
+        run([CC] + cflags + ["-c", s_full, "-o", obj], f"AS {s}")
         objs.append(obj)
+
+    # RT-Thread 内核 + libcpu
+    if usertt:
+        # 内核源码需要 __RT_KERNEL_SOURCE__ 才能看到 rtsched.h 的内部 API
+        rtt_kernel_cflags = cflags + ["-D__RT_KERNEL_SOURCE__"]
+        for c in rtt_kern_c:
+            obj = obj_path(obj_name(c))
+            run([compiler] + clang_extra + rtt_kernel_cflags + ["-c", c, "-o", obj], f"CC rt-thread/{os.path.basename(c)}")
+            objs.append(obj)
+        for c in rtt_libcpu_c:
+            obj = obj_path(obj_name(c))
+            run([compiler] + clang_extra + rtt_kernel_cflags + ["-c", c, "-o", obj], f"CC rt-thread/{os.path.basename(c)}")
+            objs.append(obj)
 
     # Compile all user sources in src_dir
     sources = sorted(glob.glob(os.path.join(src_dir, "*.c")))
@@ -218,6 +298,11 @@ def main():
     p.add_argument("--no-bin", action="store_true", help="Skip .mem/.uartbin")
     p.add_argument("--debug", action="store_true", help="Compile with -g (GDB source-level debug info)")
     p.add_argument("--newlib", action="store_true", help="Link with newlib-nano (printf, malloc, etc.)")
+    p.add_argument("--rtthread", action="store_true", help="Build with RT-Thread kernel (bsp/rtthread + third_party/rt-thread)")
+    p.add_argument("--rtthread-version", default="315", choices=["51", "315"],
+                   help="RT-Thread kernel version: 315 (lts-v3.1.x, default) or 51 (v5.1.0)")
+    p.add_argument("--irq-mode", default="ch32", choices=["ch32", "unified"],
+                   help="RT-Thread 中断模式: ch32 (轻量入口 + 软件中断延迟切换, default) or unified (统一入口, 全量保存 + 直接切换)")
     p.add_argument("--clang", action="store_true", help="Use LLVM/clang for .c compilation (linking still via xpack gcc)")
     p.add_argument("--opt", default="Os", help="Optimization (Os, O2, O3, etc.)")
     p.add_argument("--extra", default="", help="Extra GCC flags")
@@ -286,7 +371,9 @@ def main():
         LINKER = _dbg_ld
 
     print(f"BD32 SDK Build: {src_dir} -> {args.output}")
-    compile(src_dir, args.output, usenewlib=args.newlib, useclang=args.clang)
+    compile(src_dir, args.output, usenewlib=(args.newlib or args.rtthread),
+            useclang=args.clang, usertt=args.rtthread, rtt_ver=args.rtthread_version,
+            irq_mode=args.irq_mode)
 
     if not args.no_bin:
         elf_to_bin(args.output, name_suffix=name_suffix)

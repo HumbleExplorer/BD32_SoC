@@ -28,7 +28,11 @@ _start:
 2:
 
     call _init
+#ifdef RT_USING_RTTHREAD
+    call rtthread_startup
+#else
     call main
+#endif
 1:  j 1b
 
 .size _start, .-_start

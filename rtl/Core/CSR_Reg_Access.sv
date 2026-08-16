@@ -63,6 +63,7 @@ logic   [DATA_WIDTH-1:0]    mepc;//异常PC
 logic   [DATA_WIDTH-1:0]    mcause;//异常原因
 logic   [DATA_WIDTH-1:0]    mtval;//错误地址或命令
 logic   [DATA_WIDTH-1:0]    mip;//中断挂起
+logic   [DATA_WIDTH-1:0]    mscratch;//机器模式 trap 暂存（0x340，RT-Thread 中断栈/上下文切换用）
 
 //机器计数器/计时器
 logic   [2*DATA_WIDTH-1:0]  mcycle;
@@ -144,6 +145,7 @@ logic                    int_come;
 logic                    exception_jump;
 logic                    int_waiting_jump;
 logic                    int_trap_jump;
+logic                    mret_done;      // mret 完成后的第一拍（mret_req 延迟一拍）
 
 // 优先级：外部中断>软件中断>定时器中断
 assign external_int_trap = mstatus[3] & mip[11] & mie[11];
@@ -191,7 +193,26 @@ always_comb begin
 end
 
 logic int_trap_jump_n;
-assign int_trap_jump_n = (int_waiting_jump | int_trap) && (bus_ready && ~oitf_stall) && ~int_trap_jump;
+// mret 与中断重叠时禁止中断抢占锁存：mret 周期若同时锁存 int_trap_jump，
+// mepc 会被写成 mret 指令的下一条（next_inst_addr），mret 随后跳转到错误地址。
+// 加上 ~mret_req 后，中断延后一拍，在 mret 完成（PC=mepc 目标）后再响应，
+// 此时 mepc 锁存为 mret 目标地址，行为正确。
+// 中断锁存必须同时满足：当前周期真实 pending（int_trap=1，保证 mcause_n 有效）。
+// 仅 int_waiting_jump 残留（如 tick 已处理、mip 已清）时不得触发，
+// 否则 mcause_n 落到默认 0，中断被误锁存成同步异常（mret 后尤为常见）。
+assign int_trap_jump_n = (int_waiting_jump | int_trap) && int_trap
+                       && (bus_ready && ~oitf_stall) && ~int_trap_jump && ~mret_req && ~mret_done;
+
+// mret 完成后的第一拍，IF/ID 流水线尚未反映 mret 跳转目标，
+// next_inst_addr 仍可能是 mret 指令的下一条（旧流水线地址）。
+// 此时若中断响应并锁存 mepc <= next_inst_addr，会把 mepc 写坏；
+// mret 后的首次中断断点应保持为 mret 目标（mepc 现值）。
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)
+        mret_done <= #1 1'b0;
+    else
+        mret_done <= #1 mret_req;
+end
 // 中断预计算：int_trap 有效且无异常时，锁存 trap 地址（CARRY4 不参与关键路径）
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -220,6 +241,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         mcountinhibit       <= #1 'h0;
         mcounterclr         <= #1 'h0;
         mip                 <= #1 'h0;
+        mscratch            <= #1 'h0;
     end else begin//优先级：异常>外部中断>软件中断>定时器中断
         mip     <= #1 {mip[31:12],external_int,mip[10:8],timer_int,mip[6:4],software_int,mip[2:0]};
         if (exception_trap) begin//进入异常
@@ -231,7 +253,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         end else if (mret_req) begin//从异常返回 mepc保持不变
             mstatus[3]  <= #1 mstatus[7];//MIE <- MPIE
             mstatus[7]  <= #1 1'b1;
-        end else if(int_trap_jump_n) begin//int_trap_jump前一周期判断，防止长周期指令和跳转指令间的相关性导致next_inst_addr错误
+        end else if(int_trap_jump_n && ~mret_done) begin//int_trap_jump前一周期判断；mret 后第一拍保持 mepc（mret 目标），避免锁存旧流水线地址
             mcause      <= #1 mcause_n;//写入中断原因（仅陷入时更新，否则保持）
             mepc        <= #1 next_inst_addr;
             mstatus[7]  <= #1 mstatus[3];
@@ -244,6 +266,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 12'h306  : mcounteren       <= #1 csr_wdata;
                 12'h320  : mcountinhibit    <= #1 csr_wdata;
                 12'h341  : mepc             <= #1 csr_wdata;
+                12'h340  : mscratch         <= #1 csr_wdata;
                 // 12'h342  : mcause           <= #1 csr_wdata;
                 // 12'h343  : mtval            <= #1 csr_wdata;
                 // 12'h344  : mip              <= #1 csr_wdata;
@@ -262,6 +285,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 12'h306  : mcounteren       <= #1 dbg_csr_wdata;
                 12'h320  : mcountinhibit    <= #1 dbg_csr_wdata;
                 12'h341  : mepc             <= #1 dbg_csr_wdata;
+                12'h340  : mscratch         <= #1 dbg_csr_wdata;
                 12'hbc0  : mcounterclr      <= #1 dbg_csr_wdata;
                 default  : ;
             endcase
@@ -284,6 +308,7 @@ always_comb begin
             12'h342  : csr_rdata = mcause;
             12'h343  : csr_rdata = mtval;
             12'h344  : csr_rdata = mip;
+            12'h340  : csr_rdata = mscratch;
             12'hb00  : csr_rdata = mcycle[DATA_WIDTH-1:0];
             12'hb80  : csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
             12'hb02  : csr_rdata = minstret[DATA_WIDTH-1:0];
@@ -328,6 +353,7 @@ always_comb begin
         12'h342  : dbg_csr_rdata = mcause;
         12'h343  : dbg_csr_rdata = mtval;
         12'h344  : dbg_csr_rdata = mip;
+        12'h340  : dbg_csr_rdata = mscratch;
         12'hb00  : dbg_csr_rdata = mcycle[DATA_WIDTH-1:0];
         12'hb80  : dbg_csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
         12'hb02  : dbg_csr_rdata = minstret[DATA_WIDTH-1:0];

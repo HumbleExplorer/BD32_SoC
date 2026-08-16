@@ -46,7 +46,7 @@ def main():
     # run
     print(f"=== Running {test} ===")
     do_cmd = f"run {SIM_TIME_US}us; quit -f"
-    r = subprocess.run([vsim, "-c", "-voptargs=+acc", "tb_core_top",
+    r = subprocess.run([vsim, "-batch", "-voptargs=+acc", "tb_core_top",
                         "-G", f"ITCM_FILE={test}.dat", "-do", do_cmd],
                        cwd=CORE_TEST_DIR, capture_output=True, text=True, timeout=180)
     out = r.stdout + r.stderr

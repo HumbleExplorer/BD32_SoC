@@ -23,7 +23,9 @@ void _init(void) {
     /* UART 初始化（soc_init 测频完成后调用，按实测主频计算 FCW） */
     uart_init(115200);
 
-    /* 设置中断向量表 (Vectored 模式) */
+#ifdef RT_USING_RTTHREAD
+    /* RT-Thread 模式：vectored 向量表（rt_trap.S），
+     * 3 号软件中断 → SW_handler 延迟切换，7/11 号轻量入口 */
     __asm__ volatile(
         ".option push\n"
         ".option norelax\n"
@@ -32,6 +34,17 @@ void _init(void) {
         "csrw mtvec, a0\n"
         ".option pop\n"
     );
+#else
+    /* 裸机模式：设置中断向量表 (Vectored 模式) */
+    __asm__ volatile(
+        ".option push\n"
+        ".option norelax\n"
+        "la a0, __vector_table\n"
+        "ori a0, a0, 1\n"
+        "csrw mtvec, a0\n"
+        ".option pop\n"
+    );
+#endif
 
     board_init();
 

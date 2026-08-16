@@ -77,6 +77,15 @@ SECTIONS
         __heap_end = .;
     } >dtcm
 
+    /* RT-Thread 独立中断栈（SW_handler 用 mscratch 切换） */
+    .rt_irq_stack (NOLOAD) : {
+        . = ALIGN(16);
+        __rt_irq_stack_start = .;
+        . = . + 1K;
+        __rt_irq_stack_end = .;
+        PROVIDE(__rt_rvstack = .);
+    } >dtcm
+
     .stack ORIGIN(dtcm) + LENGTH(dtcm) - __STACK_SIZE (NOLOAD) : {
         . = ALIGN(16);
         _sstack = .;

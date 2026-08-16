@@ -369,7 +369,7 @@ openocd -f ./SDK/tools/bd32_watchpoint_test.cfg
   - `schtasks /run /tn BD32_GDB` —— GDB 全功能套件
   - `schtasks /run /tn GDBDEMO2` —— demo 在线调试
   - `schtasks /run /tn BD32_MSIM` —— ModelSim 回归（结果 `logs/msim_out.txt`）
-- FT2232H Channel A 需一次性绑定 WinUSB 驱动（Zadig），否则 libusb 无法访问；绑定后保持 WinUSB 即可，复位不再需要切换到 VCP/ftd2xx（教程见 [fpga.md](fpga.md)「使用 Zadig 绑定 WinUSB」）
+- FT2232H Channel A 需一次性绑定 WinUSB 驱动（Zadig），否则 libusb 无法访问；绑定后保持 WinUSB 即可，复位不再需要切换到 VCP/ftd2xx（教程见 [验证手册](verification.md)「使用 Zadig 绑定 WinUSB」）
 - Vivado hw_server 会占用 JTAG 适配器，使用前需关闭 Hardware Target
 - 强制终止 OpenOCD 后可能需要拔插 USB 释放设备句柄
 - adapter speed 设为 500 kHz（杜邦线连接），正式 PCB 可提高

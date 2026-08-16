@@ -4,7 +4,7 @@
 <!-- Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.                   -->
 <!-- Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.   -->
 
-<Project Product="Vivado" Version="7" Minor="63" Path="D:/Desktop/OpenClaw_Workspace/Working/BD32_SoC/BD32_SoC.xpr">
+<Project Product="Vivado" Version="7" Minor="63" Path="D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/BD32_SoC/BD32_SoC.xpr">
   <DefaultLaunch Dir="$PRUNDIR"/>
   <Configuration>
     <Option Name="Id" Val="37f8878c25b741d2a15d4c34c2ca8856"/>
@@ -773,12 +773,12 @@
         <StratHandle Name="Flow_PerfOptimized_high" Flow="Vivado Synthesis 2023"/>
         <Step Id="synth_design">
           <Option Id="ResourceSharing">2</Option>
-          <Option Id="Directive">7</Option>
           <Option Id="ShregMinSize">5</Option>
           <Option Id="FsmExtraction">1</Option>
+          <Option Id="Directive">7</Option>
+          <Option Id="NoCombineLuts">1</Option>
           <Option Id="KeepEquivalentRegisters">1</Option>
           <Option Id="FlattenHierarchy">1</Option>
-          <Option Id="NoCombineLuts">1</Option>
         </Step>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -821,7 +821,7 @@
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
       <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2023" CtrlBit="true">
-        <ReportConfig DisplayName="Timing Summary" Name="impl_1_init_report_timing_summary_0" Spec="report_timing_summary" RunStep="init_design" ReportFile="bd32_board_top_timing_summary_init.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Timing Summary" Name="impl_1_init_report_timing_summary_0" Spec="report_timing_summary" RunStep="init_design" ReportFile="bd32_board_top_timing_summary_init_1.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="max_paths" Type="" Value="10"/>
           <ReportConfigOption Name="report_unconstrained" Type="" Value="true"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value=""/>
@@ -836,7 +836,7 @@
           <ReportConfigOutputOption Name="pb" Type="string" Value="bd32_board_top_drc_opted.pb"/>
           <ReportConfigOutputOption Name="rpx" Type="string" Value="bd32_board_top_drc_opted.rpx"/>
         </ReportConfig>
-        <ReportConfig DisplayName="Timing Summary" Name="impl_1_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="opt_design" ReportFile="bd32_board_top_timing_summary_opted.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Timing Summary" Name="impl_1_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="opt_design" ReportFile="bd32_board_top_timing_summary_opted_1.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="max_paths" Type="" Value="10"/>
           <ReportConfigOption Name="report_unconstrained" Type="" Value="true"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value=""/>
@@ -846,7 +846,7 @@
           <ReportConfigOption Name="dummy_option" Type="string"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value="opt_report_qor_suggestions_0.pb"/>
         </ReportConfig>
-        <ReportConfig DisplayName="Timing Summary" Name="impl_1_power_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="power_opt_design" ReportFile="bd32_board_top_timing_summary_pwropted_1.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Timing Summary" Name="impl_1_power_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="power_opt_design" ReportFile="bd32_board_top_timing_summary_pwropted.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="max_paths" Type="" Value="10"/>
           <ReportConfigOption Name="report_unconstrained" Type="" Value="true"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value=""/>
@@ -862,13 +862,13 @@
         <ReportConfig DisplayName="Control Sets" Name="impl_1_place_report_control_sets_0" Spec="report_control_sets" RunStep="place_design" ReportFile="bd32_board_top_control_sets_placed.rpt" Version="1" Minor="0">
           <ReportConfigOption Name="verbose" Type="" Value="true"/>
         </ReportConfig>
-        <ReportConfig DisplayName="Incremental Reuse" Name="impl_1_place_report_incremental_reuse_0" Spec="report_incremental_reuse" RunStep="place_design" ReportFile="bd32_board_top_incremental_reuse_pre_placed.rpt.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Incremental Reuse" Name="impl_1_place_report_incremental_reuse_0" Spec="report_incremental_reuse" RunStep="place_design" ReportFile="bd32_board_top_incremental_reuse_pre_placed.rpt_1.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="dummy_option" Type="string"/>
         </ReportConfig>
-        <ReportConfig DisplayName="Incremental Reuse" Name="impl_1_place_report_incremental_reuse_1" Spec="report_incremental_reuse" RunStep="place_design" ReportFile="bd32_board_top_incremental_reuse_placed.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Incremental Reuse" Name="impl_1_place_report_incremental_reuse_1" Spec="report_incremental_reuse" RunStep="place_design" ReportFile="bd32_board_top_incremental_reuse_placed_1.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="dummy_option" Type="string"/>
         </ReportConfig>
-        <ReportConfig DisplayName="Timing Summary" Name="impl_1_place_report_timing_summary_0" Spec="report_timing_summary" RunStep="place_design" ReportFile="bd32_board_top_timing_summary_placed.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Timing Summary" Name="impl_1_place_report_timing_summary_0" Spec="report_timing_summary" RunStep="place_design" ReportFile="bd32_board_top_timing_summary_placed_1.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="max_paths" Type="" Value="10"/>
           <ReportConfigOption Name="report_unconstrained" Type="" Value="true"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value=""/>
@@ -878,13 +878,13 @@
           <ReportConfigOption Name="dummy_option" Type="string"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value="place_report_qor_suggestions_0.pb"/>
         </ReportConfig>
-        <ReportConfig DisplayName="Timing Summary" Name="impl_1_post_place_power_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="post_place_power_opt_design" ReportFile="bd32_board_top_timing_summary_postplace_pwropted_1.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Timing Summary" Name="impl_1_post_place_power_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="post_place_power_opt_design" ReportFile="bd32_board_top_timing_summary_postplace_pwropted.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="max_paths" Type="" Value="10"/>
           <ReportConfigOption Name="report_unconstrained" Type="" Value="true"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value=""/>
           <ReportConfigOutputOption Name="rpx" Type="string" Value=""/>
         </ReportConfig>
-        <ReportConfig DisplayName="Timing Summary" Name="impl_1_phys_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="phys_opt_design" ReportFile="bd32_board_top_timing_summary_physopted.rpt" Version="1" Minor="0" IsDisabled="true">
+        <ReportConfig DisplayName="Timing Summary" Name="impl_1_phys_opt_report_timing_summary_0" Spec="report_timing_summary" RunStep="phys_opt_design" ReportFile="bd32_board_top_timing_summary_physopted_1.rpt" Version="1" Minor="0" IsDisabled="true">
           <ReportConfigOption Name="max_paths" Type="" Value="10"/>
           <ReportConfigOption Name="report_unconstrained" Type="" Value="true"/>
           <ReportConfigOutputOption Name="pb" Type="string" Value=""/>

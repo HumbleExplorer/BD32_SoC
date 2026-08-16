@@ -59,7 +59,7 @@ ITCM/DTCM 下载：帧头 `0xBBAABBAA`，随后 ITCM 指令个数与指令数据
 小端 4 字节），再 DTCM 数据个数与数据；下载完成自动切换用户模式。
 协议细节见 [sdk.md](sdk.md)「uartbin 下载协议」。
 
-对应 demo：`uart_echo`（UART 全双工回显）、`hello`（newlib 打印）。
+对应 demo：`uart_echo`（UART 全双工回显）、`hello`（newlib-nano 打印）。
 
 ## Timer（apb_timer.sv + basic_timer + timer_ic_oc）
 
