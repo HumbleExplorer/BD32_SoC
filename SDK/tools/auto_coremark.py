@@ -3,7 +3,7 @@ BD32 CoreMark 自动化测试脚本
 流程：复位 → UART下载程序 → 等待输出 → 解析结果
 
 用法：
-    python tools/auto_coremark.py                          # 跑全部18个配置（9 编译器配置 x newlib/picolibc）
+    python tools/auto_coremark.py                          # 跑全部23个配置
     python tools/auto_coremark.py --compiler gcc --opt o2  # 只跑 GCC O2
     python tools/auto_coremark.py --compiler clang         # 只跑 LLVM/Clang 全部配置
     python tools/auto_coremark.py --libc picolibc          # 只跑 picolibc 配置
@@ -32,8 +32,9 @@ SEND_CHUNK = 256        # 串口发送分块大小
 SEND_DELAY = 0.01       # 每块间隔(秒)
 RESULT_TIMEOUT = 300    # 等待结果超时(秒), CoreMark 500轮约需3-4分钟
 
-# 18个测试配置: (名称, uartbin文件名)
-# 9 个编译器/优化配置 x newlib-nano / picolibc（整数档）
+# 23个测试配置: (名称, uartbin文件名)
+# 18 个编译器/优化/C库配置（GCC/LLVM x Os/O1/O2/O3/Oz x newlib-nano/picolibc）
+# + 5 个 picolibc LLVM 的 LLD（LTO+ICF）变体
 CONFIGS = [
     # ---- newlib-nano ----
     ("GCC Os",   "coremark_os.uartbin"),
@@ -176,10 +177,14 @@ def parse_coremark(text):
 
 
 def write_xlsx(configs, results, xlsx_path):
-    """把测试结果写入 Excel：主表（18 配置）+ 归一化对比 + Charts 数据。
-    体积比/性能比等以各 C 库的 GCC O2 为基准，用公式随主表联动。"""
+    """把测试结果写入 Excel：主表（23 配置）+ 归一化对比 + Charts 数据。
+      体积比/性能比等以各 C 库的 GCC O2 为基准，用公式随主表联动。"""
     import openpyxl
     from openpyxl.styles import Font
+
+    # 若传入的是目录（如 --xlsx ../../），视为输出目录，拼默认文件名
+    if os.path.isdir(xlsx_path):
+        xlsx_path = os.path.join(xlsx_path, "BD32_CoreMark_Compiler_Comparison.xlsx")
 
     # 收集有结果的行
     data = []
@@ -255,7 +260,8 @@ def write_xlsx(configs, results, xlsx_path):
         ws.cell(dst_row, 4, opt)
         ws.cell(dst_row, 5, f'=IF(G${base}=0,"",G{src_row}/G${base})' if base else "")
         ws.cell(dst_row, 6, f'=IF(H${base}=0,"",H{src_row}/H${base})' if base else "")
-        ws.cell(dst_row, 7, '=IF(OR(D{d}="",D{d}=0),"",E{d}/D{d})'.format(d=dst_row))
+        # 性价比 = 性能比 / 体积比（E 体积比、F 性能比），越大越好
+        ws.cell(dst_row, 7, '=IF(OR(E{d}="",E{d}=0,F{d}="",F{d}=0),"",F{d}/E{d})'.format(d=dst_row))
 
     # ---- 说明 ----
     note_start = norm_hdr + 1 + len(data) + 1
@@ -298,14 +304,15 @@ def write_xlsx(configs, results, xlsx_path):
     except PermissionError:
         # 目标文件被 WPS/Excel 占用时，写带时间戳的备用文件，避免测试结果丢失
         import time as _time
+        base = os.path.basename(xlsx_path) or "BD32_CoreMark_Compiler_Comparison.xlsx"
+        stem = os.path.splitext(base)[0] or "BD32_CoreMark_Compiler_Comparison"
         alt = os.path.join(os.path.dirname(xlsx_path),
-                           os.path.splitext(os.path.basename(xlsx_path))[0] +
-                           f"_{_time.strftime('%Y%m%d_%H%M%S')}.xlsx")
+                           f"{stem}_{_time.strftime('%Y%m%d_%H%M%S')}.xlsx")
         wb.save(alt)
-        # 检测 WPS/Excel 进程，提醒用户关闭后重试覆盖（ctypes，不依赖 tasklist）
-        procs = detect_office_processes()
-        if procs:
-            print(f"\n[XLSX][WARN] 检测到 {', '.join(procs)} 正在运行：{xlsx_path} 被占用，"
+        # 用 Office/WPS 锁文件（~$<文件名>）判断是否真被 WPS/Excel 打开，
+        # 避免"开着 WPS 但没打开该文件"时误报
+        if office_lockfile_exists(xlsx_path):
+            print(f"\n[XLSX][WARN] {xlsx_path} 正被 WPS/Excel 打开（检测到 ~$ 锁文件），"
                   f"请关闭 WPS/Excel 中打开该文件的窗口后告诉我，我会把数据覆盖写入正式文件。"
                   f"本次结果已写入备用文件 -> {alt}")
         else:
@@ -313,44 +320,15 @@ def write_xlsx(configs, results, xlsx_path):
                   f"结果已写入备用文件 -> {alt}")
 
 
-def detect_office_processes():
-    """枚举进程，返回正在运行的 WPS/Excel 相关进程名列表（空列表表示未检测到）。
-    用 ctypes 直接调用 Toolhelp API，避免依赖 tasklist 等外部命令。"""
-    import ctypes
-    found = set()
-    try:
-        TH32CS_SNAPPROCESS = 0x00000002
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-        class PROCESSENTRY32W(ctypes.Structure):
-            _fields_ = [("dwSize", ctypes.c_ulong),
-                        ("cntUsage", ctypes.c_ulong),
-                        ("th32ProcessID", ctypes.c_ulong),
-                        ("th32DefaultHeapID", ctypes.c_size_t),
-                        ("th32ModuleID", ctypes.c_ulong),
-                        ("cntThreads", ctypes.c_ulong),
-                        ("th32ParentProcessID", ctypes.c_ulong),
-                        ("pcPriClassBase", ctypes.c_long),
-                        ("dwFlags", ctypes.c_ulong),
-                        ("szExeFile", ctypes.c_wchar * 260)]
-
-        snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-        if snap == -1:
-            return []
-        try:
-            pe = PROCESSENTRY32W()
-            pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)
-            ok = kernel32.Process32FirstW(snap, ctypes.byref(pe))
-            while ok:
-                exe = (pe.szExeFile or "").lower()
-                if exe in ("wps.exe", "et.exe", "wpp.exe", "excel.exe"):
-                    found.add(exe)
-                ok = kernel32.Process32NextW(snap, ctypes.byref(pe))
-        finally:
-            kernel32.CloseHandle(snap)
-    except Exception:
-        pass
-    return sorted(found)
+def office_lockfile_exists(xlsx_path):
+    """判断目标 xlsx 是否正被 WPS/Excel 打开：Office 打开文档时会在同目录
+    生成 `~$<文件名>`（或去掉扩展名的）隐藏锁文件。"""
+    d = os.path.dirname(xlsx_path)
+    base = os.path.basename(xlsx_path)
+    if not d:
+        d = os.getcwd()
+    return (os.path.exists(os.path.join(d, "~$" + base)) or
+            os.path.exists(os.path.join(d, "~$" + os.path.splitext(base)[0])))
 
 # ============================================================
 # 主流程
@@ -467,6 +445,11 @@ def main():
         args.xlsx = os.path.normpath(os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "..",
             "BD32_CoreMark_Compiler_Comparison.xlsx"))
+    else:
+        args.xlsx = os.path.abspath(os.path.normpath(args.xlsx))
+    # --xlsx 指向已存在目录时，按输出目录处理，拼默认文件名
+    if os.path.isdir(args.xlsx):
+        args.xlsx = os.path.join(args.xlsx, "BD32_CoreMark_Compiler_Comparison.xlsx")
 
     # 打开串口
     ser = serial.Serial(args.port, args.baud, timeout=1)

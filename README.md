@@ -19,33 +19,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - RT-Thread 移植：v5.1.0 与 lts-v3.1.x（v3.1.5）双版本，轻量中断入口 + SW_handler（PendSV 模式）延迟调度 + CLINT mtime 系统节拍，`--rtthread` 一键构建（默认 lts-v3.1.x，`--rtthread-version 51` 切回 v5.1.0；双线程 demo 已仿真与上板验证）
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）、硬件断点 Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择）、ebreak 进调试模式（dcsr.ebreakm）、数据观察点
 - 完整调试回归：DMI 一键测试、GDB 全功能套件、真实 demo 符号级在线调试
-
-## 代码体积优化
-
-为追求 RV32IM/ilp32 裸机固件的极致体积，SDK 构建工具提供三种可叠加的优化途径（均已构建 + 上板验证）：
-
-1. **picolibc 精简 C 库**（`--picolibc`）——整数 printf 档，比 newlib-nano 小 34%~55%，CoreMark 小 32%；
-2. **LLVM LTO**（`--clang --lld`，`-flto`）——跨文件优化，CoreMark 再小 4%~6%，是体积优化的主力；
-3. **ICF 相同代码折叠**（`--lld`，`--icf=all`）——折叠完全相同的代码段（CoreMark 重复代码少，收益有限；对模板/库代码密集场景收益更大）。
-
-效果（CoreMark，ITCM 词数，越小越好）：
-
-| 配置 | 词数 |
-|------|------|
-| GCC `-Os`（newlib，基线） | 4379 |
-| Clang `-Os`（newlib） | 4302 |
-| Clang `-Os --lld`（newlib，LTO+ICF） | 4034 |
-| Clang `-Os`（picolibc） | 2921 |
-| **Clang `-Os --lld`（picolibc，LTO+ICF）** | **2739** |
-
-极致最小组合 `--picolibc --clang --lld` 比默认 GCC `-Os` 基线小 37%，性能无损失（同优化等级下 CoreMark/MHz 与未优化版本一致，实测约 2.27）。
-
-```bash
-cd SDK
-python tools/build.py demos/newlib/coremark --picolibc --clang --lld
-```
-
-picolibc 默认整数 printf 档不支持 `%f`；需要浮点输出时先运行 `tools/build_picolibc.bat f` 构建浮点档，再以 `--picolibc-printf f` 链接。分步数据、限制说明与 18 配置自动对比见 [doc/sdk.md](doc/sdk.md)。
+- 代码体积优化：picolibc 精简 C 库 + LLVM LTO/ICF（`--picolibc` / `--lld`），CoreMark 体积减 37%；三种途径、效果与用法见 [SDK 构建工具与协议](doc/sdk.md)「LLVM/Clang 集成与代码体积优化」
 
 ## 已知限制
 
@@ -76,10 +50,11 @@ picolibc 默认整数 printf 档不支持 `%f`；需要浮点输出时先运行 
 | Xilinx Vivado | FPGA 综合/实现/烧录 | 2023.1 | Xilinx EULA（WebPACK 免费版可用） | — |
 | Python | 脚本/自动化 | 3.x | PSF License | — |
 | riscv-tests 源码 | ISA 兼容性测试用例（rv32ui / rv32um / rv64ui） | `third_party/riscv-tests`（clone 官方仓库 [riscv/riscv-tests](https://github.com/riscv/riscv-tests)） | BSD-3-Clause | `RISCV_TESTS_SRC` |
+| picolibc 源码（可选） | 精简 C 库（`--picolibc`，程序体积更小） | 1.8.12（`third_party/picolibc-1.8.12`，从 [picolibc Releases](https://github.com/picolibc/picolibc/releases) 下载源码包；由 `SDK/tools/build_picolibc.bat` 构建到 `third_party/picolibc-install`） | BSD-3-Clause | `PICOLIBC_ROOT` |
 | RT-Thread 5.1.0 源码 | RTOS 内核（`--rtthread --rtthread-version 51`） | `third_party/rt-thread-5.1.0`（从官方 [Releases](https://github.com/RT-Thread/rt-thread/releases) 下载源码包解压） | Apache-2.0 | — |
 | RT-Thread 3.1.5 源码 | RTOS 内核（`--rtthread` 默认） | `third_party/rt-thread-3.1.5`（同上，v3.1.5） | Apache-2.0 | — |
 
-目标架构：`-march=rv32im_zicsr -mabi=ilp32`；C 库使用 **newlib-nano**（`-specs=nano.specs` 精简版，`printf`/`malloc` 可用）。工具路径未设置时使用各脚本内的默认值。
+目标架构：`-march=rv32im_zicsr -mabi=ilp32`；C 库默认使用 **newlib-nano**（`-specs=nano.specs` 精简版，`printf`/`malloc` 可用），可选 **picolibc**（`--picolibc`，整数程序体积更小，用法见 [SDK 构建工具与协议](doc/sdk.md)「picolibc」）。工具路径未设置时使用各脚本内的默认值。
 
 - **第三方源码**（统一放在 `third_party/`，不随仓库分发）：
 
@@ -94,6 +69,9 @@ picolibc 默认整数 printf 档不支持 `%f`；需要浮点输出时先运行 
   # v3.1.5 → rt-thread-3.1.5（--rtthread 默认构建）
   # OpenOCD（在线调试用）：从 https://github.com/xpack-dev-tools/openocd-xpack/releases
   # 下载 xpack-openocd-0.12.0-7-win32-x64.zip，解压到 third_party/
+  # picolibc（可选，代码体积优化）：从 https://github.com/picolibc/picolibc/releases
+  # 下载 1.8.12 源码包解压到 third_party/picolibc-1.8.12，
+  # 然后运行 SDK/tools/build_picolibc.bat [i|f|d] 构建（i=整数/ f=浮点/ d=double printf 档）
   cd ..
   ```
 
@@ -195,7 +173,7 @@ python SDK/tools/uart_send.py test_data/soc/c/rtthread51_os.uartbin --port COM8 
 │   ├── custom_asm/           # 38 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
 │   ├── riscv-tests/          # riscv-tests 测试产物（rv32ui 42 + rv32um 8 全过；源码来自官方 riscv-tests 仓库，见 doc/sdk.md）
 │   └── soc/c/                # 固件构建产物（.uartbin / .mem，由 build.py 同步）
-├── third_party/              # 第三方源码依赖（riscv-tests、rt-thread-3.1.5 / rt-thread-5.1.0、OpenOCD，不随仓库分发）
+├── third_party/              # 第三方源码依赖（riscv-tests、rt-thread-3.1.5 / rt-thread-5.1.0、picolibc-1.8.12、OpenOCD，不随仓库分发）
 ├── SDK/
 │   ├── tools/                # 构建与在线控制工具
 │   ├── isa/                  # 测试环境（env 随仓库提交；rv32ui 等源码由脚本从 third_party 同步）
@@ -216,7 +194,7 @@ python SDK/tools/uart_send.py test_data/soc/c/rtthread51_os.uartbin --port COM8 
 | [调试模块](doc/debug_module.md) | 调试架构、DMI 位域、Trigger、OpenOCD/GDB 手册、仿真与上板验证 |
 | [外设](doc/peripherals.md) | 外设寄存器与编程要点 |
 | [验证](doc/verification.md) | 环境依赖、构建、仿真与上板验证、回归脚本、CoreMark、Spike 差分测试 |
-| [SDK 构建工具与协议](doc/sdk.md) | build.py、riscv-tests、MROM、uartbin 协议、RT-Thread 应用开发 |
+| [SDK 构建工具与协议](doc/sdk.md) | build.py、riscv-tests、MROM、uartbin 协议、代码体积优化（LLD/picolibc）、CoreMark 自动对比、RT-Thread 应用开发 |
 
 ## TODO_LIST
 
@@ -247,6 +225,9 @@ python SDK/tools/uart_send.py test_data/soc/c/rtthread51_os.uartbin --port COM8 
 
 **Q: 仿真时 ITCM 全 X，CPU 不运行**
 确保 vlog 编译时传入 `+define+DIRECT_LOAD`。
+
+**Q: 构建报错 "picolibc 未构建"**
+先运行 `SDK/tools/build_picolibc.bat`（默认整数 printf 档；`f`/`d` 分别为浮点/double 档）构建 picolibc，或用环境变量 `PICOLIBC_ROOT` 指向已安装目录。
 
 **Q: CoreMark 仿真输出不完整**
 CoreMark 为 500 次迭代的 performance run，完整 CRC 输出需约几秒仿真时间，若要仿真验证建议将轮数改为1；完整验证请上板运行。

@@ -75,6 +75,37 @@ python tools/build_riscv_tests.py --clang  # Clang 汇编
 
 通过 `--clang` 开关启用。设计原则：Clang 只负责 `.c`/`.S` 的代码生成，链接默认仍由 xPack GCC 完成（因为官方 LLVM Windows 包不含 RISC-V compiler-rt builtins，需复用 xPack 的 libgcc）。
 
+### 体积优化总览（三种途径可叠加）
+
+1. **picolibc 精简 C 库**（`--picolibc`）——整数 printf 档，比 newlib-nano 小 34%~55%，CoreMark 小 32%；
+2. **LLVM LTO**（`--clang --lld`，`-flto`）——跨文件优化，CoreMark 再小 4%~6%，是体积优化的主力；
+3. **ICF 相同代码折叠**（`--lld`，`--icf=all`）——折叠完全相同的代码段（CoreMark 重复代码少，收益有限；
+   对模板/库代码密集场景收益更大）。
+
+**链接器选择**：默认（含 `--clang`）由 xPack GCC 驱动调用 **GNU ld** 链接；**只有加 `--lld` 时才改用
+LLVM 的链接器（`ld.lld`）**——配合 `--clang` 的 `-flto` 启用 LTO，并始终开启 `--icf=all`。纯 GCC
+对象也可用 `--lld`（ICF 生效、无 LTO）。
+
+极致最小组合（CoreMark ITCM 4379 → **2739** 词，-37%，性能无损失）：
+
+```bash
+cd SDK
+python tools/build.py demos/newlib/coremark --picolibc --clang --lld
+```
+
+效果速览（CoreMark ITCM 词数，越小越好）：
+
+| 配置 | 词数 |
+|------|------|
+| GCC `-Os`（newlib，基线） | 4379 |
+| Clang `-Os`（newlib） | 4302 |
+| Clang `-Os --lld`（newlib，LTO+ICF） | 4034 |
+| Clang `-Os`（picolibc） | 2921 |
+| **Clang `-Os --lld`（picolibc，LTO+ICF）** | **2739** |
+
+注意：`--lld` 建议与 `-Os`/`-Oz` 搭配——LTO 在 O1/O2/O3 档内联激进，体积反而反增
+（数据见下「CoreMark 23 配置自动对比」的 LLD 变体）。
+
 ### 三个体积优化开关
 
 | 开关 | 作用 | 适用范围 |
@@ -85,33 +116,9 @@ python tools/build_riscv_tests.py --clang  # Clang 汇编
 
 `--lld` 不强制依赖 `--clang`：纯 GCC 对象也能用 LLD 链接并获得 ICF 收益，只是没有 LTO（GCC 的 `-flto` 在 xPack newlib-nano 上会丢 syscalls 符号，暂不支持）。GNU ld 本身不支持 `--icf`，所以 ICF 必须走 LLD。
 
-### CoreMark 实测（ITCM 字数，越小越好）
-
-| 配置 | ITCM 词数 | DTCM 词数 |
-|------|----------|-----------|
-| GCC `-Os`（基线） | 4379 | 621 |
-| Clang `-Os`（GNU ld） | 4302 | 515 |
-| Clang `-Os --lld`（LTO + ICF） | **4034** | 505 |
-| Clang `-Oz --lld`（LTO + ICF） | 4057 | 505 |
-
-结论：Clang `-Os` + `--lld` 比 GCC `-Os` 缩小约 8%，是当前最小配置。`-Oz` 在 RISC-V 上并不比 `-Os` 小（Clang 的 Oz 内联比 Os 保守，小函数收益被内联损失抵消，此前实测 Oz > Os 正是这个原因）。
-
-### 性能影响（上板实测）
-
-LLD/LTO/ICF 折叠相同代码后，函数布局变化可能影响分支预测。用 CoreMark 上板对比：
-
-| 配置 | CoreMark/MHz |
-|------|--------------|
-| GCC `-O2`（历史基线） | 2.806 |
-| Clang `-Os`（GNU ld） | 2.250 |
-| Clang `-Os --lld`（LTO + ICF） | 2.262 |
-
-Clang `-Os` 与 `--lld` 版本跑分几乎一致（2.25 vs 2.26，在噪声范围内），即 **LLD/LTO/ICF 本身不带来性能损失**；与历史 2.806 的差距来自 Clang `-Os` 代码生成，而非 LLD。
-
 ## picolibc — 更小的 C 库（可选）
 
-[picolibc](https://github.com/picolibc/picolibc) 是面向嵌入式系统的精简 C 库（BSD 许可）。
-其 tinystdio 的整数版 printf 比 newlib-nano 小得多，适合**纯整数输出**的裸机程序。
+[picolibc](https://github.com/picolibc/picolibc) 是面向嵌入式系统的精简 C 库，比 newlib-nano 小得多。
 
 ### 构建（一次性）
 
@@ -120,13 +127,6 @@ SDK/tools/build_picolibc.bat              # 整数 printf 档（默认，最小�
 SDK/tools/build_picolibc.bat f            # 浮点 printf 档
 SDK/tools/build_picolibc.bat d            # double printf 档
 ```
-
-在普通 cmd 中运行（meson 依赖 Winsock，沙箱 exec 环境无法启动）。脚本用 xPack
-`riscv-none-elf-gcc` 交叉编译 picolibc 1.8.12，只构建 `rv32im/ilp32` 单 multilib，
-配置 `-msave-restore -fshort-enums` 和对应 `-Dformat-default`。整数档（i）安装到
-`third_party/picolibc-install/`，f/d 档分别安装到 `third_party/picolibc-install-f/`、
-`-d/`（`include/` + `lib/rv32im/ilp32/`）。交叉编译时 meson 用 POSIX 语义校验
-`--prefix`，脚本内已自动把 Windows 路径转成盘符根相对形式。
 
 ### 使用
 
@@ -139,9 +139,6 @@ python tools/build_run.py demos/newlib/hello --picolibc             # 一键构�
 ```
 
 安装目录可用环境变量 `PICOLIBC_ROOT` 覆盖（默认 `third_party/picolibc-install`）。
-picolibc 模式会自动切换 BSP：`syscalls.c` → `picolibc_syscalls.c`（提供 POSIX 名
-`sbrk`，与 picolibc malloc 匹配）、新增 `picolibc_console.c`（`stdin/stdout/stderr`
-FILE 直通 UART）；`printf_fixed.c`（自定义 `print_fixed`）保留。
 
 ### 体积实测（ITCM 词数，GCC -Os 同口径）
 
@@ -153,18 +150,15 @@ FILE 直通 UART）；`printf_fixed.c`（自定义 `print_fixed`）保留。
 
 ### 限制
 
-- 默认整数档（`format-default=i`）**不支持 `%f`/`%lf`**；确实需要浮点输出的程序
-  先用 `build_picolibc.bat f` 构建浮点档，再以 `--picolibc-printf f` 链接。
-  注意浮点档体积明显更大（hello 浮点档 3001 词 vs 整数档 1407 词），能用整数
-  格式（含 `print_fixed` 定点）就不要开浮点。CoreMark 的 `HAS_FLOAT=0`，因此
-  `--picolibc` 整数档即可完整运行（CRC 与 newlib 版一致）。
+- 默认整数档（`format-default=i`）**不支持 `%f`/`%lf`**；确实需要浮点输出的程序先用 `build_picolibc.bat f` 构建浮点档，再以 `--picolibc-printf f` 链接。注意浮点档体积明显更大，能用整数格式（含 `print_fixed` 定点）就不要开浮点。CoreMark 的 `HAS_FLOAT=0`，因此`--picolibc` 整数档即可完整运行（CRC 与 newlib 版一致）。
 - 与 `--rtthread` 互斥（RT-Thread 的 libc 粘合层依赖 newlib 接口）。
 - 不支持 `--picolibc` 与 `--newlib` 同时使用。
 
-### CoreMark 18 配置自动对比
+### CoreMark 23种配置自动对比
 
-`tools/auto_coremark.py` 自动完成 **18 个配置**（GCC/LLVM × Os/O1/O2/O3/Oz ×
-newlib-nano/picolibc）的构建产物上板测试：复位 → UART 下载 → 运行 → 解析输出
+`tools/auto_coremark.py` 自动完成 **23 个配置**（GCC/LLVM × Os/O1/O2/O3/Oz ×
+newlib-nano/picolibc，另含 picolibc LLVM 的 LLD（LTO+ICF）5 档变体）的构建产物上板测试：
+复位 → UART 下载 → 运行 → 解析输出
 （CoreMark/MHz、Iterations/Sec、Total ticks、分支预测率），ITCM/DTCM 词数从
 `.uartbin` 帧头解析，结果自动写入 `BD32_CoreMark_Compiler_Comparison.xlsx`
 （主表 + 以各 C 库 GCC O2 为基准的归一化对比 + Charts 数据页；目标文件被
@@ -172,7 +166,7 @@ WPS/Excel 占用时自动写带时间戳的备用文件，不中断测试）。
 
 ```bash
 cd SDK
-python tools/auto_coremark.py                        # 全部 18 配置
+python tools/auto_coremark.py                        # 全部 23 配置
 python tools/auto_coremark.py --libc picolibc        # 只跑 picolibc 配置
 python tools/auto_coremark.py --compiler gcc --opt o2  # 只跑单个配置
 python tools/auto_coremark.py --xlsx <输出路径>      # 自定义 Excel 路径
