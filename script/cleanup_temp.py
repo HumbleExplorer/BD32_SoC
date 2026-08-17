@@ -5,17 +5,20 @@ BD32 project temp-file cleaner.
 Removes generated / temporary artifacts that are safe to regenerate:
   - ModelSim work libraries:  any */work under the repo (rtl/**, tb/, script/*/, root)
   - ModelSim run files:        transcript, vsim.wlf, vish_stacktrace.vstf,
-                               modelsim.ini, wlftrs*, *.log under script/ and tb/
+                               modelsim.ini, wlft*, *.log under script/ and tb/
   - Python cache:              __pycache__ dirs and *.pyc (recursive)
   - Test logs:                 logs/*  (keep the logs/ directory itself)
+  - Build dirs (optional):     build/, build_*/ under the repo (--remove-builds)
 
-Never touches tracked sources (rtl/, tb/*.sv, SDK/, doc/, README.md ...).
+Never touches tracked sources (rtl/, tb/*.sv, SDK/ source files, doc/, README.md ...);
+build/ 目录仅在本目录为构建产物时删除（--remove-builds，默认保留）。
 
 Usage:
   python script/cleanup_temp.py            # list files, ask [y/N] then delete
   python script/cleanup_temp.py --apply    # delete without asking
   python script/cleanup_temp.py --dry-run  # list only, delete nothing
   python script/cleanup_temp.py --apply --keep-logs
+  python script/cleanup_temp.py --apply --remove-builds   # 同时删除 build/、build_* 构建产物目录
 """
 
 import argparse
@@ -25,7 +28,7 @@ import shutil
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Working/
 
 SIM_ARTIFACT_NAMES = ("vsim.wlf", "transcript", "vish_stacktrace.vstf", "modelsim.ini")
-SIM_ARTIFACT_PREFIXES = ("wlftrs",)
+SIM_ARTIFACT_PREFIXES = ("wlft")
 SIM_ARTIFACT_SUFFIXES = (".log", ".wlf")
 
 
@@ -88,6 +91,8 @@ def main():
     ap.add_argument("--apply", action="store_true", help="delete without confirmation prompt")
     ap.add_argument("--dry-run", action="store_true", help="list only, do not delete")
     ap.add_argument("--keep-logs", action="store_true", help="do not clear logs/")
+    ap.add_argument("--remove-builds", action="store_true",
+                    help="同时删除 build/、build_* 构建产物目录（默认保留）")
     args = ap.parse_args()
 
     targets = collect()
@@ -98,6 +103,15 @@ def main():
                 p = os.path.join(logdir, f)
                 if os.path.isfile(p):
                     targets.append(("log", p))
+
+    # 可选：构建产物目录（build/、build_O2/、build_clang_* 等；默认不删）
+    if args.remove_builds:
+        for dirpath, dirnames, filenames in os.walk(REPO):
+            dirnames[:] = [d for d in dirnames if d not in (".git", "third_party")]
+            for d in list(dirnames):
+                if d == "build" or d.startswith("build_"):
+                    targets.append(("build", os.path.join(dirpath, d)))
+                    dirnames.remove(d)
 
     # de-dup, keep first occurrence
     seen = set()
@@ -140,7 +154,7 @@ def main():
             print("  [skip] outside repo: %s" % p)
             continue
         try:
-            if kind in ("work", "pycache"):
+            if kind in ("work", "pycache", "build"):
                 shutil.rmtree(p, ignore_errors=True)
             else:
                 os.remove(p)

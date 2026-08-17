@@ -22,8 +22,28 @@ OBJDUMP  = os.path.join(TOOLCHAIN, "riscv-none-elf-objdump")
 # 官方 LLVM / Clang (方案A: clang 做 rv32 .c 代码生成, 复用 xpack 的 newlib 头与 libgcc 链接)
 LLVM_BIN = os.environ.get("LLVM_BIN", "D:/RISCV_Tool/llvm-22.1.8/bin")
 CLANG    = os.path.join(LLVM_BIN, "clang")
+LDLLD    = os.path.join(LLVM_BIN, "ld.lld")     # --lld 链接器（支持 LTO + ICF）
 XPACK_ROOT = os.path.dirname(TOOLCHAIN)                 # .../xpack-riscv-none-elf-gcc-15.2.0-1
 SYSROOT    = os.path.join(XPACK_ROOT, "riscv-none-elf") # newlib 头/库 (--newlib + --clang 时用)
+# LLD 链接用库目录（newlib-nano + libgcc，rv32im/ilp32）
+LIBC_DIR = os.path.join(SYSROOT, "lib", "rv32im", "ilp32")
+LIBGCC_DIR = next((d for d in glob.glob(os.path.join(
+    XPACK_ROOT, "lib", "gcc", "riscv-none-elf", "*", "rv32im", "ilp32"))
+    if os.path.exists(os.path.join(d, "libgcc.a"))), None)
+
+def get_picolibc_dirs(variant):
+    """picolibc 安装目录。variant ∈ {i, f, d}（printf 档位，由
+    build_picolibc.bat 构建：i → picolibc-install，f/d → picolibc-install-<v>）。
+    环境变量 PICOLIBC_ROOT 优先（此时忽略 variant）。"""
+    env = os.environ.get("PICOLIBC_ROOT")
+    if env:
+        root = env
+    else:
+        base = os.path.join(os.path.dirname(SDK_ROOT), "third_party")
+        root = os.path.join(base,
+            "picolibc-install" if variant == "i" else f"picolibc-install-{variant}")
+    return (os.path.join(root, "include"),
+            os.path.join(root, "lib", "rv32im", "ilp32"))
 CFLAGS   = [
     "-march=rv32im_zicsr", "-mabi=ilp32", "-mcmodel=medlow",
     "-nostartfiles", "-ffreestanding",
@@ -112,7 +132,20 @@ def run(cmd, desc=""):
         sys.exit(1)
     return r.stdout
 
-def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver="315", irq_mode="ch32"):
+def sanitize_ld_flags(flags):
+    """把 GCC 驱动风格链接参数(-Wl,a,b)转成 lld 直接可用的参数。
+    非 -Wl 前缀参数原样透传(如 -flto 本身 lld 也接受)。"""
+    out = []
+    for f in (flags or []):
+        if f.startswith("-Wl,"):
+            out.extend(f[4:].split(","))
+        else:
+            out.append(f)
+    return out
+
+def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver="315",
+            irq_mode="ch32", clang_extra_flags=None, ld_extra_flags=None, uselld=False,
+            usepicolibc=False, picolibc_printf="i"):
     build_dir = os.path.dirname(out)
     os.makedirs(build_dir, exist_ok=True)
 
@@ -133,11 +166,36 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
         bsp_c = rtt_bsp_c
         bsp_asm = rtt_bsp_asm
     else:
-        cflags = NEWLIB_CFLAGS if usenewlib else CFLAGS
-        ldflags = NEWLIB_LDFLAGS if usenewlib else LDFLAGS
-        libs = NEWLIB_LIBS if usenewlib else LIBS
-        bsp_c = NEWLIB_BSP_C if usenewlib else BSP_C
-        bsp_asm = BSP_ASM
+        if usepicolibc:
+            picolibc_inc_dir, picolibc_libdir = get_picolibc_dirs(picolibc_printf)
+            picolibc_inc = ["-I", picolibc_inc_dir]
+            if not os.path.exists(os.path.join(picolibc_inc_dir, "stdio.h")):
+                print("ERROR: picolibc 未构建。请先运行 SDK/tools/build_picolibc.bat，"
+                      f"或用环境变量 PICOLIBC_ROOT 指向已安装的 picolibc（当前变体: {picolibc_printf}）。")
+                sys.exit(1)
+            cflags = NEWLIB_CFLAGS + ["-ffreestanding"] + picolibc_inc
+            ldflags = LDFLAGS          # 裸金属链接参数，无 -specs=nano.specs
+            libs = ["-L", picolibc_libdir, "-lc", "-lm", "-lgcc"]
+            # picolibc 模式：syscalls 换 picolibc 版（sbrk 而非 _sbrk），
+            # 新增 console FILE 适配；printf_fixed（自定义 print_fixed）保留
+            bsp_c = ["board/init.c", "drivers/bd32_uart.c", "trap/trap_handler.c",
+                     "porting/picolibc_syscalls.c", "porting/picolibc_console.c",
+                     "utils/printf_fixed.c"]
+            bsp_asm = BSP_ASM
+        else:
+            cflags = NEWLIB_CFLAGS if usenewlib else CFLAGS
+            ldflags = NEWLIB_LDFLAGS if usenewlib else LDFLAGS
+            libs = NEWLIB_LIBS if usenewlib else LIBS
+            bsp_c = NEWLIB_BSP_C if usenewlib else BSP_C
+            bsp_asm = BSP_ASM
+
+    # 链接器专属参数（--ld-extra，如 -Wl,--icf=all / -flto）
+    if ld_extra_flags:
+        ldflags = ldflags + ld_extra_flags
+
+    # --lld：clang .c 编译启用 LTO（LLD 消费 LLVM bitcode）
+    if uselld and useclang:
+        clang_extra_flags = (clang_extra_flags or []) + ["-flto"]
 
     # .c 编译器选择：默认 xpack gcc；--clang 时改用官方 clang 做前端代码生成
     # (.S 启动文件与链接始终用 gcc，保证启动代码/link.ld 行为与现状完全一致)
@@ -167,7 +225,8 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
     # Compile BSP .c
     for c in bsp_c:
         obj = obj_path(obj_name(c))
-        run([compiler] + clang_extra + cflags + ["-c", os.path.join(BSP_DIR, c), "-o", obj], f"CC {c}")
+        cc_extra = clang_extra + (clang_extra_flags or []) if useclang else []
+        run([compiler] + cc_extra + cflags + ["-c", os.path.join(BSP_DIR, c), "-o", obj], f"CC {c}")
         objs.append(obj)
 
     # Compile BSP .S (始终用 gcc 汇编 .S)
@@ -181,13 +240,14 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
     if usertt:
         # 内核源码需要 __RT_KERNEL_SOURCE__ 才能看到 rtsched.h 的内部 API
         rtt_kernel_cflags = cflags + ["-D__RT_KERNEL_SOURCE__"]
+        rtt_cc_extra = clang_extra + (clang_extra_flags or []) if useclang else []
         for c in rtt_kern_c:
             obj = obj_path(obj_name(c))
-            run([compiler] + clang_extra + rtt_kernel_cflags + ["-c", c, "-o", obj], f"CC rt-thread/{os.path.basename(c)}")
+            run([compiler] + rtt_cc_extra + rtt_kernel_cflags + ["-c", c, "-o", obj], f"CC rt-thread/{os.path.basename(c)}")
             objs.append(obj)
         for c in rtt_libcpu_c:
             obj = obj_path(obj_name(c))
-            run([compiler] + clang_extra + rtt_kernel_cflags + ["-c", c, "-o", obj], f"CC rt-thread/{os.path.basename(c)}")
+            run([compiler] + rtt_cc_extra + rtt_kernel_cflags + ["-c", c, "-o", obj], f"CC rt-thread/{os.path.basename(c)}")
             objs.append(obj)
 
     # Compile all user sources in src_dir
@@ -198,11 +258,24 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
     for src in sources:
         base = os.path.basename(src)
         obj = obj_path(obj_name(base))
-        run([compiler] + clang_extra + cflags + ["-c", src, "-o", obj], f"CC {base}")
+        cc_extra = clang_extra + (clang_extra_flags or []) if useclang else []
+        run([compiler] + cc_extra + cflags + ["-c", src, "-o", obj], f"CC {base}")
         objs.append(obj)
 
-    # Link (libs AFTER objs) — 始终用 xpack gcc (复用 link.ld + libgcc)
-    run([CC] + cflags + ldflags + ["-T", LINKER] + objs + libs + ["-o", out], "LD")
+    # Link — 默认 xpack gcc；--lld 用 LLVM LLD（--gc-sections + --icf=all）
+    if uselld:
+        if usepicolibc:
+            lld_libs = ["-L", picolibc_libdir, "-lc", "-lm",
+                        "-L", LIBGCC_DIR, "-lgcc"]
+        elif usenewlib or usertt:
+            lld_libs = ["-L", LIBC_DIR, "-L", LIBGCC_DIR, "-lc_nano", "-lm_nano", "-lgcc"]
+        else:
+            lld_libs = ["-L", LIBGCC_DIR, "-lgcc"]
+        run([LDLLD, "-m", "elf32lriscv", "-T", LINKER] + objs + lld_libs +
+            ["--gc-sections", "--icf=all"] + sanitize_ld_flags(ld_extra_flags) +
+            ["-o", out], "LD (lld)")
+    else:
+        run([CC] + cflags + ldflags + ["-T", LINKER] + objs + libs + ["-o", out], "LD")
 
     # Generate dump
     dump = obj_path("out.dump")
@@ -298,6 +371,10 @@ def main():
     p.add_argument("--no-bin", action="store_true", help="Skip .mem/.uartbin")
     p.add_argument("--debug", action="store_true", help="Compile with -g (GDB source-level debug info)")
     p.add_argument("--newlib", action="store_true", help="Link with newlib-nano (printf, malloc, etc.)")
+    p.add_argument("--picolibc", action="store_true",
+                   help="Link with picolibc（体积更小的 C 库；需先运行 build_picolibc.bat 构建）")
+    p.add_argument("--picolibc-printf", default="i", choices=["i", "f", "d"],
+                   help="picolibc printf 档位：i=整数（默认，最小）/ f=浮点 / d=double（需对应档位已构建）")
     p.add_argument("--rtthread", action="store_true", help="Build with RT-Thread kernel (bsp/rtthread + third_party/rt-thread)")
     p.add_argument("--rtthread-version", default="315", choices=["51", "315"],
                    help="RT-Thread kernel version: 315 (lts-v3.1.x, default) or 51 (v5.1.0)")
@@ -306,7 +383,17 @@ def main():
     p.add_argument("--clang", action="store_true", help="Use LLVM/clang for .c compilation (linking still via xpack gcc)")
     p.add_argument("--opt", default="Os", help="Optimization (Os, O2, O3, etc.)")
     p.add_argument("--extra", default="", help="Extra GCC flags")
+    p.add_argument("--clang-extra", default="",
+                   help="Extra flags for clang .c compilation only (e.g. \"-mllvm -enable-machine-outliner=0\")")
+    p.add_argument("--ld-extra", default="",
+                   help="Extra flags for link only (e.g. \"-Wl,--icf=all\" or \"-flto\")")
+    p.add_argument("--lld", action="store_true",
+                   help="用 LLVM LLD 链接（ICF 折叠相同代码；配合 --clang 额外启用 LTO，体积更小）")
     args = p.parse_args()
+
+    if args.picolibc and (args.newlib or args.rtthread):
+        print("ERROR: --picolibc 与 --newlib/--rtthread 互斥（RT-Thread 依赖 newlib-nano 的 libc 接口）")
+        sys.exit(1)
 
     # Apply optimization override
     opt_flag = "-" + args.opt
@@ -320,6 +407,8 @@ def main():
     extra_list = args.extra.split() if args.extra else []
     CFLAGS.extend(extra_list)
     NEWLIB_CFLAGS.extend(extra_list)
+    clang_extra_list = args.clang_extra.split() if args.clang_extra else []
+    ld_extra_list = args.ld_extra.split() if args.ld_extra else []
     # Build flags string for display
     flags_parts = ["-" + args.opt] + extra_list
     flags_str = " ".join(flags_parts)
@@ -348,12 +437,20 @@ def main():
 
     if args.output is None:
         # 按优化等级和编译器命名 build 文件夹：build_O2, build_clang_O3, etc.
-        if args.clang:
-            build_subdir = f"build_clang_{args.opt}"
-            name_suffix = f"_clang_{args.opt.lower()}"
+        lld_tag = "_lld" if args.lld else ""
+        if args.picolibc:
+            if args.clang:
+                build_subdir = f"build_picolibc_clang{lld_tag}_{args.opt}"
+                name_suffix = f"_picolibc_clang{lld_tag}_{args.opt.lower()}"
+            else:
+                build_subdir = f"build_picolibc{lld_tag}_{args.opt}"
+                name_suffix = f"_picolibc{lld_tag}_{args.opt.lower()}"
+        elif args.clang:
+            build_subdir = f"build_clang{lld_tag}_{args.opt}"
+            name_suffix = f"_clang{lld_tag}_{args.opt.lower()}"
         else:
-            build_subdir = f"build_{args.opt}"
-            name_suffix = f"_{args.opt.lower()}"
+            build_subdir = f"build{lld_tag}_{args.opt}"
+            name_suffix = f"{lld_tag}_{args.opt.lower()}"
         args.output = os.path.join(demo_dir, build_subdir, name + ".elf")
     else:
         name_suffix = ""
@@ -373,7 +470,9 @@ def main():
     print(f"BD32 SDK Build: {src_dir} -> {args.output}")
     compile(src_dir, args.output, usenewlib=(args.newlib or args.rtthread),
             useclang=args.clang, usertt=args.rtthread, rtt_ver=args.rtthread_version,
-            irq_mode=args.irq_mode)
+            irq_mode=args.irq_mode, clang_extra_flags=clang_extra_list,
+            ld_extra_flags=ld_extra_list, uselld=args.lld, usepicolibc=args.picolibc,
+            picolibc_printf=args.picolibc_printf)
 
     if not args.no_bin:
         elf_to_bin(args.output, name_suffix=name_suffix)

@@ -14,6 +14,11 @@
 | `--no-bin` | 跳过 .mem/.uartbin 生成 |
 | `--opt O2` | 优化等级（默认 Os） |
 | `--clang` | 用 Clang 做前端代码生成（链接仍走 GCC） |
+| `--clang-extra "..."` | 只传给 Clang .c 编译的附加参数（如 `-mllvm -enable-machine-outliner=0`；不会污染 GCC 汇编步骤） |
+| `--ld-extra "..."` | 只传给链接阶段的附加参数（如 `-Wl,--icf=all`） |
+| `--lld` | 用 LLVM LLD 链接（`--icf=all` 折叠相同代码；配合 `--clang` 额外启用 LTO，体积更小） |
+| `--picolibc` | 链接 picolibc（整数程序体积更小；需先运行 `build_picolibc.bat` 构建） |
+| `--picolibc-printf i/f/d` | picolibc printf 档位：`i` 整数（默认，最小）/ `f` 浮点 / `d` double（需对应档位已构建） |
 | `--debug` | 启用 `-g` 调试信息（GDB 源码级单步/查看变量，需 GDB 在线调试） |
 | `--extra "-DFLAG"` | 追加编译标志 |
 | `--rtthread` | RT-Thread 模式（自动启用 newlib-nano 链接，编译 `bsp/rtthread*` 与 `third_party/` 内核） |
@@ -41,7 +46,7 @@ python tools/build_run.py demos/nolibc/breathing --no-listen
 python tools/build_run.py demos/nolibc/breathing --no-reset
 ```
 
-构建参数（`--newlib` / `--clang` / `--rtthread` / `--rtthread-version` / `--irq-mode` / `--opt` / `--debug` / `--extra`）透传 build.py，运行参数（`--port` / `--baud` / `--idle-timeout`（默认 3s） / `--timeout` / `--until` / `--log` / `--no-reset` / `--no-listen`）透传 uart_send.py。产物命名与 build.py 一致（默认 Os → `<demo>_os.uartbin`；`--opt O2` → `<demo>_o2.uartbin`；`--clang` → `<demo>_clang_<opt>.uartbin`）。
+构建参数（`--newlib` / `--clang` / `--clang-extra` / `--ld-extra` / `--lld` / `--rtthread` / `--rtthread-version` / `--irq-mode` / `--opt` / `--debug` / `--extra`）透传 build.py，运行参数（`--port` / `--baud` / `--idle-timeout`（默认 3s） / `--timeout` / `--until` / `--log` / `--no-reset` / `--no-listen`）透传 uart_send.py。产物命名与 build.py 一致（默认 Os → `<demo>_os.uartbin`；`--opt O2` → `<demo>_o2.uartbin`；`--clang` → `<demo>_clang_<opt>.uartbin`）。
 
 ## build_riscv_tests.py — riscv-tests 编译
 
@@ -66,9 +71,112 @@ python tools/build_riscv_tests.py --clang  # Clang 汇编
 
 产物输出到 `test_data/riscv-tests/`：`<test>.elf`、`<test>.dump`、`<test>.dat`（readmemh 字流）。
 
-## LLVM/Clang 集成
+## LLVM/Clang 集成与代码体积优化
 
-通过 `--clang` 开关启用。设计原则：Clang 只负责 `.c`/`.S` 的代码生成，链接始终由 xPack GCC 完成（因为官方 LLVM Windows 包不含 RISC-V compiler-rt builtins）。
+通过 `--clang` 开关启用。设计原则：Clang 只负责 `.c`/`.S` 的代码生成，链接默认仍由 xPack GCC 完成（因为官方 LLVM Windows 包不含 RISC-V compiler-rt builtins，需复用 xPack 的 libgcc）。
+
+### 三个体积优化开关
+
+| 开关 | 作用 | 适用范围 |
+|------|------|----------|
+| `--clang-extra "..."` | 只传给 Clang .c 编译的参数（如关掉 MachineOutliner）；不会污染 GCC 汇编步骤 | 编译阶段 |
+| `--ld-extra "..."` | 只传给链接阶段的参数，默认 GNU ld 时需带 `-Wl,` 前缀；`--lld` 时会自动转成 lld 参数 | 链接阶段 |
+| `--lld` | 改用 LLVM LLD 链接：始终开启 `--gc-sections --icf=all`（相同代码折叠）；配合 `--clang` 时自动对 .c 加 `-flto`，实现 LTO | 链接阶段 |
+
+`--lld` 不强制依赖 `--clang`：纯 GCC 对象也能用 LLD 链接并获得 ICF 收益，只是没有 LTO（GCC 的 `-flto` 在 xPack newlib-nano 上会丢 syscalls 符号，暂不支持）。GNU ld 本身不支持 `--icf`，所以 ICF 必须走 LLD。
+
+### CoreMark 实测（ITCM 字数，越小越好）
+
+| 配置 | ITCM 词数 | DTCM 词数 |
+|------|----------|-----------|
+| GCC `-Os`（基线） | 4379 | 621 |
+| Clang `-Os`（GNU ld） | 4302 | 515 |
+| Clang `-Os --lld`（LTO + ICF） | **4034** | 505 |
+| Clang `-Oz --lld`（LTO + ICF） | 4057 | 505 |
+
+结论：Clang `-Os` + `--lld` 比 GCC `-Os` 缩小约 8%，是当前最小配置。`-Oz` 在 RISC-V 上并不比 `-Os` 小（Clang 的 Oz 内联比 Os 保守，小函数收益被内联损失抵消，此前实测 Oz > Os 正是这个原因）。
+
+### 性能影响（上板实测）
+
+LLD/LTO/ICF 折叠相同代码后，函数布局变化可能影响分支预测。用 CoreMark 上板对比：
+
+| 配置 | CoreMark/MHz |
+|------|--------------|
+| GCC `-O2`（历史基线） | 2.806 |
+| Clang `-Os`（GNU ld） | 2.250 |
+| Clang `-Os --lld`（LTO + ICF） | 2.262 |
+
+Clang `-Os` 与 `--lld` 版本跑分几乎一致（2.25 vs 2.26，在噪声范围内），即 **LLD/LTO/ICF 本身不带来性能损失**；与历史 2.806 的差距来自 Clang `-Os` 代码生成，而非 LLD。
+
+## picolibc — 更小的 C 库（可选）
+
+[picolibc](https://github.com/picolibc/picolibc) 是面向嵌入式系统的精简 C 库（BSD 许可）。
+其 tinystdio 的整数版 printf 比 newlib-nano 小得多，适合**纯整数输出**的裸机程序。
+
+### 构建（一次性）
+
+```bash
+SDK/tools/build_picolibc.bat              # 整数 printf 档（默认，最小）
+SDK/tools/build_picolibc.bat f            # 浮点 printf 档
+SDK/tools/build_picolibc.bat d            # double printf 档
+```
+
+在普通 cmd 中运行（meson 依赖 Winsock，沙箱 exec 环境无法启动）。脚本用 xPack
+`riscv-none-elf-gcc` 交叉编译 picolibc 1.8.12，只构建 `rv32im/ilp32` 单 multilib，
+配置 `-msave-restore -fshort-enums` 和对应 `-Dformat-default`。整数档（i）安装到
+`third_party/picolibc-install/`，f/d 档分别安装到 `third_party/picolibc-install-f/`、
+`-d/`（`include/` + `lib/rv32im/ilp32/`）。交叉编译时 meson 用 POSIX 语义校验
+`--prefix`，脚本内已自动把 Windows 路径转成盘符根相对形式。
+
+### 使用
+
+```bash
+cd SDK
+python tools/build.py demos/newlib/hello --picolibc
+python tools/build.py demos/newlib/hello --picolibc --clang --lld   # 极致体积组合
+python tools/build.py demos/newlib/hello --picolibc --picolibc-printf f  # 需要 %f 时
+python tools/build_run.py demos/newlib/hello --picolibc             # 一键构建 + 上板
+```
+
+安装目录可用环境变量 `PICOLIBC_ROOT` 覆盖（默认 `third_party/picolibc-install`）。
+picolibc 模式会自动切换 BSP：`syscalls.c` → `picolibc_syscalls.c`（提供 POSIX 名
+`sbrk`，与 picolibc malloc 匹配）、新增 `picolibc_console.c`（`stdin/stdout/stderr`
+FILE 直通 UART）；`printf_fixed.c`（自定义 `print_fixed`）保留。
+
+### 体积实测（ITCM 词数，GCC -Os 同口径）
+
+| 程序 | newlib-nano | picolibc（整数档） | 收益 |
+|------|-------------|-------------------|------|
+| hello（纯整数 printf） | 2134 | 1407 | -34% |
+| stdio_test（%ld/%lx/sprintf） | 3235 | 1470 | -55% |
+| CoreMark（HAS_FLOAT=0，整数输出） | 4034（clang+lld） | **2739（clang+lld）** | **-32%** |
+
+### 限制
+
+- 默认整数档（`format-default=i`）**不支持 `%f`/`%lf`**；确实需要浮点输出的程序
+  先用 `build_picolibc.bat f` 构建浮点档，再以 `--picolibc-printf f` 链接。
+  注意浮点档体积明显更大（hello 浮点档 3001 词 vs 整数档 1407 词），能用整数
+  格式（含 `print_fixed` 定点）就不要开浮点。CoreMark 的 `HAS_FLOAT=0`，因此
+  `--picolibc` 整数档即可完整运行（CRC 与 newlib 版一致）。
+- 与 `--rtthread` 互斥（RT-Thread 的 libc 粘合层依赖 newlib 接口）。
+- 不支持 `--picolibc` 与 `--newlib` 同时使用。
+
+### CoreMark 18 配置自动对比
+
+`tools/auto_coremark.py` 自动完成 **18 个配置**（GCC/LLVM × Os/O1/O2/O3/Oz ×
+newlib-nano/picolibc）的构建产物上板测试：复位 → UART 下载 → 运行 → 解析输出
+（CoreMark/MHz、Iterations/Sec、Total ticks、分支预测率），ITCM/DTCM 词数从
+`.uartbin` 帧头解析，结果自动写入 `BD32_CoreMark_Compiler_Comparison.xlsx`
+（主表 + 以各 C 库 GCC O2 为基准的归一化对比 + Charts 数据页；目标文件被
+WPS/Excel 占用时自动写带时间戳的备用文件，不中断测试）。
+
+```bash
+cd SDK
+python tools/auto_coremark.py                        # 全部 18 配置
+python tools/auto_coremark.py --libc picolibc        # 只跑 picolibc 配置
+python tools/auto_coremark.py --compiler gcc --opt o2  # 只跑单个配置
+python tools/auto_coremark.py --xlsx <输出路径>      # 自定义 Excel 路径
+```
 
 ## MROM 构建
 

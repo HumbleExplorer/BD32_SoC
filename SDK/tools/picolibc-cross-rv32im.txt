@@ -1,0 +1,29 @@
+# BD32 专用 picolibc 交叉编译配置
+# 目标：xPack riscv-none-elf-gcc 15.2.0，rv32im/ilp32 单 multilib
+# 用法（在普通命令行中，沙箱中 meson 无法启动）：
+#   python tools/build_picolibc.bat
+
+[binaries]
+c = ['riscv-none-elf-gcc', '-nostdlib']
+cpp = ['riscv-none-elf-g++', '-nostdlib']
+ar = 'riscv-none-elf-ar'
+as = 'riscv-none-elf-as'
+strip = 'riscv-none-elf-strip'
+nm = 'riscv-none-elf-nm'
+
+[host_machine]
+system = 'unknown'
+cpu_family = 'riscv32'
+cpu = 'riscv32'
+endian = 'little'
+
+[built-in options]
+# -msave-restore：库内函数用 __riscv_save/restore 桩，代码更小
+# -fshort-enums：与 picolibc 官方交叉配置一致
+c_args = ['-msave-restore', '-fshort-enums']
+cpp_args = ['-msave-restore', '-fshort-enums']
+c_link_args = ['-msave-restore', '-fshort-enums']
+cpp_link_args = ['-msave-restore', '-fshort-enums']
+
+[properties]
+skip_sanity_check = true

@@ -3,10 +3,15 @@ BD32 CoreMark 自动化测试脚本
 流程：复位 → UART下载程序 → 等待输出 → 解析结果
 
 用法：
-    python tools/auto_coremark.py                          # 跑全部9个配置
+    python tools/auto_coremark.py                          # 跑全部18个配置（9 编译器配置 x newlib/picolibc）
     python tools/auto_coremark.py --compiler gcc --opt o2  # 只跑 GCC O2
     python tools/auto_coremark.py --compiler clang         # 只跑 LLVM/Clang 全部配置
+    python tools/auto_coremark.py --libc picolibc          # 只跑 picolibc 配置
+    python tools/auto_coremark.py --lld                    # picolibc LLVM 5 档改用 LTO+ICF 变体
     python tools/auto_coremark.py --port COM8 --baud 115200
+
+结果自动写入 BD32_CoreMark_Compiler_Comparison.xlsx（--xlsx 可改路径）。
+ITCM/DTCM 词数从 .uartbin 帧头解析（START + ITCM_CNT + ITCM + DTCM_CNT + DTCM）。
 """
 import subprocess
 import serial
@@ -27,8 +32,10 @@ SEND_CHUNK = 256        # 串口发送分块大小
 SEND_DELAY = 0.01       # 每块间隔(秒)
 RESULT_TIMEOUT = 300    # 等待结果超时(秒), CoreMark 500轮约需3-4分钟
 
-# 9个测试配置: (名称, uartbin文件名)
+# 18个测试配置: (名称, uartbin文件名)
+# 9 个编译器/优化配置 x newlib-nano / picolibc（整数档）
 CONFIGS = [
+    # ---- newlib-nano ----
     ("GCC Os",   "coremark_os.uartbin"),
     ("GCC O1",   "coremark_o1.uartbin"),
     ("GCC O2",   "coremark_o2.uartbin"),
@@ -38,7 +45,41 @@ CONFIGS = [
     ("LLVM O1",  "coremark_clang_o1.uartbin"),
     ("LLVM O2",  "coremark_clang_o2.uartbin"),
     ("LLVM O3",  "coremark_clang_o3.uartbin"),
+    # ---- picolibc（整数档）----
+    ("Pico GCC Os",   "coremark_picolibc_os.uartbin"),
+    ("Pico GCC O1",   "coremark_picolibc_o1.uartbin"),
+    ("Pico GCC O2",   "coremark_picolibc_o2.uartbin"),
+    ("Pico GCC O3",   "coremark_picolibc_o3.uartbin"),
+    ("Pico LLVM Oz",  "coremark_picolibc_clang_oz.uartbin"),
+    ("Pico LLVM Os",  "coremark_picolibc_clang_os.uartbin"),
+    ("Pico LLVM O1",  "coremark_picolibc_clang_o1.uartbin"),
+    ("Pico LLVM O2",  "coremark_picolibc_clang_o2.uartbin"),
+    ("Pico LLVM O3",  "coremark_picolibc_clang_o3.uartbin"),
+    # ---- picolibc LLVM + LLD（LTO+ICF）变体 ----
+    ("Pico LLVM Oz (lld)",  "coremark_picolibc_clang_lld_oz.uartbin"),
+    ("Pico LLVM Os (lld)",  "coremark_picolibc_clang_lld_os.uartbin"),
+    ("Pico LLVM O1 (lld)",  "coremark_picolibc_clang_lld_o1.uartbin"),
+    ("Pico LLVM O2 (lld)",  "coremark_picolibc_clang_lld_o2.uartbin"),
+    ("Pico LLVM O3 (lld)",  "coremark_picolibc_clang_lld_o3.uartbin"),
 ]
+
+
+def parse_uartbin_size(path):
+    """从 .uartbin 帧头解析 ITCM/DTCM 词数。
+    帧格式：START_FRAME(4) + ITCM_CNT(4) + ITCM words + DTCM_CNT(4) + DTCM words"""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        if len(data) < 12:
+            return 0, 0
+        itcm_cnt = struct.unpack("<I", data[4:8])[0]
+        off = 8 + itcm_cnt * 4
+        if off + 4 > len(data):
+            return itcm_cnt, 0
+        dtcm_cnt = struct.unpack("<I", data[off:off + 4])[0]
+        return itcm_cnt, dtcm_cnt
+    except OSError:
+        return 0, 0
 
 # ============================================================
 # 串口自动检测
@@ -133,6 +174,184 @@ def parse_coremark(text):
 
     return result
 
+
+def write_xlsx(configs, results, xlsx_path):
+    """把测试结果写入 Excel：主表（18 配置）+ 归一化对比 + Charts 数据。
+    体积比/性能比等以各 C 库的 GCC O2 为基准，用公式随主表联动。"""
+    import openpyxl
+    from openpyxl.styles import Font
+
+    # 收集有结果的行
+    data = []
+    for name, fname in configs:
+        r = results.get(name)
+        if not r:
+            continue
+        is_lld = " (lld)" in name
+        parts = name.replace(" (lld)", "").split()
+        libc = "picolibc" if parts[0] == "Pico" else "newlib-nano"
+        compiler = parts[1] if parts[0] == "Pico" else parts[0]
+        opt_raw = parts[-1]
+        opt = "-" + opt_raw[:1] + opt_raw[1:].lower()   # Os -> -Os, Oz -> -Oz
+        data.append((name, compiler, libc, opt, r, is_lld))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "BD32编译器优化对比"
+    bold = Font(bold=True)
+
+    # ---- 标题 / 参数 ----
+    ws["A1"] = "BD32 RV32IM CoreMark 编译器优化对比表"
+    ws["A2"] = ("CPU: BD32 5-stage pipeline | Freq: 75MHz | CoreMark Size: 2000 (2K) | "
+                "Iterations: 500 | march=rv32im_zicsr | mabi=ilp32 | 链接: xPack GCC/GNU ld")
+    ws["A3"] = ("picolibc = picolibc 1.8.12 整数档 (format-default=i)；"
+                "数据由 auto_coremark.py 自动采集（体积来自 .uartbin 帧头）")
+
+    headers = ["序号", "编译器", "C库", "优化选项", "ITCM词数(words)", "DTCM词数(words)",
+               "总代码体积(bytes)", "CoreMark/MHz", "Iterations/Sec", "Total ticks",
+               "分支预测成功率(%)", "备注"]
+    for j, h in enumerate(headers, 1):
+        ws.cell(4, j, h).font = bold
+
+    # ---- 主表（行 5 起）----
+    base_rows = {}   # libc -> 主表行号（GCC O2 基准）
+    for i, (name, compiler, libc, opt, r, is_lld) in enumerate(data):
+        row = 5 + i
+        ws.cell(row, 1, i + 1)
+        ws.cell(row, 2, compiler)
+        ws.cell(row, 3, libc)
+        ws.cell(row, 4, opt + "  -march=rv32im_zicsr -mabi=ilp32")
+        ws.cell(row, 5, r.get("itcm_words", ""))
+        ws.cell(row, 6, r.get("dtcm_words", ""))
+        ws.cell(row, 7, f"=(E{row}+F{row})*4")
+        ws.cell(row, 8, r.get("coremark_mhz", ""))
+        ws.cell(row, 9, r.get("iter_per_sec", ""))
+        ws.cell(row, 10, r.get("total_ticks", ""))
+        br = r.get("branch_hit")
+        ws.cell(row, 11, round(br * 100, 2) if br else "")
+        if opt == "-O2" and compiler == "GCC" and libc == "newlib-nano":
+            ws.cell(row, 12, "基准(newlib)")
+            base_rows["newlib-nano"] = row
+        elif opt == "-O2" and compiler == "GCC" and libc == "picolibc":
+            ws.cell(row, 12, "基准(picolibc)")
+            base_rows["picolibc"] = row
+        elif libc == "picolibc":
+            ws.cell(row, 12, "picolibc 1.8.12 整数档" + (" + LLD/LTO/ICF" if is_lld else ""))
+
+    # ---- 归一化对比（以各 C 库 GCC O2 = 1.00）----
+    norm_start = 5 + len(data) + 2
+    ws.cell(norm_start, 1, "归一化对比（以各 C 库 GCC -O2 为基准 = 1.00）").font = bold
+    norm_hdr = norm_start + 1
+    for j, h in enumerate(["序号", "编译器", "C库", "优化等级", "体积比(vs O2)",
+                           "性能比(vs O2)", "性价比(性能/体积)"], 1):
+        ws.cell(norm_hdr, j, h).font = bold
+    for i, (name, compiler, libc, opt, r, is_lld) in enumerate(data):
+        src_row = 5 + i                 # 主表行
+        dst_row = norm_hdr + 1 + i
+        base = base_rows.get(libc)
+        ws.cell(dst_row, 1, i + 1)
+        ws.cell(dst_row, 2, compiler)
+        ws.cell(dst_row, 3, libc)
+        ws.cell(dst_row, 4, opt)
+        ws.cell(dst_row, 5, f'=IF(G${base}=0,"",G{src_row}/G${base})' if base else "")
+        ws.cell(dst_row, 6, f'=IF(H${base}=0,"",H{src_row}/H${base})' if base else "")
+        ws.cell(dst_row, 7, '=IF(OR(D{d}="",D{d}=0),"",E{d}/D{d})'.format(d=dst_row))
+
+    # ---- 说明 ----
+    note_start = norm_hdr + 1 + len(data) + 1
+    notes = [
+        "说明：",
+        "1. ITCM/DTCM 词数从 .uartbin 帧头解析（START_FRAME + ITCM_CNT + ITCM + DTCM_CNT + DTCM）。",
+        "2. CoreMark/MHz、Iterations/Sec、Total ticks、分支预测成功率由固件 UART 输出解析。",
+        "3. 归一化对比自动计算（体积/性能比引用主表，只写主表数据即可联动）。",
+        "4. GCC 工具链：riscv-none-elf-gcc（xPack, GCC 15.2.0）；LLVM：clang 22.1.8 前端，经 xPack GCC 驱动链接。",
+        "5. picolibc = picolibc 1.8.12 整数 printf 档（format-default=i）；浮点档体积明显更大，非本表范围。",
+        "6. LLVM LTO+ICF（--lld）可进一步缩小体积，数据见 doc/sdk.md「LLVM/Clang 集成与代码体积优化」。",
+    ]
+    for k, note in enumerate(notes):
+        ws.cell(note_start + k, 1, note)
+
+    # ---- Charts 数据 ----
+    wc = wb.create_sheet("Charts")
+    chart_keys = ["GCC", "LLVM", "Pico GCC", "Pico LLVM", "Pico LLVM+LLD"]
+    wc.append(["Opt"] + [f"{k} CM/MHz" for k in chart_keys] + [""] +
+              [f"{k} 体积" for k in chart_keys] + [""] +
+              [f"{k} 分支%" for k in chart_keys])
+    for opt in ["Oz", "Os", "O1", "O2", "O3"]:
+        o = "-" + opt[:1] + opt[1:].lower()
+        row = {k: None for k in chart_keys}
+        for name, compiler, libc, optx, r, is_lld in data:
+            if optx != o:
+                continue
+            key = ("Pico " if libc == "picolibc" else "") + compiler + ("+LLD" if is_lld else "")
+            row[key] = r
+        cm = [row[k]["coremark_mhz"] if row[k] else None for k in chart_keys]
+        sz = [((row[k].get("itcm_words", 0) + row[k].get("dtcm_words", 0)) * 4)
+              if row[k] else None for k in chart_keys]
+        br = [round(row[k]["branch_hit"] * 100, 2) if row[k] and row[k].get("branch_hit")
+              else None for k in chart_keys]
+        wc.append([opt] + cm + [None] + sz + [None] + br)
+
+    try:
+        wb.save(xlsx_path)
+        print(f"\n[XLSX] results written -> {xlsx_path}")
+    except PermissionError:
+        # 目标文件被 WPS/Excel 占用时，写带时间戳的备用文件，避免测试结果丢失
+        import time as _time
+        alt = os.path.join(os.path.dirname(xlsx_path),
+                           os.path.splitext(os.path.basename(xlsx_path))[0] +
+                           f"_{_time.strftime('%Y%m%d_%H%M%S')}.xlsx")
+        wb.save(alt)
+        # 检测 WPS/Excel 进程，提醒用户关闭后重试覆盖（ctypes，不依赖 tasklist）
+        procs = detect_office_processes()
+        if procs:
+            print(f"\n[XLSX][WARN] 检测到 {', '.join(procs)} 正在运行：{xlsx_path} 被占用，"
+                  f"请关闭 WPS/Excel 中打开该文件的窗口后告诉我，我会把数据覆盖写入正式文件。"
+                  f"本次结果已写入备用文件 -> {alt}")
+        else:
+            print(f"\n[XLSX][WARN] {xlsx_path} 被占用（可能被其他程序打开），"
+                  f"结果已写入备用文件 -> {alt}")
+
+
+def detect_office_processes():
+    """枚举进程，返回正在运行的 WPS/Excel 相关进程名列表（空列表表示未检测到）。
+    用 ctypes 直接调用 Toolhelp API，避免依赖 tasklist 等外部命令。"""
+    import ctypes
+    found = set()
+    try:
+        TH32CS_SNAPPROCESS = 0x00000002
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        class PROCESSENTRY32W(ctypes.Structure):
+            _fields_ = [("dwSize", ctypes.c_ulong),
+                        ("cntUsage", ctypes.c_ulong),
+                        ("th32ProcessID", ctypes.c_ulong),
+                        ("th32DefaultHeapID", ctypes.c_size_t),
+                        ("th32ModuleID", ctypes.c_ulong),
+                        ("cntThreads", ctypes.c_ulong),
+                        ("th32ParentProcessID", ctypes.c_ulong),
+                        ("pcPriClassBase", ctypes.c_long),
+                        ("dwFlags", ctypes.c_ulong),
+                        ("szExeFile", ctypes.c_wchar * 260)]
+
+        snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if snap == -1:
+            return []
+        try:
+            pe = PROCESSENTRY32W()
+            pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+            ok = kernel32.Process32FirstW(snap, ctypes.byref(pe))
+            while ok:
+                exe = (pe.szExeFile or "").lower()
+                if exe in ("wps.exe", "et.exe", "wpp.exe", "excel.exe"):
+                    found.add(exe)
+                ok = kernel32.Process32NextW(snap, ctypes.byref(pe))
+        finally:
+            kernel32.CloseHandle(snap)
+    except Exception:
+        pass
+    return sorted(found)
+
 # ============================================================
 # 主流程
 # ============================================================
@@ -141,6 +360,9 @@ def run_single(ser, name, uartbin_path):
     print(f"  Config: {name}")
     print(f"  File:   {uartbin_path}")
     print(f"{'='*60}")
+
+    # 0. 解析体积（ITCM/DTCM 词数，来自 uartbin 帧头）
+    itcm_words, dtcm_words = parse_uartbin_size(uartbin_path)
 
     # 1. 复位
     print("  [1/4] Resetting FPGA...")
@@ -161,6 +383,8 @@ def run_single(ser, name, uartbin_path):
     print("  [4/4] Parsing results...")
     if ok:
         result = parse_coremark(text)
+        result['itcm_words'] = itcm_words
+        result['dtcm_words'] = dtcm_words
         print(f"    CoreMark/MHz:   {result.get('coremark_mhz', 'N/A')}")
         print(f"    Iterations/Sec: {result.get('iter_per_sec', 'N/A')}")
         print(f"    Total ticks:    {result.get('total_ticks', 'N/A')}")
@@ -177,9 +401,15 @@ def main():
     parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default: 115200)")
     parser.add_argument("--compiler", choices=["gcc", "clang"], default=None,
                         help="只跑 GCC 或 LLVM/Clang 编译的配置（默认全部）")
+    parser.add_argument("--libc", choices=["newlib", "picolibc"], default=None,
+                        help="只跑 newlib-nano 或 picolibc 配置（默认全部）")
     parser.add_argument("--opt", choices=["oz", "os", "o1", "o2", "o3"], default=None,
                         help="只跑指定优化等级（默认全部）")
+    parser.add_argument("--lld", action="store_true",
+                        help="picolibc LLVM 5 档改用 --lld（LTO+ICF）变体，仅跑这 5 档")
     parser.add_argument("--data-dir", default=None, help="Path to uartbin files")
+    parser.add_argument("--xlsx", default=None,
+                        help="Excel 输出路径（默认 Working/BD32_CoreMark_Compiler_Comparison.xlsx）")
     args = parser.parse_args()
 
     # 自动检测串口
@@ -201,14 +431,29 @@ def main():
     print(f"UART: {args.port} @ {args.baud}")
     print(f"Data: {data_dir}")
 
-    # 筛选配置：--compiler / --opt
-    configs = CONFIGS
-    if args.compiler or args.opt:
+    # --lld：只看 picolibc LLVM 5 档的 LTO+ICF 变体（coremark_picolibc_clang_lld_<opt>）
+    if args.lld:
+        configs = [(name + " (lld)", f"coremark_picolibc_clang_lld_{name.split()[-1].lower()}.uartbin")
+                   for name, fname in CONFIGS
+                   if name.startswith("Pico LLVM") and "(lld)" not in name]
+    else:
+        configs = CONFIGS
+
+    # 筛选配置：--compiler / --libc / --opt
+    if args.compiler or args.libc or args.opt:
         def match(f):
-            if args.compiler == "gcc" and "clang" in f:
-                return False
-            if args.compiler == "clang" and "clang" not in f:
-                return False
+            if args.compiler:
+                is_clang = "clang" in f
+                if args.compiler == "gcc" and is_clang:
+                    return False
+                if args.compiler == "clang" and not is_clang:
+                    return False
+            if args.libc:
+                is_pico = "picolibc" in f
+                if args.libc == "newlib" and is_pico:
+                    return False
+                if args.libc == "picolibc" and not is_pico:
+                    return False
             if args.opt and (args.opt + ".uartbin") not in f:
                 return False
             return True
@@ -216,6 +461,12 @@ def main():
         if not configs:
             print(f"[ERROR] No config matching compiler='{args.compiler}' opt='{args.opt}'")
             sys.exit(1)
+
+    # Excel 输出路径
+    if args.xlsx is None:
+        args.xlsx = os.path.normpath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..",
+            "BD32_CoreMark_Compiler_Comparison.xlsx"))
 
     # 打开串口
     ser = serial.Serial(args.port, args.baud, timeout=1)
@@ -245,6 +496,9 @@ def main():
                   f"{r.get('total_ticks',''):<12} {r.get('branch_hit',''):<10}")
         else:
             print(f"{name:<12} {'FAILED':<14}")
+
+    if results:
+        write_xlsx(configs, results, args.xlsx)
 
 if __name__ == "__main__":
     main()

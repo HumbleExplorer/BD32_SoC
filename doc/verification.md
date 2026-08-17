@@ -28,6 +28,9 @@ python tools/build.py demos/nolibc/breathing --clang     # 用 Clang 前端
 # CoreMark（产物含优化等级后缀：coremark_o2_*.mem / coremark_o3_*.mem）
 python tools/build.py demos/newlib/coremark --newlib --opt O2
 python tools/build.py demos/newlib/coremark --newlib --opt O3
+
+# 极致体积：Clang + LLD（LTO + ICF），当前最小配置（详见 sdk.md「LLVM/Clang 集成与代码体积优化」）
+python tools/build.py demos/newlib/coremark --newlib --clang --lld
 ```
 
 产物：`.elf`、`.dump`、`*_itcm.mem`、`*_dtcm.mem`、`.uartbin`（CoreMark 文件名含 `_o2`/`_o3` 后缀），默认 Os 构建的 uartbin 带 `_os` 后缀（如 `hello_os.uartbin`）。
@@ -109,7 +112,7 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51   # v5.1
 | `run_one.py` | 运行单个 custom_asm 测试 | `cd script && python run_one.py <test_name>` |
 | `run_all_custom_asm.py` | custom_asm 全回归（tb_core_top） | `cd script && python run_all_custom_asm.py` |
 | `run_all_riscv_tests.py` | riscv-tests ISA 兼容性回归（tb_core_top） | `cd script && python run_all_riscv_tests.py` |
-| `cleanup_temp.py` | 清理 ModelSim work 库、transcript/*.log/wlftrs*/vsim.wlf/modelsim.ini、`__pycache__`、logs/ | `cd script && python cleanup_temp.py [--apply] [--dry-run] [--keep-logs]`（默认先列出并确认；`--apply` 跳过确认直接删；`--dry-run` 只列出） |
+| `cleanup_temp.py` | 清理 ModelSim work 库、transcript/*.log/wlft*/vsim.wlf/modelsim.ini、`__pycache__`、logs/；`--remove-builds` 可同时删除 build/、build_* 构建产物目录 | `cd script && python cleanup_temp.py [--apply] [--dry-run] [--keep-logs] [--remove-builds]`（默认先列出并确认；`--apply` 跳过确认直接删；`--dry-run` 只列出） |
 | `run_periph_regression.bat` | 外设四合一 headless 回归（UART/GPIO/PLIC/Timer），输出 `logs/*_test_out.txt` | 直接运行，或任务计划程序 |
 | `run_soc_test.bat` | SoC headless 仿真（tb_soc_top，默认程序启动），输出 `logs/soc_test_out.txt` | 直接运行，或任务计划程序 |
 

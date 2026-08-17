@@ -31,6 +31,7 @@ def main():
 
     # ---- 构建参数（透传 build.py）----
     p.add_argument("--newlib", action="store_true", help="链接 newlib-nano")
+    p.add_argument("--picolibc", action="store_true", help="链接 picolibc（整数程序体积更小）")
     p.add_argument("--clang", action="store_true", help="用 Clang 前端编译")
     p.add_argument("--rtthread", action="store_true", help="RT-Thread 模式")
     p.add_argument("--rtthread-version", default=None, choices=["51", "315"],
@@ -40,6 +41,9 @@ def main():
     p.add_argument("--opt", default=None, help="优化等级（默认 Os）")
     p.add_argument("--debug", action="store_true", help="启用 -g 调试信息")
     p.add_argument("--extra", default=None, help="追加编译标志")
+    p.add_argument("--clang-extra", default=None, help="只传给 Clang .c 编译的附加参数")
+    p.add_argument("--ld-extra", default=None, help="只传给链接阶段的附加参数")
+    p.add_argument("--lld", action="store_true", help="用 LLVM LLD 链接（配合 --clang 启用 LTO + ICF）")
 
     # ---- 运行参数（透传 uart_send.py）----
     p.add_argument("--port", default=None, help="COM 口（默认自动检测 CH340）")
@@ -55,13 +59,15 @@ def main():
 
     # 1) 构建
     build_cmd = [sys.executable, BUILD_PY, args.demo]
-    for flag in ("--newlib", "--clang", "--rtthread", "--debug"):
+    for flag in ("--newlib", "--picolibc", "--clang", "--rtthread", "--debug", "--lld"):
         if getattr(args, flag.lstrip("-").replace("-", "_")):
             build_cmd.append(flag)
     for flag, val in (("--rtthread-version", args.rtthread_version),
                       ("--irq-mode", args.irq_mode),
                       ("--opt", args.opt),
-                      ("--extra", args.extra)):
+                      ("--extra", args.extra),
+                      ("--clang-extra", args.clang_extra),
+                      ("--ld-extra", args.ld_extra)):
         if val:
             build_cmd += [flag, str(val)]
     print(f"[1/2] Building {args.demo} ...")
@@ -72,10 +78,15 @@ def main():
     # 2) 定位 uartbin（命名规则与 build.py 一致，产物已同步到 test_data/soc/c/）
     name = os.path.basename(os.path.normpath(args.demo))
     opt = (args.opt or "Os").lower()
-    if args.clang:
-        suffix = f"_clang_{opt}"
+    lld_tag = "_lld" if args.lld else ""
+    if args.picolibc and args.clang:
+        suffix = f"_picolibc_clang{lld_tag}_{opt}"
+    elif args.picolibc:
+        suffix = f"_picolibc{lld_tag}_{opt}"
+    elif args.clang:
+        suffix = f"_clang{lld_tag}_{opt}"
     else:
-        suffix = f"_{opt}"
+        suffix = f"{lld_tag}_{opt}"
     uartbin = os.path.normpath(os.path.join(
         SDK_ROOT, "..", "test_data", "soc", "c", name + suffix + ".uartbin"))
     if not os.path.exists(uartbin):

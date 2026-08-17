@@ -20,6 +20,33 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）、硬件断点 Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择）、ebreak 进调试模式（dcsr.ebreakm）、数据观察点
 - 完整调试回归：DMI 一键测试、GDB 全功能套件、真实 demo 符号级在线调试
 
+## 代码体积优化
+
+为追求 RV32IM/ilp32 裸机固件的极致体积，SDK 构建工具提供三种可叠加的优化途径（均已构建 + 上板验证）：
+
+1. **picolibc 精简 C 库**（`--picolibc`）——整数 printf 档，比 newlib-nano 小 34%~55%，CoreMark 小 32%；
+2. **LLVM LTO**（`--clang --lld`，`-flto`）——跨文件优化，CoreMark 再小 4%~6%，是体积优化的主力；
+3. **ICF 相同代码折叠**（`--lld`，`--icf=all`）——折叠完全相同的代码段（CoreMark 重复代码少，收益有限；对模板/库代码密集场景收益更大）。
+
+效果（CoreMark，ITCM 词数，越小越好）：
+
+| 配置 | 词数 |
+|------|------|
+| GCC `-Os`（newlib，基线） | 4379 |
+| Clang `-Os`（newlib） | 4302 |
+| Clang `-Os --lld`（newlib，LTO+ICF） | 4034 |
+| Clang `-Os`（picolibc） | 2921 |
+| **Clang `-Os --lld`（picolibc，LTO+ICF）** | **2739** |
+
+极致最小组合 `--picolibc --clang --lld` 比默认 GCC `-Os` 基线小 37%，性能无损失（同优化等级下 CoreMark/MHz 与未优化版本一致，实测约 2.27）。
+
+```bash
+cd SDK
+python tools/build.py demos/newlib/coremark --picolibc --clang --lld
+```
+
+picolibc 默认整数 printf 档不支持 `%f`；需要浮点输出时先运行 `tools/build_picolibc.bat f` 构建浮点档，再以 `--picolibc-printf f` 链接。分步数据、限制说明与 18 配置自动对比见 [doc/sdk.md](doc/sdk.md)。
+
 ## 已知限制
 
 | 项目 | 说明 |
