@@ -151,10 +151,16 @@ python tools/build_run.py demos/newlib/hello --picolibc             # 一键构�
 ### 限制
 
 - 默认整数档（`format-default=i`）**不支持 `%f`/`%lf`**；确实需要浮点输出的程序先用 `build_picolibc.bat f` 构建浮点档，再以 `--picolibc-printf f` 链接。注意浮点档体积明显更大，能用整数格式（含 `print_fixed` 定点）就不要开浮点。CoreMark 的 `HAS_FLOAT=0`，因此`--picolibc` 整数档即可完整运行（CRC 与 newlib 版一致）。
-- 与 `--rtthread` 互斥（RT-Thread 的 libc 粘合层依赖 newlib 接口）。
+- RT-Thread：支持 `--rtthread --rtthread-version 51 --picolibc`（v5.1.0 官方
+  `components/libc/compilers/picolibc` 适配层：syscall.c 提供每线程 errno 与
+  malloc 族 → rt_malloc，exit.c 提供 `_exit`；iob.c 需设备控制台，BD32 用
+  `picolibc_console.c` 替代）。lts-v3.1.x 无官方适配层，不支持该组合。实测在
+  真正调用 libc（printf/sprintf/malloc/字符串）的 RT-Thread 程序中体积
+  **-26.5%**（newlib 6248 词 → picolibc 4595 词）；若程序只调用
+  `rt_kprintf`/`rt_malloc`（libc 未被链接），两库体积基本相同。
 - 不支持 `--picolibc` 与 `--newlib` 同时使用。
 
-### CoreMark 23种配置自动对比
+### CoreMark 23 配置自动对比
 
 `tools/auto_coremark.py` 自动完成 **23 个配置**（GCC/LLVM × Os/O1/O2/O3/Oz ×
 newlib-nano/picolibc，另含 picolibc LLVM 的 LLD（LTO+ICF）5 档变体）的构建产物上板测试：

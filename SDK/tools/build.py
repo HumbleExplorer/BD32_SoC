@@ -156,13 +156,44 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
         if irq_mode == "unified":
             # 统一入口：3/7/11 全部全量保存 + 中断返回直接切换（无软件中断依赖）
             rtt_cflags.append("-DRT_USING_UNIFIED_IRQ")
-        if rtt_ver == "315":
-            rtt_bsp_c = NEWLIB_BSP_C + ["rtthread/board.c"]
+        if usepicolibc:
+            # v5.1.0 官方 picolibc 适配（components/libc/compilers/picolibc）：
+            #   syscall.c —— errno(pico_get_errno) + malloc 族 -> rt_malloc
+            #   exit.c   —— _exit -> __rt_libc_exit
+            # iob.c 需要 RT_USING_DEVICE 设备控制台，BD32 BSP 无设备框架，跳过；
+            # stdin/stdout/stderr 由 bsp/porting/picolibc_console.c 提供（直通 UART）。
+            picolibc_inc_dir, picolibc_libdir = get_picolibc_dirs(picolibc_printf)
+            if not os.path.exists(os.path.join(picolibc_inc_dir, "stdio.h")):
+                print("ERROR: picolibc 未构建。请先运行 SDK/tools/build_picolibc.bat，"
+                      f"或用环境变量 PICOLIBC_ROOT 指向已安装的 picolibc（当前变体: {picolibc_printf}）。")
+                sys.exit(1)
+            rtt_cflags += ["-I", picolibc_inc_dir,
+                           "-I", os.path.join(rtt_root, "components", "libc", "compilers",
+                                              "common", "include"),
+                           "-DRT_USING_LIBC", "-DRT_USING_PICOLIBC",
+                           "-D_POSIX_C_SOURCE=1",
+                           "-D__PICOLIBC_ERRNO_FUNCTION=pico_get_errno"]
+            rtt_kern_c = list(rtt_kern_c) + [
+                os.path.join(rtt_root, "components", "libc", "compilers", "picolibc", "syscall.c"),
+                os.path.join(rtt_root, "components", "libc", "compilers", "picolibc", "exit.c"),
+            ]
+            cflags = NEWLIB_CFLAGS + ["-ffreestanding"] + rtt_cflags
+            ldflags = LDFLAGS            # 裸金属链接，无 -specs=nano.specs
+            libs = ["-L", picolibc_libdir, "-lc", "-lm", "-lgcc"]
+            pico_bsp = ["board/init.c", "drivers/bd32_uart.c", "trap/trap_handler.c",
+                        "porting/picolibc_console.c", "utils/printf_fixed.c"]
+            if rtt_ver == "315":
+                rtt_bsp_c = pico_bsp + ["rtthread/board.c"]
+            else:
+                rtt_bsp_c = pico_bsp + ["rtthread51/board.c"]
         else:
-            rtt_bsp_c = NEWLIB_BSP_C + ["rtthread51/board.c"]
-        cflags = NEWLIB_CFLAGS + rtt_cflags
-        ldflags = NEWLIB_LDFLAGS
-        libs = NEWLIB_LIBS
+            if rtt_ver == "315":
+                rtt_bsp_c = NEWLIB_BSP_C + ["rtthread/board.c"]
+            else:
+                rtt_bsp_c = NEWLIB_BSP_C + ["rtthread51/board.c"]
+            cflags = NEWLIB_CFLAGS + rtt_cflags
+            ldflags = NEWLIB_LDFLAGS
+            libs = NEWLIB_LIBS
         bsp_c = rtt_bsp_c
         bsp_asm = rtt_bsp_asm
     else:
@@ -391,8 +422,11 @@ def main():
                    help="用 LLVM LLD 链接（ICF 折叠相同代码；配合 --clang 额外启用 LTO，体积更小）")
     args = p.parse_args()
 
-    if args.picolibc and (args.newlib or args.rtthread):
-        print("ERROR: --picolibc 与 --newlib/--rtthread 互斥（RT-Thread 依赖 newlib-nano 的 libc 接口）")
+    if args.picolibc and args.newlib:
+        print("ERROR: --picolibc 与 --newlib 互斥")
+        sys.exit(1)
+    if args.picolibc and args.rtthread and args.rtthread_version != "51":
+        print("ERROR: RT-Thread + picolibc 仅支持 v5.1.0（lts-v3.1.x 无官方 picolibc 适配层）")
         sys.exit(1)
 
     # Apply optimization override

@@ -129,11 +129,13 @@ python tools/build.py demos/rtthread --rtthread
 python tools/build.py demos/rtthread --rtthread --irq-mode unified
 python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51
 python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --irq-mode unified
+python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picolibc   # v5.1.0 + picolibc（需先构建 picolibc）
 
 # 仿真（80ms 窗口，输出 t1/t2 交替即通过）
 cd ../script/soc_test
 vsim -batch -do "do rtthread_sim.do"      # 默认 lts-v3.1.x，加载 rtthread_os_*.mem
 vsim -batch -do "do rtthread_sim51.do"    # v5.1.0，加载 rtthread51_os_*.mem
+vsim -batch -do "do rtthread_sim51_pico.do"  # v5.1.0 + picolibc，加载 rtthread51_picolibc_os_*.mem
 
 # 上板（COM8 举例；先构建再下载）
 cd ../../..
@@ -142,6 +144,19 @@ python SDK/tools/uart_send.py test_data/soc/c/rtthread51_os.uartbin --port COM8 
 ```
 
 串口输出 RT-Thread banner 后 t1/t2 持续交替打印即验证通过。仿真窗口取 80ms：soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 `mdelay` 唤醒以确认轮转稳定。
+
+### picolibc 适配（v5.1.0）
+
+RT-Thread **v5.1.0** 提供官方 picolibc 适配层（`components/libc/compilers/picolibc`），BD32 已接入
+（`--rtthread --rtthread-version 51 --picolibc`）：使用官方 `syscall.c`（每线程 errno +
+malloc/realloc/calloc/free → `rt_malloc`）与 `exit.c`（`_exit`）；`iob.c` 依赖 RT-Thread
+设备控制台（`RT_USING_DEVICE`），BD32 BSP 无设备框架，改用 `picolibc_console.c`
+（stdin/stdout/stderr 直通 UART）。**lts-v3.1.x 无官方适配层，不支持该组合。**
+
+体积收益取决于程序是否真正调用 C 标准库函数：调用 `printf`/`sprintf`/`malloc`/字符串函数的
+RT-Thread 程序实测 **-26.5%**（newlib 6248 词 → picolibc 4595 词）；只用
+`rt_kprintf`/`rt_malloc`（libc 未被链接）时两库体积基本相同。详细说明见
+[SDK 构建工具与协议](doc/sdk.md)「picolibc」。
 
 ### 编写 RT-Thread 程序
 
