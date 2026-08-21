@@ -43,7 +43,9 @@ python tools/build.py demos/newlib/coremark --newlib --clang --lld
 cd SDK
 python tools/build.py demos/rtthread --rtthread                     # lts-v3.1.x（默认）
 python tools/build.py demos/rtthread --rtthread --irq-mode unified  # 统一入口中断模式
+python tools/build.py demos/rtthread --rtthread --picolibc          # lts-v3.1.x + picolibc
 python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51   # v5.1.0
+python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picolibc  # v5.1.0 + picolibc
 ```
 
 `--rtthread` 模式自动启用 newlib-nano 链接。版本/目录对应、中断模式选择与编写 RT-Thread 程序的说明见 sdk.md「RT-Thread 应用开发」。
@@ -59,11 +61,13 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51   # v5.1
 | Debug 模块 | tb_debug | `script/debug_test/run_msim_debug.bat` | 94 PASS / 0 FAIL |
 | 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过（PLIC 52 项） |
 | SoC | tb_soc_top | `script/run_soc_test.bat` | 默认程序启动输出无异常 |
-| RT-Thread | tb_soc_top | `script/soc_test/rtthread_sim.do` / `rtthread_sim51.do` | lts-v3.1.x / v5.1.0 × ch32 / unified 四组合，80ms，banner + t1/t2 轮转、无 ERR |
+| RT-Thread | tb_soc_top | `script/soc_test/rtthread_sim*.do`（含 `rtthread_sim315_pico.do` / `rtthread_sim51_pico.do`） | lts-v3.1.x / v5.1.0 × newlib / picolibc，80ms，banner + t1/t2 轮转、无 ERR |
 
 ### 运行方式
 
 各套件均可一键运行，也可手动执行。涉及 ModelSim 的脚本统一用 `-batch` headless 模式，输出重定向到仓库根 `logs/`，license 通过环境变量 `MGLS_LICENSE_FILE` 指定。
+
+- **全量一键回归**：`script/run_all_verification.bat`（依次执行下面 1~6 全部套件，约 1~1.5 小时，进度/退出码实时写入 `logs/verify_all_mark.txt`）。
 
 - **核级（tb_core_top）**：
   ```bash
@@ -83,11 +87,13 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51   # v5.1
   ```
   默认程序启动输出即验证 CPU/UART 通路；UART 输出经 TB 的 `$write("%c", ...)` 打印到控制台；添加 `+define+WB_TRACE` 可启用写回追踪（`wb_trace.log`）。
   
-- **RT-Thread**：一键 `run_rtthread_sim.bat`（lts-v3.1.x，输出 `logs/rtthread_sim_out.txt`）与 `run_rtthread_sim51.bat`（v5.1.0，输出 `logs/rtthread_sim51_out.txt`），或手动：
+- **RT-Thread**：一键脚本按 内核版本 × C 库 组合：`run_rtthread_sim.bat`（lts-v3.1.x newlib）、`run_rtthread_sim315_pico.bat`（lts-v3.1.x + picolibc）、`run_rtthread_sim51.bat`（v5.1.0 newlib）、`run_rtthread_sim51_pico.bat`（v5.1.0 + picolibc），输出对应 `logs/rtthread_sim*_out.txt`；或手动：
   ```bash
   cd script/soc_test
-  vsim -batch -do "do rtthread_sim.do"        # lts-v3.1.x（默认）：加载 rtthread_os_*.mem，run 80ms
-  vsim -batch -do "do rtthread_sim51.do"      # v5.1.0：加载 rtthread51_os_*.mem，run 80ms
+  vsim -batch -do "do rtthread_sim.do"             # lts-v3.1.x newlib：加载 rtthread_os_*.mem
+  vsim -batch -do "do rtthread_sim315_pico.do"     # lts-v3.1.x + picolibc：加载 rtthread_picolibc_os_*.mem
+  vsim -batch -do "do rtthread_sim51.do"           # v5.1.0 newlib：加载 rtthread51_os_*.mem
+  vsim -batch -do "do rtthread_sim51_pico.do"      # v5.1.0 + picolibc：加载 rtthread51_picolibc_os_*.mem
   ```
   `rtthread_sim*.do` 通过 `+define+ITCM_FILE/DTCM_FILE` 加载 `test_data/soc/c/rtthread*_os_*.mem`（构建产物自动同步，中断模式不影响产物名），输出 RT-Thread banner + t1/t2 交替即通过。仿真窗口取 80ms：soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 mdelay 唤醒以确认轮转稳定。
 
@@ -113,8 +119,8 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51   # v5.1
 | `run_all_custom_asm.py` | custom_asm 全回归（tb_core_top） | `cd script && python run_all_custom_asm.py` |
 | `run_all_riscv_tests.py` | riscv-tests ISA 兼容性回归（tb_core_top） | `cd script && python run_all_riscv_tests.py` |
 | `cleanup_temp.py` | 清理 ModelSim work 库、transcript/*.log/wlft*/vsim.wlf/modelsim.ini、`__pycache__`、logs/；`--remove-builds` 可同时删除 build/、build_* 构建产物目录 | `cd script && python cleanup_temp.py [--apply] [--dry-run] [--keep-logs] [--remove-builds]`（默认先列出并确认；`--apply` 跳过确认直接删；`--dry-run` 只列出） |
-| `run_periph_regression.bat` | 外设四合一 headless 回归（UART/GPIO/PLIC/Timer），输出 `logs/*_test_out.txt` | 直接运行，或任务计划程序 |
-| `run_soc_test.bat` | SoC headless 仿真（tb_soc_top，默认程序启动），输出 `logs/soc_test_out.txt` | 直接运行，或任务计划程序 |
+| `run_periph_regression.bat` | 外设四合一 headless 回归（UART/GPIO/PLIC/Timer），输出 `logs/*_test_out.txt` | 直接运行 |
+| `run_soc_test.bat` | SoC headless 仿真（tb_soc_top，默认程序启动），输出 `logs/soc_test_out.txt` | 直接运行 |
 
 **script/<test>/ 仿真脚本**（每个测试目录含 `run.do` + `top_tb.bat` + `filelist.f` + `wave.do`）：
 
@@ -128,7 +134,7 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51   # v5.1
 说明：
 - `run.do` 第一行统一用 `file delete -force work` 清理旧库，不依赖 `vdel`/`modelsim.ini`，避免 GUI 锁库时报错。
 - 涉及 ModelSim 的批处理脚本输出统一重定向到仓库根 `logs/`；ModelSim license 通过 `MGLS_LICENSE_FILE` 指定。
-- 仿真回归脚本使用 `-batch` 模式（`vsim -c` 在无 GUI/受限环境可能因 Winsock 失败）。
+- 仿真回归脚本统一使用 `-batch` 无界面模式，适合脚本自动化。
 
 ## 上板验证
 
@@ -325,7 +331,7 @@ python tools/uart_cmd.py "hi" --idle-timeout 3
 | GDB 在线 watchpoint | `run_gdb_watchpoint.bat`（管道模式） | PASS |
 | GDB 套件 / demo | `run_gdb_debug_test.bat` / `run_demo_debug.bat`（socket） | PASS |
 | CoreMark | `auto_coremark.py` | CRC 通过 |
-| RT-Thread demo | `uart_send.py` 下载 + 串口监听 | lts-v3.1.x / v5.1.0 × ch32 / unified 四组合，banner + t1/t2 持续轮转、无 SERR |
+| RT-Thread demo | `uart_send.py` 下载 + 串口监听 | lts-v3.1.x / v5.1.0 × ch32 / unified 四组合（lts-v3.1.x + picolibc 已上板验证），banner + t1/t2 持续轮转、无 SERR |
 | uart_echo 全流程 | `uart_send.py` 下载 + 收发校验 | 下载 → banner → 发送回显一致 → 回车打印 Done! |
 
 ## CoreMark 基准

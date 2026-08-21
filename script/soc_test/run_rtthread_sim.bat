@@ -1,13 +1,10 @@
 @echo off
 rem ============================================================================
-rem BD32 RT-Thread lts-v3.1.x (默认) demo SoC simulation (tb_soc_top, DIRECT_LOAD)
+rem BD32 RT-Thread lts-v3.1.x (default) demo SoC simulation (tb_soc_top, DIRECT_LOAD)
 rem Run from script/soc_test so ../../test_data relative paths resolve.
 rem Loads rtthread_os_itcm.mem / rtthread_os_dtcm.mem (build with
-rem   python tools/build.py demos/rtthread --rtthread)  (lts-v3.1.x 为默认)
+rem   python tools/build.py demos/rtthread --rtthread)
 rem Output: logs/rtthread_sim_out.txt (UART prints t1/t2 alternately)
-rem Run via Task Scheduler (sandbox Winsock broken):
-rem   schtasks /create /f /tn BD32_RTT_SIM /tr "%~f0" /sc once /st 23:59
-rem   schtasks /run /tn BD32_RTT_SIM
 rem ============================================================================
 @setlocal
 set REPO=%~dp0..\..

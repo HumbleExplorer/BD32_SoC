@@ -40,6 +40,9 @@ python tools/build_run.py demos/newlib/hello --newlib
 # RT-Thread（默认 lts-v3.1.x；--irq-mode unified 切统一入口）
 python tools/build_run.py demos/rtthread --rtthread --idle-timeout 5
 python tools/build_run.py demos/rtthread --rtthread --irq-mode unified
+python tools/build_run.py demos/rtthread --rtthread --picolibc
+python tools/build_run.py demos/rtthread51 --rtthread --rtthread-version 51 --idle-timeout 5
+python tools/build_run.py demos/rtthread51 --rtthread --rtthread-version 51 --picolibc
 
 # 只下载不监听 / 下载前不复位
 python tools/build_run.py demos/nolibc/breathing --no-listen
@@ -82,11 +85,9 @@ python tools/build_riscv_tests.py --clang  # Clang 汇编
 3. **ICF 相同代码折叠**（`--lld`，`--icf=all`）——折叠完全相同的代码段（CoreMark 重复代码少，收益有限；
    对模板/库代码密集场景收益更大）。
 
-**链接器选择**：默认（含 `--clang`）由 xPack GCC 驱动调用 **GNU ld** 链接；**只有加 `--lld` 时才改用
-LLVM 的链接器（`ld.lld`）**——配合 `--clang` 的 `-flto` 启用 LTO，并始终开启 `--icf=all`。纯 GCC
-对象也可用 `--lld`（ICF 生效、无 LTO）。
+**链接器选择**：默认（含 `--clang`）由 xPack GCC 驱动调用 **GNU ld** 链接**只有加 `--lld` 时才改用 LLVM 的链接器（`ld.lld`）**——配合 `--clang` 的 `-flto` 启用 LTO，并始终开启 `--icf=all`。纯 GCC对象也可用 `--lld`（ICF 生效、无 LTO）。
 
-极致最小组合（CoreMark ITCM 4379 → **2739** 词，-37%，性能无损失）：
+极致最小组合：
 
 ```bash
 cd SDK
@@ -103,8 +104,7 @@ python tools/build.py demos/newlib/coremark --picolibc --clang --lld
 | Clang `-Os`（picolibc） | 2921 |
 | **Clang `-Os --lld`（picolibc，LTO+ICF）** | **2739** |
 
-注意：`--lld` 建议与 `-Os`/`-Oz` 搭配——LTO 在 O1/O2/O3 档内联激进，体积反而反增
-（数据见下「CoreMark 23 配置自动对比」的 LLD 变体）。
+注意：`--lld` 建议与 `-Os`/`-Oz` 搭配——LTO 在 O1/O2/O3 档内联激进，体积可能会反增（数据见下「CoreMark 23 配置自动对比」的 LLD 变体）。
 
 ### 三个体积优化开关
 
@@ -140,35 +140,15 @@ python tools/build_run.py demos/newlib/hello --picolibc             # 一键构�
 
 安装目录可用环境变量 `PICOLIBC_ROOT` 覆盖（默认 `third_party/picolibc-install`）。
 
-### 体积实测（ITCM 词数，GCC -Os 同口径）
-
-| 程序 | newlib-nano | picolibc（整数档） | 收益 |
-|------|-------------|-------------------|------|
-| hello（纯整数 printf） | 2134 | 1407 | -34% |
-| stdio_test（%ld/%lx/sprintf） | 3235 | 1470 | -55% |
-| CoreMark（HAS_FLOAT=0，整数输出） | 4034（clang+lld） | **2739（clang+lld）** | **-32%** |
-
 ### 限制
 
 - 默认整数档（`format-default=i`）**不支持 `%f`/`%lf`**；确实需要浮点输出的程序先用 `build_picolibc.bat f` 构建浮点档，再以 `--picolibc-printf f` 链接。注意浮点档体积明显更大，能用整数格式（含 `print_fixed` 定点）就不要开浮点。CoreMark 的 `HAS_FLOAT=0`，因此`--picolibc` 整数档即可完整运行（CRC 与 newlib 版一致）。
-- RT-Thread：支持 `--rtthread --rtthread-version 51 --picolibc`（v5.1.0 官方
-  `components/libc/compilers/picolibc` 适配层：syscall.c 提供每线程 errno 与
-  malloc 族 → rt_malloc，exit.c 提供 `_exit`；iob.c 需设备控制台，BD32 用
-  `picolibc_console.c` 替代）。lts-v3.1.x 无官方适配层，不支持该组合。实测在
-  真正调用 libc（printf/sprintf/malloc/字符串）的 RT-Thread 程序中体积
-  **-26.5%**（newlib 6248 词 → picolibc 4595 词）；若程序只调用
-  `rt_kprintf`/`rt_malloc`（libc 未被链接），两库体积基本相同。
+- RT-Thread：两个内核版本均支持 `--rtthread [--rtthread-version 315|51] --picolibc`，适配方式、注意事项与实测收益见「RT-Thread 应用开发」→「picolibc 适配」。
 - 不支持 `--picolibc` 与 `--newlib` 同时使用。
 
 ### CoreMark 23 配置自动对比
 
-`tools/auto_coremark.py` 自动完成 **23 个配置**（GCC/LLVM × Os/O1/O2/O3/Oz ×
-newlib-nano/picolibc，另含 picolibc LLVM 的 LLD（LTO+ICF）5 档变体）的构建产物上板测试：
-复位 → UART 下载 → 运行 → 解析输出
-（CoreMark/MHz、Iterations/Sec、Total ticks、分支预测率），ITCM/DTCM 词数从
-`.uartbin` 帧头解析，结果自动写入 `BD32_CoreMark_Compiler_Comparison.xlsx`
-（主表 + 以各 C 库 GCC O2 为基准的归一化对比 + Charts 数据页；目标文件被
-WPS/Excel 占用时自动写带时间戳的备用文件，不中断测试）。
+`tools/auto_coremark.py` 自动完成 **23 个配置**（GCC/LLVM × Os/O1/O2/O3/Oz × newlib-nano/picolibc，另含 picolibc LLVM 的 LLD（LTO+ICF）5 档变体）的构建产物上板测试：复位 → UART 下载 → 运行 → 解析输出（CoreMark/MHz、Iterations/Sec、Total ticks、分支预测率），ITCM/DTCM 词数从`.uartbin` 帧头解析，结果自动写入 `BD32_CoreMark_Compiler_Comparison.xlsx`（主表 + 以各 C 库 GCC O2 为基准的归一化对比 + Charts 数据页；目标文件被WPS/Excel 占用时自动写为带时间戳的备用文件，不中断测试）。
 
 ```bash
 cd SDK
@@ -239,21 +219,35 @@ RISC-V 机器模式中断编码（`mcause[11:0]`）中本移植用到三种：
 cd SDK
 python tools/build.py demos/rtthread --rtthread
 python tools/build.py demos/rtthread --rtthread --irq-mode unified
+python tools/build.py demos/rtthread --rtthread --picolibc
 python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51
 python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --irq-mode unified
+python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picolibc
 
 # 仿真（80ms 窗口，输出 t1/t2 交替即通过；产物名不区分中断模式）
 cd ../script/soc_test
-vsim -batch -do "do rtthread_sim.do"      # 默认 lts-v3.1.x，加载 rtthread_os_*.mem
-vsim -batch -do "do rtthread_sim51.do"    # v5.1.0，加载 rtthread51_os_*.mem
+vsim -batch -do "do rtthread_sim.do"             # lts-v3.1.x newlib：加载 rtthread_os_*.mem
+vsim -batch -do "do rtthread_sim315_pico.do"     # lts-v3.1.x + picolibc：加载 rtthread_picolibc_os_*.mem
+vsim -batch -do "do rtthread_sim51.do"           # v5.1.0 newlib：加载 rtthread51_os_*.mem
+vsim -batch -do "do rtthread_sim51_pico.do"      # v5.1.0 + picolibc：加载 rtthread51_picolibc_os_*.mem
 
 # 上板（COM8 举例；先构建再下载）
 cd ../../..
 python SDK/tools/uart_send.py test_data/soc/c/rtthread_os.uartbin --port COM8 --reset --idle-timeout 5
+python SDK/tools/uart_send.py test_data/soc/c/rtthread_picolibc_os.uartbin --port COM8 --reset --idle-timeout 5
 python SDK/tools/uart_send.py test_data/soc/c/rtthread51_os.uartbin --port COM8 --reset --idle-timeout 5
+python SDK/tools/uart_send.py test_data/soc/c/rtthread51_picolibc_os.uartbin --port COM8 --reset --idle-timeout 5
 ```
 
-串口输出 RT-Thread banner 后 t1/t2 持续交替打印即验证通过。
+四个组合也各有一键仿真脚本 `script/soc_test/run_rtthread_sim.bat` / `run_rtthread_sim315_pico.bat` / `run_rtthread_sim51.bat` / `run_rtthread_sim51_pico.bat`（输出 `logs/rtthread_sim*_out.txt`）；也可用 `python tools/build_run.py demos/rtthread --rtthread [--picolibc]` 一键构建 + 上板运行。串口输出 RT-Thread banner 后 t1/t2 持续交替打印即验证通过，仿真窗口取 80ms（soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 `mdelay` 唤醒以确认轮转稳定）。
+
+### picolibc 适配
+
+两个内核版本都支持 `--picolibc`，适配方式不同：v5.1.0 使用官方 `components/libc/compilers/picolibc` 适配层（`syscall.c` 提供每线程 errno 与 malloc 族 → `rt_malloc`，`exit.c` 提供 `_exit`）；lts-v3.1.x 使用 SDK 自带等价适配（`SDK/bsp/porting/picolibc_rtthread_syscall.c` + `picolibc_rtthread_exit.c`，官方适配层仅 v5.1.0 才有，且其 `exit.c` 依赖 `posix/stdlib.h` 与 `__rt_libc_exit`，3.1.x 均无）。
+
+两者都跳过依赖设备控制台的 `iob.c`，改用 `picolibc_console.c`（stdin/stdout/stderr 直通 UART）；errno 走 `__PICOLIBC_ERRNO_FUNCTION` 钩子映射到线程 `error` 字段，不依赖 TLS。
+
+体积收益取决于程序是否真正调用 C 标准库：调用 `printf`/`sprintf`/`malloc`/字符串函数的 RT-Thread 程序实测体积将大幅减小；只用 `rt_kprintf`/`rt_malloc`（libc 未被链接）时两库体积基本相同。
 
 ### 编写 RT-Thread 程序
 

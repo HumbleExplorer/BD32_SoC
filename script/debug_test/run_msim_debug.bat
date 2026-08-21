@@ -2,7 +2,7 @@
 rem ============================================================================
 rem BD32 Debug ModelSim regression (tb_debug)
 rem Lives in script/debug_test (verification dir); SDK/ is for SW run tools
-rem Headless -batch mode (no socket server), run from script/debug_test so
+rem Headless -batch mode, run from script/debug_test so
 rem that ../../test_data relative paths in SoC_Config.sv resolve correctly.
 rem Output: logs/msim_out.txt (progress marker logs/msim_mark.txt)
 rem Env: MODELSIM_PATH (default D:\modeltech64_2020.4\win64), MGLS_LICENSE_FILE

@@ -16,10 +16,10 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 - 外设：CLINT、PLIC 中断控制器、UART（含程序、数据下载功能）、APB Timer（含输入捕获和输出比较功能）、GPIO
 - CoreMark 验证通过，跑分达2.8CoreMark/MHz
 - 支持自修改代码和非对齐访存
-- RT-Thread 移植：v5.1.0 与 lts-v3.1.x（v3.1.5）双版本，轻量中断入口 + SW_handler（PendSV 模式）延迟调度 + CLINT mtime 系统节拍，`--rtthread` 一键构建（默认 lts-v3.1.x，`--rtthread-version 51` 切回 v5.1.0；双线程 demo 已仿真与上板验证）
+- RT-Thread 移植：v5.1.0 与 lts-v3.1.x（v3.1.5）双版本，`--rtthread` 一键构建（默认 lts-v3.1.x，`--rtthread-version 51` 切 v5.1.0），双线程 demo 已仿真与上板验证，详见 [SDK 构建工具与协议](doc/sdk.md)「RT-Thread 应用开发」
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）、硬件断点 Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择）、ebreak 进调试模式（dcsr.ebreakm）、数据观察点
 - 完整调试回归：DMI 一键测试、GDB 全功能套件、真实 demo 符号级在线调试
-- 代码体积优化：picolibc 精简 C 库 + LLVM LTO/ICF（`--picolibc` / `--lld`），CoreMark 体积减 37%；三种途径、效果与用法见 [SDK 构建工具与协议](doc/sdk.md)「LLVM/Clang 集成与代码体积优化」
+- 代码体积优化：picolibc 精简 C 库 + LLVM LTO/ICF（`--picolibc` / `--lld`），CoreMark 体积减 37%，RT-Thread 两版本均支持 `--picolibc`，详见 [SDK 构建工具与协议](doc/sdk.md)「LLVM/Clang 集成与代码体积优化」
 
 ## 已知限制
 
@@ -75,8 +75,6 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
   cd ..
   ```
 
-  > RT-Thread v3.1.5 需应用 lts-v3.1.x 分支对 `include/libc/libc_signal.h` 的修正（将无条件的 `#include <signal.h>` 改为 `#ifdef RT_USING_NEWLIB` 条件包含），否则与新版 newlib 的 `sigevent`/`siginfo_t` 定义冲突，详见 [SDK 构建工具与协议](doc/sdk.md)「RT-Thread 应用开发」。
-
 ### 2. 构建、上板与仿真
 
 ```bash
@@ -96,71 +94,9 @@ cd ..
 
 > 提示：`test_data/` 下的 `.dat` / `.elf` / `.dump` 均由构建脚本生成。
 
-## RT-Thread
+## RT-Thread 与 picolibc
 
-BD32 内置 RT-Thread 双版本移植（lts-v3.1.x / v5.1.0），两种中断模式可选：CLINT mtime 系统节拍（1ms）、UART 控制台。双线程 demo 已仿真与上板验证。
-
-### 版本与目录
-
-| 内核版本 | 内核源码（`third_party/`） | BSP（`SDK/bsp/`） | demo（`SDK/demos/`） |
-|---|---|---|---|
-| lts-v3.1.x（v3.1.5，默认） | `rt-thread-3.1.5` | `rtthread` | `rtthread` |
-| v5.1.0 | `rt-thread-5.1.0` | `rtthread51` | `rtthread51` |
-
-中断模式（`--irq-mode`，构建时选择）。
-
-RISC-V 机器模式中断编码（`mcause[11:0]`）中本移植用到三种：
-
-- **3 号 = 机器软件中断（MSI）**：由 CLINT `msip` 触发，RT-Thread 用它请求"延迟切换"（PendSV 角色）；
-- **7 号 = 机器定时器中断（MTI）**：由 CLINT `mtime ≥ mtimecmp` 触发，驱动 1ms 系统 tick；
-- **11 号 = 机器外部中断（MEI）**：由 PLIC 转发外设中断（UART / GPIO / Timer 等）。
-
-| 模式 | 工作方式 | 优点 | 缺点 | 适用场景 |
-|---|---|---|---|---|
-| `ch32`（默认） | 7/11 号走轻量入口，只保存 17 个 caller 寄存器；需要切换时写 `CLINT_MSIP` 触发 3 号软件中断，由 SW_handler 全量保存并延迟切换 | 常态中断只存 caller 寄存器，中断开销小、响应快 | 依赖软件中断与 `mscratch`；需要切换时多一次软件中断（两次 trap 路径） | 中断频繁、对中断延迟敏感（默认推荐） |
-| `unified` | 3/7/11 全部走统一入口，全量保存 30 个寄存器，中断返回时检查切换 flag 直接切换 | 实现简单、代码量小；无软件中断依赖、不依赖 `mscratch`；切换单次 trap 完成 | 每次中断（含不需要切换的）都全量保存/恢复，常态中断开销大 | 中断不频繁、精简优先，或不想依赖软件中断/`mscratch` |
-
-### 构建 / 仿真 / 上板
-
-```bash
-# 构建（默认 lts-v3.1.x + ch32 中断模式；--irq-mode unified 切换统一入口）
-cd SDK
-python tools/build.py demos/rtthread --rtthread
-python tools/build.py demos/rtthread --rtthread --irq-mode unified
-python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51
-python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --irq-mode unified
-python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picolibc   # v5.1.0 + picolibc（需先构建 picolibc）
-
-# 仿真（80ms 窗口，输出 t1/t2 交替即通过）
-cd ../script/soc_test
-vsim -batch -do "do rtthread_sim.do"      # 默认 lts-v3.1.x，加载 rtthread_os_*.mem
-vsim -batch -do "do rtthread_sim51.do"    # v5.1.0，加载 rtthread51_os_*.mem
-vsim -batch -do "do rtthread_sim51_pico.do"  # v5.1.0 + picolibc，加载 rtthread51_picolibc_os_*.mem
-
-# 上板（COM8 举例；先构建再下载）
-cd ../../..
-python SDK/tools/uart_send.py test_data/soc/c/rtthread_os.uartbin --port COM8 --reset --idle-timeout 5
-python SDK/tools/uart_send.py test_data/soc/c/rtthread51_os.uartbin --port COM8 --reset --idle-timeout 5
-```
-
-串口输出 RT-Thread banner 后 t1/t2 持续交替打印即验证通过。仿真窗口取 80ms：soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 `mdelay` 唤醒以确认轮转稳定。
-
-### picolibc 适配（v5.1.0）
-
-RT-Thread **v5.1.0** 提供官方 picolibc 适配层（`components/libc/compilers/picolibc`），BD32 已接入
-（`--rtthread --rtthread-version 51 --picolibc`）：使用官方 `syscall.c`（每线程 errno +
-malloc/realloc/calloc/free → `rt_malloc`）与 `exit.c`（`_exit`）；`iob.c` 依赖 RT-Thread
-设备控制台（`RT_USING_DEVICE`），BD32 BSP 无设备框架，改用 `picolibc_console.c`
-（stdin/stdout/stderr 直通 UART）。**lts-v3.1.x 无官方适配层，不支持该组合。**
-
-体积收益取决于程序是否真正调用 C 标准库函数：调用 `printf`/`sprintf`/`malloc`/字符串函数的
-RT-Thread 程序实测 **-26.5%**（newlib 6248 词 → picolibc 4595 词）；只用
-`rt_kprintf`/`rt_malloc`（libc 未被链接）时两库体积基本相同。详细说明见
-[SDK 构建工具与协议](doc/sdk.md)「picolibc」。
-
-### 编写 RT-Thread 程序
-
-一个 RT-Thread demo 就是一个带 `src/main.c` 的目录（如 `SDK/demos/<name>/src/main.c`），构建命令 `python tools/build.py demos/<name> --rtthread`。线程模板（每线程独立配置栈/优先级/时间片）、可用 API 与注意事项见 [SDK 构建工具与协议](doc/sdk.md)「RT-Thread 应用开发」；仿真与上板命令、验证矩阵见 [验证手册](doc/verification.md)。
+RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式、构建/仿真/上板命令与 picolibc 适配详见 [SDK 构建工具与协议](doc/sdk.md)「RT-Thread 应用开发」；仿真与上板验证矩阵见 [验证手册](doc/verification.md)。
 
 ## 目录结构
 

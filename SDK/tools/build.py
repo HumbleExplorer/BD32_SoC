@@ -157,9 +157,12 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
             # 统一入口：3/7/11 全部全量保存 + 中断返回直接切换（无软件中断依赖）
             rtt_cflags.append("-DRT_USING_UNIFIED_IRQ")
         if usepicolibc:
-            # v5.1.0 官方 picolibc 适配（components/libc/compilers/picolibc）：
-            #   syscall.c —— errno(pico_get_errno) + malloc 族 -> rt_malloc
-            #   exit.c   —— _exit -> __rt_libc_exit
+            # RT-Thread + picolibc 适配：
+            #   v5.1.0 —— 官方 components/libc/compilers/picolibc（syscall.c + exit.c）
+            #   lts-v3.1.x —— SDK/bsp/porting 的等价 backport（官方适配层 3.1.x 没有，
+            #                 且官方 exit.c 依赖 posix/stdlib.h 与 __rt_libc_exit）
+            # 两者功能一致：errno(pico_get_errno，线程 error 字段) + malloc 族 -> rt_malloc；
+            # _exit -> 关闭当前线程。
             # iob.c 需要 RT_USING_DEVICE 设备控制台，BD32 BSP 无设备框架，跳过；
             # stdin/stdout/stderr 由 bsp/porting/picolibc_console.c 提供（直通 UART）。
             picolibc_inc_dir, picolibc_libdir = get_picolibc_dirs(picolibc_printf)
@@ -173,10 +176,17 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
                            "-DRT_USING_LIBC", "-DRT_USING_PICOLIBC",
                            "-D_POSIX_C_SOURCE=1",
                            "-D__PICOLIBC_ERRNO_FUNCTION=pico_get_errno"]
-            rtt_kern_c = list(rtt_kern_c) + [
-                os.path.join(rtt_root, "components", "libc", "compilers", "picolibc", "syscall.c"),
-                os.path.join(rtt_root, "components", "libc", "compilers", "picolibc", "exit.c"),
-            ]
+            if rtt_ver == "315":
+                picolibc_rtthread_dir = os.path.join(BSP_DIR, "porting")
+                rtt_kern_c = list(rtt_kern_c) + [
+                    os.path.join(picolibc_rtthread_dir, "picolibc_rtthread_syscall.c"),
+                    os.path.join(picolibc_rtthread_dir, "picolibc_rtthread_exit.c"),
+                ]
+            else:
+                rtt_kern_c = list(rtt_kern_c) + [
+                    os.path.join(rtt_root, "components", "libc", "compilers", "picolibc", "syscall.c"),
+                    os.path.join(rtt_root, "components", "libc", "compilers", "picolibc", "exit.c"),
+                ]
             cflags = NEWLIB_CFLAGS + ["-ffreestanding"] + rtt_cflags
             ldflags = LDFLAGS            # 裸金属链接，无 -specs=nano.specs
             libs = ["-L", picolibc_libdir, "-lc", "-lm", "-lgcc"]
@@ -424,9 +434,6 @@ def main():
 
     if args.picolibc and args.newlib:
         print("ERROR: --picolibc 与 --newlib 互斥")
-        sys.exit(1)
-    if args.picolibc and args.rtthread and args.rtthread_version != "51":
-        print("ERROR: RT-Thread + picolibc 仅支持 v5.1.0（lts-v3.1.x 无官方 picolibc 适配层）")
         sys.exit(1)
 
     # Apply optimization override

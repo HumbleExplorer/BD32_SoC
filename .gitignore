@@ -32,7 +32,7 @@ BD32_SoC/BD32_SoC.srcs/utils_1/
 
 # --- IP 仓库（外部 IP，不纳入版本管理）---
 ip_repo/
-
+doc/research/
 # --- 第三方源码依赖（riscv-tests 等，获取后使用；不随仓库分发）---
 third_party/
 

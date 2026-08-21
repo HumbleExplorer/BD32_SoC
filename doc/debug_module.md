@@ -121,7 +121,7 @@ DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通
 (gdb) target extended-remote :3333
 ```
 
-若当前环境无法创建 TCP socket（如受限 shell / 沙箱），可改用**管道模式**：GDB 直接拉起 OpenOCD，通过 stdin/stdout 走 GDB Remote 协议，不依赖 3333 端口（`run_gdb_watchpoint.bat` 即此方式）：
+也可改用**管道模式**：GDB 直接拉起 OpenOCD，通过 stdin/stdout 走 GDB Remote 协议，不依赖 3333 端口（`run_gdb_watchpoint.bat` 即此方式）：
 
 ```text
 (gdb) target extended-remote | .../openocd.exe -c "gdb port pipe" -f .../bd32_openocd.cfg
@@ -364,11 +364,6 @@ openocd -f ./SDK/tools/bd32_watchpoint_test.cfg
 ./script/debug_test/run_msim_debug.bat
 ```
 
-本机环境说明（Windows exec 环境 Winsock 损坏，进程无法创建 TCP socket / 运行 Node）：
-- 所有涉及 socket 的工具（OpenOCD gdb server、GDB、ModelSim 的 vsim）需通过**任务计划程序**运行：
-  - `schtasks /run /tn BD32_GDB` —— GDB 全功能套件
-  - `schtasks /run /tn GDBDEMO2` —— demo 在线调试
-  - `schtasks /run /tn BD32_MSIM` —— ModelSim 回归（结果 `logs/msim_out.txt`）
 - FT2232H Channel A 需一次性绑定 WinUSB 驱动（Zadig），否则 libusb 无法访问；绑定后保持 WinUSB 即可，复位不再需要切换到 VCP/ftd2xx（教程见 [验证手册](verification.md)「使用 Zadig 绑定 WinUSB」）
 - Vivado hw_server 会占用 JTAG 适配器，使用前需关闭 Hardware Target
 - 强制终止 OpenOCD 后可能需要拔插 USB 释放设备句柄
@@ -377,7 +372,7 @@ openocd -f ./SDK/tools/bd32_watchpoint_test.cfg
 ## Debug 仿真验证
 
 ```bash
-# 一键回归（-batch 无界面模式，不依赖 Winsock；从 script/debug_test 运行，
+# 一键回归（headless -batch 模式；从 script/debug_test 运行，
 # 保证 SoC_Config.sv 中 ../../test_data 相对路径正确解析 mrom.dat / .mem）：
 ./script/debug_test/run_msim_debug.bat
 # 结果：logs/msim_out.txt（进度标记 logs/msim_mark.txt）

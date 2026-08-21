@@ -5,9 +5,6 @@ rem Run from script/soc_test so ../../test_data relative paths resolve.
 rem Loads rtthread51_os_itcm.mem / rtthread51_os_dtcm.mem (build with
 rem   python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51)
 rem Output: logs/rtthread_sim51_out.txt (UART prints t1/t2 alternately)
-rem Run via Task Scheduler (sandbox Winsock broken):
-rem   schtasks /create /f /tn BD32_RTT51_SIM /tr "%~f0" /sc once /st 23:59
-rem   schtasks /run /tn BD32_RTT51_SIM
 rem ============================================================================
 @setlocal
 set REPO=%~dp0..\..
