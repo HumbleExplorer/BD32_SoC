@@ -41,6 +41,8 @@ module Pipeline_Ctrl #(
     input   logic                       reg_rd_wen_wb,      // WB 阶段写寄存器
     // from IF/ID/EX
     (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_if,
+    input   logic                       inst_valid_if,  // IFU 本拍是否输出有效指令
+    input   logic                       fetch_wait_if,  // IFU 取指字未就绪（非 stall/redirect）
     (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_id,
     (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_ex,
     (* MAX_FANOUT = 16 *)input   logic   [ADDR_WIDTH-1:0]    inst_addr_mem,
@@ -285,10 +287,14 @@ assign pc_stall = (hp_stall | lp_stall) & ~step_drain_release;
 // =========================================================================
 always_comb begin
     ctrl_jump_en    = 1'b0;
-    if_id_stall     = 1'b0;
+    // 取指字未就绪时保持 IF_ID（避免把 "NOP + 当前地址" 的错误配对锁存进
+    // 流水线），同时 flush ID_EX（IF_ID 保持的指令稍后重进 ID/EX，避免重复）。
+    // 仅限"非 stall/redirect"的字未就绪拍；OITF/load-use/bus 停顿由各自分支
+    // 处理（只停 IF_ID、不清 ID_EX，否则长周期指令会被误清）。
+    if_id_stall     = fetch_wait_if;
     if_id_flush     = 1'b0;
     id_ex_stall     = 1'b0;
-    id_ex_flush     = 1'b0;
+    id_ex_flush     = fetch_wait_if;
     ex_mem_stall    = 1'b0;
     ex_mem_flush    = 1'b0;
     mem_wb_stall    = 1'b0;

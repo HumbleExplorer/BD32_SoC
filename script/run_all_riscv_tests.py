@@ -207,7 +207,8 @@ def get_test_list():
     test_list = []
     for f in files:
         basename = os.path.basename(f)
-        if basename.startswith("rv32ui-p-") or basename.startswith("rv32um-p-"):
+        if (basename.startswith("rv32ui-p-") or basename.startswith("rv32um-p-")
+                or basename.startswith("rv32uc-p-")):
             test_list.append(basename)
     return test_list
 

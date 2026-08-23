@@ -1,12 +1,12 @@
-# BD32 — RV32IM Pipelined RISC-V SoC
+# BD32 — RV32IMC Pipelined RISC-V SoC
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采用经典 5 级流水线架构并配备乱序执行机制（OITF），支持乘法/除法指令与短指令并行执行。项目包含完整的 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
+BD32 是一款自定义的 32 位 RISC-V (RV32IMC) 流水线处理器 SoC，采用经典 5 级流水线架构并配备乱序执行机制（OITF），支持乘法/除法指令与短指令并行执行，并支持 C 压缩指令扩展（代码体积平均减小约 25–30%）。项目包含完整的 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
 
 ## 特性
 
-- RV32IM 指令集（含 M 扩展乘除法）
+- RV32IMC 指令集（含 M 扩展乘除法 + C 压缩指令扩展；取指 16 位对齐，压缩指令经硬件展开器译码）
 - 5 级流水线：IF → ID → EX → MEM → WB
 - OITF（Out-of-order Instruction Termination Facility）：深度 4 的 FIFO，允许多周期乘除法指令乱序执行
 - 流水线型 Booth-4 乘法器
@@ -54,7 +54,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IM) 流水线处理器 SoC，采�
 | RT-Thread 5.1.0 源码 | RTOS 内核（`--rtthread --rtthread-version 51`） | `third_party/rt-thread-5.1.0`（从官方 [Releases](https://github.com/RT-Thread/rt-thread/releases) 下载源码包解压） | Apache-2.0 | — |
 | RT-Thread 3.1.5 源码 | RTOS 内核（`--rtthread` 默认） | `third_party/rt-thread-3.1.5`（同上，v3.1.5） | Apache-2.0 | — |
 
-目标架构：`-march=rv32im_zicsr -mabi=ilp32`；C 库默认使用 **newlib-nano**（`-specs=nano.specs` 精简版，`printf`/`malloc` 可用），可选 **picolibc**（`--picolibc`，整数程序体积更小，用法见 [SDK 构建工具与协议](doc/sdk.md)「picolibc」）。工具路径未设置时使用各脚本内的默认值。
+目标架构：默认 `-march=rv32im_zicsr -mabi=ilp32`，加 `--rvc` 编译为 `rv32imc_zicsr`（启用 C 压缩指令扩展，需 RTL 支持 RV32C）；C 库默认使用 **newlib-nano**（`-specs=nano.specs` 精简版，`printf`/`malloc` 可用），可选 **picolibc**（`--picolibc`，整数程序体积更小，用法见 [SDK 构建工具与协议](doc/sdk.md)「picolibc」）。工具路径未设置时使用各脚本内的默认值。
 
 - **第三方源码**（统一放在 `third_party/`，不随仓库分发）：
 
@@ -153,7 +153,7 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 
 - [x] **FENCE.I / 自修改代码**：已实现（ITCM 字节写使能 + FENCE.I 冲刷取指路径），`rv32ui-p-fence_i` 通过
 - [x] **非对齐访存**：已实现（DTCM/总线内存拆分为两次对齐访问），`rv32ui-p-ma_data` 通过
-- [ ] **RV32C：C 压缩指令扩展**（取指 2/4 字节对齐 + 译码改造，代码体积大幅减小）
+- [x] **RV32C：C 压缩指令扩展**：已实现（取指 16 位对齐 + IFU_Buffer 指令装配 + RVC_Expander 硬件展开），`rv32uc-p-rvc` 通过；`build.py --rvc` 编译 rv32imc 固件
 - [ ] **RV32A：A 原子扩展**（LR/SC + AMO，为 RTOS/多核同步铺路）
 - [ ] **RV32F / D：F/D 浮点扩展**（FPU 数据通路 + ABI 切换）
 - [x] **RT-Thread 移植**：v5.1.0 与 lts-v3.1.x 双版本（仅 M-mode，无 U-mode / MPU / SMP）

@@ -108,6 +108,9 @@ logic                               lp_is_div;
 logic                       if_addr_misalign;
 logic                       if_access_fault;
 logic                       id_illegal_inst;
+logic                       id_illegal_total;   // 含压缩保留编码
+logic                       illegal_inst_if;    // IFU 展开器报保留编码
+logic                       illegal_inst_id;
 logic                       id_ecall;
 logic                       id_ebreak;
 logic                       ex_access_illegal;
@@ -163,6 +166,11 @@ logic   [DATA_WIDTH-1:0]    reg_rd_wdata;
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    pc;
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_if;   // 当前指令地址（延迟一拍的 pc）
 logic   [DATA_WIDTH-1:0]    inst;
+logic   [DATA_WIDTH-1:0]    inst_if;    // IFU_Buffer 装配+展开后的指令（给 IF_ID）
+logic                       inst_valid_if; // IFU_Buffer 本拍是否输出有效指令
+logic                       fetch_wait_if; // IFU 取指字未就绪（非 stall/redirect）
+logic                       is_compressed_if;
+logic                       fetch_served;   // 本拍取指请求地址确实被存储器服务
 logic                       predict_taken_if;
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
 
@@ -186,9 +194,11 @@ logic                       branch_req_id;
 logic                       push_ras_id;        // call
 logic                       pop_ras_id;          // ret
 logic   [ADDR_WIDTH-1:0]    jump_imm_id;
-logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_id;
+logic   [ADDR_WIDTH-1:0]    inst_addr_plus_len_id;  // PC+指令长度（压缩 +2 / 普通 +4）
+logic                       is_compressed_id;
 assign jump_imm_id          = inst_addr_id + imm_id;
-assign inst_addr_plus_4_id  = inst_addr_id + 32'd4;
+assign inst_addr_plus_len_id = inst_addr_id + (is_compressed_id ? 32'd2 : 32'd4);
+assign id_illegal_total     = id_illegal_inst | illegal_inst_id;
 
 // EX
 (*MAX_FANOUT =32*)logic   [ADDR_WIDTH-1:0]    inst_addr_ex;
@@ -197,7 +207,7 @@ logic                       predict_taken_ex;
 logic   [ADDR_WIDTH-1:0]    predict_target_ex;
 logic   [DATA_WIDTH-1:0]    imm_ex;
 logic   [ADDR_WIDTH-1:0]    jump_imm_ex;
-logic   [ADDR_WIDTH-1:0]    inst_addr_plus_4_ex;
+logic   [ADDR_WIDTH-1:0]    inst_addr_plus_len_ex;
 logic                       access_en_ex;
 logic                       access_wr_ex;
 logic   [ADDR_WIDTH-1:0]    access_addr_ex;
@@ -348,12 +358,12 @@ assign exception_code_if = if_access_fault  ? {{DATA_WIDTH-5{1'b0}}, 4'd1}
 assign exception_val_if  = inst_addr_if;
 
 // ID 级：非法指令 > ecall > ebreak
-assign exception_code_id = id_illegal_inst ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
+assign exception_code_id = id_illegal_total ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
                          : id_ecall        ? {{DATA_WIDTH-5{1'b0}}, (priv_mode == 2'b00) ? 4'd8 : 4'd11}
                          // ebreakm=1 时 ebreak 进入 debug 模式（mtvec 陷阱被抑制）
                          : (id_ebreak && !ebreak_halt) ? {{DATA_WIDTH-5{1'b0}}, 4'd3}
                          : {DATA_WIDTH-1{1'b1}};
-assign exception_val_id  = id_illegal_inst ? inst_id : 'h0;
+assign exception_val_id  = id_illegal_total ? inst_id : 'h0;   // 压缩保留编码 mtval 记展开值
 
 // EX 级：bus_error > 访存非法 > 访存未对齐 > 非法 CSR
 // bus_error 时 mtval 填锁存地址 bus_addr_q；访存异常填 access_addr_ex；非法 CSR 填 inst_ex
@@ -430,6 +440,8 @@ Pipeline_Ctrl #(
     .oitf_stall          	(oitf_stall           ),
     .reg_rd_wen_wb          (reg_rd_wen_wb        ),
     .inst_addr_if        	(inst_addr_if         ),
+    .inst_valid_if       	(inst_valid_if        ),
+    .fetch_wait_if       	(fetch_wait_if        ),
     .inst_addr_id        	(inst_addr_id         ),
     .inst_addr_ex        	(inst_addr_ex         ),
     .inst_addr_mem       	(inst_addr_mem        ),
@@ -501,14 +513,16 @@ Data_Hazard_Forward #(
 Dynamic_Branch_Predictor #(
     .ADDR_WIDTH     (ADDR_WIDTH ),
     .DATA_WIDTH     (DATA_WIDTH ),
-    .ALIGN_WIDTH    (ALIGN_WIDTH)
+    .ALIGN_WIDTH    (1)          // 取指 16 位对齐：BTB 索引/标签区分相邻半字指令
 )u_Dynamic_Branch_Predictor(
     .clk             (clk               ),
     .rst_n           (rst_n             ),
     .stall           (pc_stall          ),
     .inst_addr       (inst_addr_if      ),
+    .is_compressed_if(is_compressed_if  ),
     .is_fence_i      (is_fence_i_ex     ),
     .branch_pc       (inst_addr_ex      ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
+    .branch_inst_plus_len(inst_addr_plus_len_ex),
     .branch_taken    (branch_taken_ex   ),
     .branch_target   (branch_target_ex  ),
     .branch_req      (branch_req_ex     ),
@@ -520,9 +534,9 @@ Dynamic_Branch_Predictor #(
     .predict_target  (predict_target_if)
 );
 
-PC_counter #(
+IFU_Buffer #(
     .ADDR_WIDTH(ADDR_WIDTH)
-)u_PC_counter(
+)u_IFU_Buffer(
     .clk            (clk),
     .rst_n          (rst_n),
     .jump_en        (ctrl_jump_en),
@@ -532,21 +546,28 @@ PC_counter #(
     .stall          (pc_stall),
     .dbg_load_en    (dbg_resume_req),
     .dbg_load_addr  (dbg_pc_wdata),
+    .w_new          (inst),
+    .fetch_served   (fetch_served),
     .pc             (pc),               // 下一条指令地址，给 BootROM/ITCM 读地址
+    .inst_o         (inst_if),
+    .inst_valid_o   (inst_valid_if),
+    .fetch_wait_o   (fetch_wait_if),
+    .is_compressed_o(is_compressed_if),
+    .illegal_inst_o (illegal_inst_if),
     .if_addr_misalign (if_addr_misalign),
     .if_access_fault  (if_access_fault),
     .inst_addr_o    (inst_addr_if)      // 当前指令地址，给流水线
 );
 
-// 指令来源 MUX（选择信号基于 inst_addr_if = 当前取出的指令地址）
+// 指令来源 MUX（选择信号基于取指请求地址 pc = 返回字对应的区域）
 logic [DATA_WIDTH-1:0]    bootrom_inst;
 logic [DATA_WIDTH-1:0]    itcm_inst;
 logic                     bootrom_sel;
 logic                     itcm_store_sel;
 wire  [ADDR_WIDTH-1:0]    bootrom_rd_addr;   // BootROM read addr: sba_addr when SBA hits 0x0000 region
 
-assign bootrom_sel = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
-assign itcm_store_sel    = (inst_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
+assign bootrom_sel   = (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
+assign itcm_store_sel= (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
 
 BootROM #(
     .MROM_DEPTH     (`MROM_DEPTH),
@@ -591,6 +612,12 @@ always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) itcm_rmw_active <= 1'b0;
     else        itcm_rmw_active <= sba_req_valid & sba_itcm_store_sel & sba_write & (sba_size != 3'd2);
 end
+// 取指请求是否被服务：BootROM/ITCM 读口未被 SBA / LSU / RMW 写相位抢占
+assign fetch_served = bootrom_sel    ? ~(sba_req_valid & sba_bootrom_sel)
+                    : itcm_store_sel ? ~(itcm_access_active
+                                       | (sba_req_valid & sba_itcm_store_sel)
+                                       | itcm_rmw_active)
+                    : 1'b0;
 // 子字写数据 lane 重排：把 sba_wdata 低字节/半字移到 be 指示的目标 lane
 // （DTCM 直写 wmask、ITCM RMW 合并、外设 PSTRB 均使用该重排后的数据）
 logic [DATA_WIDTH-1:0] sba_wdata_lane;
@@ -715,11 +742,15 @@ IF_ID #(
     .stall              (if_id_stall),
     .flush              (if_id_flush),
     .inst_addr_i        (inst_addr_if),     // 当前指令地址（延迟一拍的 pc）
-    .inst_i             (inst),
+    .inst_i             (inst_if),
+    .is_compressed_i    (is_compressed_if),
+    .illegal_inst_i     (illegal_inst_if),
     .predict_taken_i    (predict_taken_if),
     .predict_target_i   (predict_target_if),
     .inst_addr_o        (inst_addr_id),
     .inst_o             (inst_id),
+    .is_compressed_o    (is_compressed_id),
+    .illegal_inst_o     (illegal_inst_id),
     .predict_taken_o    (predict_taken_id),
     .predict_target_o   (predict_target_id),
 `ifdef DISPLAY_INST_WAVE
@@ -812,7 +843,7 @@ ID_EX #(
     .alu_op2_fwd_i  (alu_op2_forward),
     .fwd_b_hit_i    (fwd_b_hit),
     .jump_imm_i     (jump_imm_id),
-    .inst_addr_plus_4_i(inst_addr_plus_4_id),
+ .inst_addr_plus_len_i(inst_addr_plus_len_id),
     .reg_rs1_raddr_i(reg_rs1_raddr),
     .reg_rs2_raddr_i(reg_rs2_raddr),
     .access_wr_i    (access_wr_id),
@@ -833,7 +864,7 @@ ID_EX #(
     .alu_op2_o      (alu_op2_from_id_ex),
     .imm_o          (imm_ex),
     .jump_imm_o     (jump_imm_ex),
-    .inst_addr_plus_4_o(inst_addr_plus_4_ex),
+ .inst_addr_plus_len_o(inst_addr_plus_len_ex),
     .reg_rs2_rdata_o(reg_rs2_rdata_ex),
     .access_wr_o    (access_wr_ex),
     .access_en_o    (access_en_ex),
@@ -881,7 +912,7 @@ Executer #(
     .reg_rs1_raddr      (reg_rs1_raddr_ex   ),
     .reg_rs2_raddr      (reg_rs2_raddr_ex   ),
     .jump_imm         	(jump_imm_ex        ),
-    .inst_addr_plus_4   (inst_addr_plus_4_ex),
+ .inst_addr_plus_len (inst_addr_plus_len_ex),
     .access_wdata_temp 	(access_wdata_temp  ),
     .branch_jump_en     (branch_jump_en_ex  ),
     .branch_jump_addr   (branch_jump_addr_ex),

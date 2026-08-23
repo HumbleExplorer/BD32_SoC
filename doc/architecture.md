@@ -2,7 +2,7 @@
 
 ## 概览
 
-BD32 是 32 位 RV32IM 处理器，经典 5 级流水线（IF → ID → EX → MEM → WB），
+BD32 是 32 位 RV32IMC 处理器，经典 5 级流水线（IF → ID → EX → MEM → WB），
 配备深度 4 的 OITF（乱序退休 FIFO），让多周期乘除指令可与短指令并行执行、乱序写回。
 
 ```
@@ -30,6 +30,24 @@ BD32 是 32 位 RV32IM 处理器，经典 5 级流水线（IF → ID → EX → 
 - OITF 维护 RAW/WAW 冒险检测，必要时 stall 整条流水线。
 - 寄存器堆双写端口：Port1（正常 WB）与 Port2（OITF 退休），同地址冲突时 Port2 优先；
   旁路读取优先级 Port2 > Port1 > 寄存器阵列。
+
+## 取指（IFU_Buffer + RVC 展开器）
+
+- **IFU_Buffer**：替代传统 PC_counter，负责 16/32 位指令装配。取指按字流推进，
+  装配器按 `pc_asm[1]` 与指令长度编码从 `{cur_w, w_new}` 中切出 16/32 位指令；
+  跨字 32 位指令（起始于奇数半字）由 `{w_new[15:0], cur_eff[31:16]}` 拼接。
+  - 取指请求与装配消费同步：`cur_w` 含 2 条 16 位指令时（2 拍消费），请求地址保持
+    `cur_w+4`（重复请求无害），避免 16 位指令流把下一字提前冲掉；
+  - 分支/跳转/调试装载重定向拍：当前指令保留输出，仅把下一拍目标改为重定向地址
+    （JAL/JALR 需流经流水线完成链接写回与 RAS 更新），`fetch_addr` 指向目标+4；
+  - 取指字未就绪（非 stall/redirect）时输出 `fetch_wait`，由流水线控制保持 IF_ID
+    并冲刷 ID_EX，避免 "NOP+地址" 错配对导致指令在 EX 变 NOP。
+- **RVC_Expander**：纯组合的 RV32C→RV32I 展开器（完整 RV32IMC，不含 F/D/Zcb/Zcmp；
+  保留编码置 illegal，hint 展开为 NOP）。压缩指令在 IF 阶段展开为 32 位等价指令，
+  Decoder/Executer 零改动；链接地址语义（C.JAL/C.JALR 的 pc+2）由流水线
+  `is_compressed` 标志处理（`inst_addr_plus_len = pc + (压缩 ? 2 : 4)`）。
+- 分支预测器 BTB/RAS 按 16 位对齐索引（ALIGN_WIDTH=1）；RAS 压栈使用 EX 级计算好的
+  实际链接地址（32 位 call +2 半字 / 16 位 call +1 半字），返回预测不会错位。
 
 ## 运算单元
 

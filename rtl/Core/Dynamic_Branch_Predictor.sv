@@ -77,9 +77,11 @@ module Dynamic_Branch_Predictor #(
 
     // From IF
     input logic [ADDR_WIDTH-1:0] inst_addr,  // IF阶段的PC
+    input logic                   is_compressed_if, // 当前 IF 指令是否压缩（RAS 推测写 +1/+2）
 
     // From EX
     input   logic   [ADDR_WIDTH-1:0]    branch_pc,          // 分支指令PC
+    input   logic   [ADDR_WIDTH-1:0]    branch_inst_plus_len, // 分支指令的实际链接地址（PC+指令长度，RAS 真实写）
     input   logic                       branch_taken,       // 实际分支跳转方向
     input   logic   [ADDR_WIDTH-1:0]    branch_target,      // 实际分支目标跳转地址
     input   logic                       branch_req,         // 是否为分支和跳转指令
@@ -342,10 +344,12 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else begin
         // 优先处理 EX 阶段的真实写 (预测错误冲刷时也会写入)
         if (!stall && push_ras) begin
-            ras_stack[real_ras_ptr] <= #1 branch_pc[RAS_DATA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
+            // 直接用 EX 级算好的链接地址（32 位指令 +2 半字 / 16 位指令 +1 半字）
+            ras_stack[real_ras_ptr] <= #1 branch_inst_plus_len[RAS_DATA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
         end else if (!stall && predict_btb_hit && btb_push_ras_array[predict_btb_idx]) begin
             // 如果没有 EX 阶段的写，则进行 IF 阶段的推测写
-            ras_stack[spec_ras_ptr] <= #1 inst_addr[RAS_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] + 1;
+            ras_stack[spec_ras_ptr] <= #1 inst_addr[RAS_DATA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH]
+                                       + (is_compressed_if ? 15'd1 : 15'd2);
         end
     end
 end

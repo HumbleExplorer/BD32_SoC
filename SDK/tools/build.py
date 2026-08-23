@@ -44,29 +44,30 @@ def get_picolibc_dirs(variant):
             "picolibc-install" if variant == "i" else f"picolibc-install-{variant}")
     return (os.path.join(root, "include"),
             os.path.join(root, "lib", "rv32im", "ilp32"))
+MARCH = "rv32im_zicsr"          # --rvc 时替换为 rv32imc_zicsr
 CFLAGS   = [
-    "-march=rv32im_zicsr", "-mabi=ilp32", "-mcmodel=medlow",
+    "-march=" + MARCH, "-mabi=ilp32", "-mcmodel=medlow",
     "-nostartfiles", "-ffreestanding",
     "-ffunction-sections", "-fdata-sections",
     "-msmall-data-limit=0", "-mno-relax",
     "-I", BSP_DIR
 ]
 LDFLAGS  = [
-    "-march=rv32im_zicsr", "-mabi=ilp32",
+    "-march=" + MARCH, "-mabi=ilp32",
     "-nostartfiles", "-nostdlib", "-Wl,--gc-sections"
 ]
 LIBS     = ["-lgcc"]                           # 裸金属：仅 libgcc
 
 # Newlib-nano 构建配置（--newlib 时使用）
 NEWLIB_CFLAGS = [
-    "-march=rv32im_zicsr", "-mabi=ilp32", "-mcmodel=medlow",
+    "-march=" + MARCH, "-mabi=ilp32", "-mcmodel=medlow",
     "-nostartfiles",
     "-ffunction-sections", "-fdata-sections",
     "-msmall-data-limit=0", "-mno-relax",
     "-I", BSP_DIR
 ]
 NEWLIB_LDFLAGS = [
-    "-march=rv32im_zicsr", "-mabi=ilp32",
+    "-march=" + MARCH, "-mabi=ilp32",
     "-nostartfiles", "-specs=nano.specs", "-Wl,--gc-sections"
 ]
 NEWLIB_LIBS = ["-lc", "-lm", "-lgcc"]
@@ -422,6 +423,8 @@ def main():
     p.add_argument("--irq-mode", default="ch32", choices=["ch32", "unified"],
                    help="RT-Thread 中断模式: ch32 (轻量入口 + 软件中断延迟切换, default) or unified (统一入口, 全量保存 + 直接切换)")
     p.add_argument("--clang", action="store_true", help="Use LLVM/clang for .c compilation (linking still via xpack gcc)")
+    p.add_argument("--rvc", action="store_true",
+                   help="启用 C 压缩指令扩展（-march=rv32imc；需 RTL 已支持 RV32C）")
     p.add_argument("--opt", default="Os", help="Optimization (Os, O2, O3, etc.)")
     p.add_argument("--extra", default="", help="Extra GCC flags")
     p.add_argument("--clang-extra", default="",
@@ -435,6 +438,14 @@ def main():
     if args.picolibc and args.newlib:
         print("ERROR: --picolibc 与 --newlib 互斥")
         sys.exit(1)
+
+    # --rvc：启用 C 压缩指令扩展（march rv32im → rv32imc）
+    if args.rvc:
+        global MARCH
+        MARCH = "rv32imc_zicsr"
+        for _lst in (CFLAGS, LDFLAGS, NEWLIB_CFLAGS, NEWLIB_LDFLAGS):
+            for _i, _s in enumerate(_lst):
+                _lst[_i] = _s.replace("rv32im_zicsr", "rv32imc_zicsr")
 
     # Apply optimization override
     opt_flag = "-" + args.opt
@@ -453,8 +464,8 @@ def main():
     # Build flags string for display
     flags_parts = ["-" + args.opt] + extra_list
     flags_str = " ".join(flags_parts)
-    CFLAGS.append(f'-DFLAGS_STR="{flags_str} -march=rv32im_zicsr -mabi=ilp32"')
-    NEWLIB_CFLAGS.append(f'-DFLAGS_STR="{flags_str} -march=rv32im_zicsr -mabi=ilp32"')
+    CFLAGS.append(f'-DFLAGS_STR="{flags_str} -march={MARCH} -mabi=ilp32"')
+    NEWLIB_CFLAGS.append(f'-DFLAGS_STR="{flags_str} -march={MARCH} -mabi=ilp32"')
 
     if args.source is None:
         print("Usage: python tools/build.py demos/hello          # auto-detect demos/hello/src/main.c")

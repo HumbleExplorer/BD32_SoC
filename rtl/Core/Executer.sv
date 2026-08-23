@@ -33,7 +33,7 @@ module Executer #(
     input   logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr,
     input   logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr,
     input   logic   [ADDR_WIDTH-1:0]        jump_imm,       // 预计算分支目标
-    input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4,// 预计算 PC+4
+    input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_len, // 预计算 PC+指令长度（压缩+2/普通+4）
     input   logic   [DATA_WIDTH-1:0]        access_wdata_temp,
     // to ctrl
     output  logic                           branch_jump_en,//实际上是否跳转
@@ -107,7 +107,7 @@ assign ex_access_illegal = access_illegal;
 assign ex_addr_misalign  = access_addr_misalign;
 assign branch_predict_success = ((predict_taken && branch_taken) && (predict_target == branch_target)) 
                             || (~predict_taken && ~branch_taken);
-assign branch_jump_addr = branch_taken ? branch_target : inst_addr_plus_4;
+    assign branch_jump_addr = branch_taken ? branch_target : inst_addr_plus_len;
 assign branch_jump_en  = ~branch_predict_success || is_fence_i;//预测失败时跳转
 
 always_comb begin
@@ -123,7 +123,7 @@ always_comb begin
     lp_valid          = 1'b0;
     mul_div_en        = 1'b0;
     branch_taken      = 1'b0;
-    branch_target     = inst_addr_plus_4;
+    branch_target     = inst_addr_plus_len;
     case(opcode)
         `INST_TYPE_I:begin
             reg_rd_wen        = ~is_nop;
@@ -189,7 +189,7 @@ always_comb begin
                 `INST_BGEU:branch_taken     = ~less_unsigned;
                 default: branch_taken     = 1'b0;
             endcase
-            // branch_target   = branch_taken ? jump_imm : inst_addr_plus_4;
+    // branch_target   = branch_taken ? jump_imm : inst_addr_plus_len;
             branch_target   = jump_imm;
         end
         `INST_TYPE_S:begin
@@ -297,14 +297,14 @@ always_comb begin
         `INST_JAL:begin
             reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
-            reg_rd_wdata      = inst_addr_plus_4;
+    reg_rd_wdata      = inst_addr_plus_len;
             branch_taken      = 1'b1;
             branch_target     = jump_imm;
         end
         `INST_JALR:begin
             reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
-            reg_rd_wdata      = inst_addr_plus_4;
+    reg_rd_wdata      = inst_addr_plus_len;
             branch_taken      = 1'b1;
             branch_target     = alu_op1 + imm;
         end

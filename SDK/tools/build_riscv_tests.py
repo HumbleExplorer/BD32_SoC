@@ -1,9 +1,9 @@
 """
-编译 riscv-tests（rv32ui + rv32um）到 test_data/riscv-tests/
+ 编译 riscv-tests（rv32ui + rv32um + rv32uc）到 test_data/riscv-tests/
 
 工作目录为 SDK/isa：
   - env/ 使用仓库内维护的 BD32 文件（link.ld / riscv_test.h / encoding.h）；
-  - rv32ui / rv32um / rv64ui / macros 若缺失，自动从 third_party/riscv-tests/isa
+- rv32ui / rv32um / rv32uc / rv64ui / macros 若缺失，自动从 third_party/riscv-tests/isa
     复制补齐（第三方源码位置可用环境变量 RISCV_TESTS_SRC 覆盖）。
 
 BD32 内存布局：ITCM @ 0x00010000, DTCM @ 0x00020000
@@ -40,7 +40,7 @@ SECTIONS
   . = 0x00010000;
   .text.init : { *(.text.init) }
 
-  . = 0x00011000;
+  . = 0x00013000;
   .tohost :   { *(.tohost) }
   .data :     { *(.data) }
   .bss :      { *(.bss) }
@@ -69,6 +69,8 @@ LDFLAGS = [
     "-T", LD_SCRIPT,
     "-lgcc",
 ]
+# rv32uc（压缩指令测试）：march 加 c
+UC_CFLAGS = [s.replace("rv32im_zicsr_zifencei", "rv32imc_zicsr_zifencei") for s in CFLAGS]
 
 # ===== 生成 .dat（flat binary，保留地址空间正确 padding）=====
 def make_dat(elf_path, dat_path):
@@ -92,7 +94,9 @@ def make_dat(elf_path, dat_path):
             pass
 
 # ===== 编译一个测试 =====
-def compile_test(test_name, src_file, useclang=False):
+def compile_test(test_name, src_file, useclang=False, cflags=None):
+    if cflags is None:
+        cflags = CFLAGS
     os.makedirs(OUT_DIR, exist_ok=True)
     base = os.path.join(OUT_DIR, test_name)
     elf  = base + ".elf"
@@ -104,20 +108,20 @@ def compile_test(test_name, src_file, useclang=False):
 
     if useclang:
         # clang 汇编 .S → .o (RISC-V 代码生成, 集成汇编器)
-        cmd = [CLANG, "--target=riscv32-unknown-elf"] + CFLAGS + ["-c", src_file, "-o", obj]
+        cmd = [CLANG, "--target=riscv32-unknown-elf"] + cflags + ["-c", src_file, "-o", obj]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             print(f"  FAIL (clang asm):\n{r.stderr}")
             return False
         # xpack gcc 链接 .o → elf (复用 libgcc + BD32 link.ld)
-        cmd = [CC] + CFLAGS + ["-T", LD_SCRIPT, obj, "-lgcc", "-o", elf]
+        cmd = [CC] + cflags + ["-T", LD_SCRIPT, obj, "-lgcc", "-o", elf]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             print(f"  FAIL (gcc link):\n{r.stderr}")
             return False
     else:
         # 默认: gcc 一步编译+链接
-        cmd = [CC] + CFLAGS + LDFLAGS + ["-o", elf, src_file]
+        cmd = [CC] + cflags + LDFLAGS + ["-o", elf, src_file]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             print(f"  FAIL:\n{r.stderr}")
@@ -153,9 +157,14 @@ um_tests = ["div", "divu", "mul", "mulh", "mulhsu", "mulhu", "rem", "remu"]
 for t in um_tests:
     tests.append(("rv32um-p-" + t, os.path.join(ISA_SRC, "rv32um", t + ".S")))
 
+uc_tests = ["rvc"]
+for t in uc_tests:
+    tests.append(("rv32uc-p-" + t, os.path.join(ISA_SRC, "rv32uc", t + ".S")))
+
 ok, fail = 0, 0
 for name, src in tests:
-    if compile_test(name, src, useclang=USE_CLANG):
+    cflags = UC_CFLAGS if name.startswith("rv32uc") else CFLAGS
+    if compile_test(name, src, useclang=USE_CLANG, cflags=cflags):
         ok += 1
     else:
         fail += 1

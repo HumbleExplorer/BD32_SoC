@@ -13,6 +13,7 @@
 | `--newlib` | 链接 newlib-nano（支持 printf/malloc） |
 | `--no-bin` | 跳过 .mem/.uartbin 生成 |
 | `--opt O2` | 优化等级（默认 Os） |
+| `--rvc` | 启用 C 压缩指令扩展（`-march=rv32imc_zicsr`；需 RTL 支持 RV32C，`rv32uc-p-rvc` 已通过） |
 | `--clang` | 用 Clang 做前端代码生成（链接仍走 GCC） |
 | `--clang-extra "..."` | 只传给 Clang .c 编译的附加参数（如 `-mllvm -enable-machine-outliner=0`；不会污染 GCC 汇编步骤） |
 | `--ld-extra "..."` | 只传给链接阶段的附加参数（如 `-Wl,--icf=all`） |

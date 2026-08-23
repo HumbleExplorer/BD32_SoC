@@ -30,7 +30,7 @@ module ID_EX #(
     input   logic   [DATA_WIDTH-1:0]        alu_op2_fwd_i,
     input   logic                           fwd_b_hit_i,
     input   logic   [ADDR_WIDTH-1:0]        jump_imm_i,
-    input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4_i,
+    input   logic   [ADDR_WIDTH-1:0]        inst_addr_plus_len_i,   // PC+指令长度（压缩+2/普通+4）
     input   logic   [REG_ADDR_WIDTH-1:0]    reg_rs1_raddr_i,
     input   logic   [REG_ADDR_WIDTH-1:0]    reg_rs2_raddr_i,
     input   logic                           access_en_i,
@@ -54,7 +54,7 @@ module ID_EX #(
     output  logic   [DATA_WIDTH-1:0]        imm_o,
     output  logic   [DATA_WIDTH-1:0]        reg_rs2_rdata_o,
     output  logic   [ADDR_WIDTH-1:0]        jump_imm_o,
-    output  logic   [ADDR_WIDTH-1:0]        inst_addr_plus_4_o,
+    output  logic   [ADDR_WIDTH-1:0]        inst_addr_plus_len_o,
     output  logic                           access_en_o,
     output  logic                           access_wr_o,
     output  logic                           csr_en_o,
@@ -89,7 +89,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         imm_o           <= #1 'h0;
         reg_rs2_rdata_o <= #1 'h0;
         jump_imm_o      <= #1 'h0;
-        inst_addr_plus_4_o <= #1 'h0;
+    inst_addr_plus_len_o <= #1 'h0;
         access_en_o     <= #1 1'b0;
         access_wr_o     <= #1 1'b0;
         csr_en_o        <= #1 1'b0;
@@ -126,7 +126,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         imm_o           <= #1 imm_i;
         reg_rs2_rdata_o <= #1 reg_rs2_rdata_i;
         jump_imm_o      <= #1 jump_imm_i;
-        inst_addr_plus_4_o <= #1 inst_addr_plus_4_i;
+    inst_addr_plus_len_o <= #1 inst_addr_plus_len_i;
         access_en_o     <= #1 access_en_i;
         access_wr_o     <= #1 access_wr_i;
         csr_en_o        <= #1 csr_en_i;

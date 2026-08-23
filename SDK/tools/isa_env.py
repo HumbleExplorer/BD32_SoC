@@ -14,7 +14,7 @@ import os
 import shutil
 import sys
 
-ISA_SUBDIRS = ("rv32ui", "rv32um", "rv64ui", "macros")
+ISA_SUBDIRS = ("rv32ui", "rv32um", "rv32uc", "rv64uc", "rv64ui", "macros")
 
 
 def default_riscv_tests(repo_root):
