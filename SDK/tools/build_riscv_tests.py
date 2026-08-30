@@ -20,13 +20,13 @@ ENV_P       = os.path.join(SDK_ISA, "env", "p")
 OUT_DIR     = os.path.join(REPO_ROOT, "test_data", "riscv-tests")
 LD_SCRIPT   = os.path.join(ENV_P, "link.ld")
 
-_TC = os.environ.get("RISCV_TOOLCHAIN", r"D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin")
+_TC = os.environ.get("RISCV_TOOLCHAIN", r"D:/IC_Design_Toolkit/xpack-riscv-none-elf-gcc-15.2.0-1/bin")
 CC      = os.path.join(_TC, "riscv-none-elf-gcc")
 OBJCOPY = os.path.join(_TC, "riscv-none-elf-objcopy")
 OBJDUMP = os.path.join(_TC, "riscv-none-elf-objdump")
 
 # 官方 LLVM / Clang (--clang 时用于汇编 riscv-tests 的 .S，链接仍用 xpack gcc)
-LLVM_BIN = os.environ.get("LLVM_BIN", r"D:/RISCV_Tool/llvm-22.1.8/bin")
+LLVM_BIN = os.environ.get("LLVM_BIN", r"D:/IC_Design_Toolkit/llvm-22.1.8/bin")
 CLANG    = os.path.join(LLVM_BIN, "clang")
 # 命令行带 --clang 时启用 LLVM 汇编；否则完全保持原有 gcc 行为
 USE_CLANG = "--clang" in sys.argv

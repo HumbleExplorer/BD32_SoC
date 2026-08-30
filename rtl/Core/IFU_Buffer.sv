@@ -5,7 +5,7 @@ timeprecision 1ps;
 // =============================================================================
 // IFU_Buffer — 取指缓冲 + 16/32 位指令装配 + RVC 展开（替代 PC_counter）
 // -----------------------------------------------------------------------------
-// 方案二（单字 32 位寄存器）：
+// 方案（单字 32 位寄存器）：
 //   - 取指按"字流"顺序进行（fetch_addr 每周期 +4，请求字对齐地址），
 //   - 装配器按 pc_asm[1] 与指令长度编码从 {cur_w, w_new} 中切 16/32 位指令，
 //     跨字 32 位指令 = {cur_w[31:16], w_new[15:0]}（w_new 为下一字，稳态下零停顿），
@@ -197,10 +197,16 @@ module IFU_Buffer #(
                 cur_w      <= w_new;
                 cur_w_addr <= req_addr;
                 have_cur   <= 1'b1;
-              end else begin
-                // 下一字未到（被抢占/首字），等待补齐：fetch_addr 指向新 pc_asm 所在字
+              end else if (have_cur) begin
+                // 16 位流第二拍（have_cur=1）：下一个字未到（被抢占/首字），
+                // 等待补齐：fetch_addr 指回新 pc_asm 所在字重新请求
                 have_cur   <= 1'b0;
                 fetch_addr <= {((pc_asm + inst_len) >> 2), 2'b00};
+              end else begin
+                // 普通 32 位指令出完（have_cur=0）：外层已把 fetch_addr +4
+                // （= 新 pc_asm 的下一字，领先一拍预取），不要再回拨，
+                // 否则下一字被重复请求、每两条指令白等一拍（coremark 22%）。
+                have_cur <= 1'b0;
               end
             end else if (refill_now) begin
               // 16 位偶数半字指令从 w_new 直接出：另一半字仍在 w_new 中，锁存

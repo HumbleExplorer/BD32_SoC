@@ -12,7 +12,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-TC="/d/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin"
+TC="/d/IC_Design_Toolkit/xpack-riscv-none-elf-gcc-15.2.0-1/bin"
 GCC="$TC/riscv-none-elf-gcc"
 OBJCOPY="$TC/riscv-none-elf-objcopy"
 OBJDUMP="$TC/riscv-none-elf-objdump"

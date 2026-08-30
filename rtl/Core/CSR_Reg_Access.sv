@@ -200,8 +200,22 @@ logic int_trap_jump_n;
 // 中断锁存必须同时满足：当前周期真实 pending（int_trap=1，保证 mcause_n 有效）。
 // 仅 int_waiting_jump 残留（如 tick 已处理、mip 已清）时不得触发，
 // 否则 mcause_n 落到默认 0，中断被误锁存成同步异常（mret 后尤为常见）。
+// mret 后屏蔽中断 N 拍：mret 执行后流水线需要几拍（RVC 16 位取指延迟更明显）
+// 才能让 IF/ID 反映 mret 目标地址。若 mret 后立即允许中断进入，
+// mepc <= next_inst_addr 会取到 IF/ID 里残留的 mret 顺延地址（fall-through），
+// 恢复后跳错（如 0x101cc -> light_external 死循环）。
+logic [2:0] mret_gap_cnt;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)
+        mret_gap_cnt <= #1 3'd0;
+    else if (mret_req)
+        mret_gap_cnt <= #1 3'd4;
+    else if (mret_gap_cnt > 3'd0)
+        mret_gap_cnt <= #1 mret_gap_cnt - 3'd1;
+end
 assign int_trap_jump_n = (int_waiting_jump | int_trap) && int_trap
-                       && (bus_ready && ~oitf_stall) && ~int_trap_jump && ~mret_req && ~mret_done;
+                       && (bus_ready && ~oitf_stall) && ~int_trap_jump
+                       && (mret_gap_cnt == 3'd0);
 
 // mret 完成后的第一拍，IF/ID 流水线尚未反映 mret 跳转目标，
 // next_inst_addr 仍可能是 mret 指令的下一条（旧流水线地址）。

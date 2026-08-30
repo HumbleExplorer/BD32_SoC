@@ -39,9 +39,6 @@ rt_hw_context_switch_to:
 
     lw      sp, 0(a0)
 
-    lw      a0,   2*4(sp)
-    csrw    mstatus, a0
-
     j       _thread_exit
 
 /*
@@ -107,9 +104,14 @@ _thread_exit:
 
     lw      x1,   1*4(sp)
 
-    li      t0, 0x1800
-    csrw    mstatus, t0
+    /* 恢复 mstatus：只设 MPP=11 和 MPIE（帧[2] 的位7），保持 MIE=0。
+     * 若在此前就把 MIE 置 1，恢复 GPR（x4..x31）的 ~28 拍窗口会被
+     * pending 中断嵌套打断，覆盖 mepc、破坏线程上下文。
+     * mret 会自行执行 MIE<-MPIE，正确恢复线程的中断使能状态。 */
     lw      t0,   2*4(sp)
+    li      t1, 0x1800
+    csrw    mstatus, t1
+    andi    t0, t0, 0x80
     csrs    mstatus, t0
 
     lw      x4,   4*4(sp)

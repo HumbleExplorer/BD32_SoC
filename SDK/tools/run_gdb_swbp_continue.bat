@@ -8,7 +8,7 @@ rem            S3 direct continue from hw bp hit (main -> uart_puts)
 rem Result: logs\gdb_swbp_continue_result.txt
 rem ============================================================================
 cd /d %~dp0..\..
-if not defined RISCV_GDB set RISCV_GDB=D:\RISCV_Tool\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gdb.exe
+if not defined RISCV_GDB set RISCV_GDB=D:\IC_Design_Toolkit\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gdb.exe
 mkdir logs 2>nul
 taskkill /f /im openocd.exe 2>nul
 "%RISCV_GDB%" -batch -x SDK\tools\bd32_swbp_continue_test.gdb > logs\gdb_swbp_continue_result.txt 2>&1

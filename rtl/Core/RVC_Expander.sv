@@ -5,7 +5,8 @@ timeprecision 1ps;
 // =============================================================================
 // RVC_Expander — RV32C 压缩指令 -> RV32I 等价指令（纯组合展开）
 // -----------------------------------------------------------------------------
-// 支持完整 RV32IMC 压缩指令集（无 F/D、无 RV64 指令、无 Zcb/Zcmp 子扩展）。
+// 支持完整 RV32IMC 压缩指令集 + Zcb 子扩展（无 F/D、无 RV64 指令、无 Zcmp/Zcmt；
+// Zcb 的 c.zext.h/c.sext.b/c.sext.h 展开目标为 Zbb 指令，需 Zbb 已实现）。
 // 保留编码输出 illegal_o=1；HINT 编码（rd=x0 等）统一展开为 NOP（INST_NOP）。
 // 编码位域与 RISC-V Unprivileged Spec / Ibex ibex_compressed_decoder 对照。
 // 关键点：
@@ -63,9 +64,42 @@ module RVC_Expander (
                       2'b00, 7'b0100011};
           end
           3'b100: begin
-            // C0 的 3'b100 在 RV32C 中无 MISC-ALU（MISC-ALU 在 C1）；
-            // 本象限 3'b100 为保留编码（Zcb 未启用）→ 非法
-            illegal_o = 1'b1;
+            // Zcb 压缩字节/半字 load/store（C0 象限 [15:13]=100）。
+            // 立即数位域：uimm[1:0] = {inst[5], inst[6]}；半字指令 uimm[0] 恒 0，
+            //   且 inst[6] 有语义（lhu/lh 之分，sh 的 inst[6]=1 为保留）。
+            unique case (rvc_inst[12:10])
+              3'b000: begin
+                // C.LBU -> lbu rd', uimm(rs1')（funct3=100，零扩展）
+                inst_o = {10'b0, rvc_inst[5], rvc_inst[6], 2'b01, rs1_c,
+                          3'b100, 2'b01, rd_c, 7'b0000011};
+              end
+              3'b001: begin
+                if (rvc_inst[6] == 1'b0) begin
+                  // C.LHU -> lhu rd', uimm(rs1')（funct3=101，uimm={inst[5],0}）
+                  inst_o = {10'b0, rvc_inst[5], 1'b0, 2'b01, rs1_c,
+                            3'b101, 2'b01, rd_c, 7'b0000011};
+                end else begin
+                  // C.LH -> lh rd', uimm(rs1')（funct3=001，有符号半字）
+                  inst_o = {10'b0, rvc_inst[5], 1'b0, 2'b01, rs1_c,
+                            3'b001, 2'b01, rd_c, 7'b0000011};
+                end
+              end
+              3'b010: begin
+                // C.SB -> sb rs2', uimm(rs1')（funct3=000）
+                inst_o = {7'b0, 2'b01, rs2_c, 2'b01, rs1_c, 3'b000,
+                          3'b0, rvc_inst[5], rvc_inst[6], 7'b0100011};
+              end
+              3'b011: begin
+                if (rvc_inst[6] == 1'b0) begin
+                  // C.SH -> sh rs2', uimm(rs1')（funct3=001，uimm={inst[5],0}）
+                  inst_o = {7'b0, 2'b01, rs2_c, 2'b01, rs1_c, 3'b001,
+                            3'b0, rvc_inst[5], 1'b0, 7'b0100011};
+                end else begin
+                  illegal_o = 1'b1;   // inst[6]=1 为保留编码
+                end
+              end
+              default: illegal_o = 1'b1;   // 其余 C0 3'b100 编码保留
+            endcase
           end
           default: illegal_o = 1'b1;   // C.FLD/C.LD/C.FSD/C.SD（无 F/非 RV64）
         endcase
@@ -134,6 +168,44 @@ module RVC_Expander (
                                     2'b01, rs1_c, 7'b0110011};
                   3'b011: inst_o = {7'b0, 2'b01, rs2_c, 2'b01, rs1_c, 3'b111,
                                     2'b01, rs1_c, 7'b0110011};
+                  3'b110: begin
+                    // C.MUL（Zcb）-> mul rd', rd', rs2'（需 M 扩展）
+                    inst_o = {7'b0000001, 2'b01, rs2_c, 2'b01, rs1_c, 3'b000,
+                              2'b01, rs1_c, 7'b0110011};
+                  end
+                  3'b111: begin
+                    // Zcb 寄存器-立即数运算（rd'=inst[4:2] 区分）：
+                    //   000=C.ZEXT.B  001=C.SEXT.B  010=C.ZEXT.H
+                    //   011=C.SEXT.H  100=C.ZEXT.W(RV64)  101=C.NOT
+                    unique case (rd_c)
+                      3'b000: begin
+                        // C.ZEXT.B -> andi rd', rd', 0xff
+                        inst_o = {4'b0, 8'hff, 2'b01, rs1_c, 3'b111,
+                                  2'b01, rs1_c, 7'b0010011};
+                      end
+                      3'b001: begin
+                        // C.SEXT.B -> sext.b rd', rd'（Zbb）
+                        inst_o = {7'b0110000, 5'b00100, 2'b01, rs1_c, 3'b001,
+                                  2'b01, rs1_c, 7'b0010011};
+                      end
+                      3'b010: begin
+                        // C.ZEXT.H -> zext.h rd', rd'（Zbb）
+                        inst_o = {7'b0000100, 5'b0, 2'b01, rs1_c, 3'b100,
+                                  2'b01, rs1_c, 7'b0110011};
+                      end
+                      3'b011: begin
+                        // C.SEXT.H -> sext.h rd', rd'（Zbb）
+                        inst_o = {7'b0110000, 5'b00101, 2'b01, rs1_c, 3'b001,
+                                  2'b01, rs1_c, 7'b0010011};
+                      end
+                      3'b101: begin
+                        // C.NOT -> xori rd', rd', -1
+                        inst_o = {12'hfff, 2'b01, rs1_c, 3'b100,
+                                  2'b01, rs1_c, 7'b0010011};
+                      end
+                      default: illegal_o = 1'b1;   // C.ZEXT.W 仅 RV64
+                    endcase
+                  end
                   default: illegal_o = 1'b1;
                 endcase
               end

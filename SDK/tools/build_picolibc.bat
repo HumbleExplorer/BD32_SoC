@@ -34,7 +34,7 @@ if "%VARIANT%"=="i" (
 )
 set "BUILD=%SRC%\build-bd32"
 set "CROSS=%TOOLS%picolibc-cross-rv32im.txt"
-set "TOOLCHAIN=D:\RISCV_Tool\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
+set "TOOLCHAIN=D:\IC_Design_Toolkit\xpack-riscv-none-elf-gcc-15.2.0-1\bin"
 
 if not exist "%SRC%\meson.build" (
   echo [ERROR] picolibc source not found: %SRC%

@@ -26,8 +26,8 @@ SW_handler:
     addi sp, sp, -32 * 4
     sw   x5,   5 * 4(sp)
     sw   x1,   1 * 4(sp)
-    /* Mandatory set the MPIE of mstatus */
-    li   t0,   0x80
+    /* 保存真实 mstatus（含 MPIE）：恢复时据此正确还原线程中断使能 */
+    csrr t0,   mstatus
     sw   t0,   2 * 4(sp)
     sw   x4,   4 * 4(sp)
     sw   x6,   6 * 4(sp)
@@ -91,10 +91,13 @@ SW_handler:
 1:
     lw    x1,   1 * 4(sp)
 
-    /* Set the mode after MRET */
-    li    t0, 0x1800
-    csrs  mstatus, t0
+    /* 恢复 mstatus：只设 MPP=11 和 MPIE（帧[2] 位7），保持 MIE=0，
+     * 避免恢复 GPR 期间被 pending 中断嵌套打断（覆盖 mepc）。
+     * mret 自行执行 MIE<-MPIE。 */
     lw    t0,   2 * 4(sp)
+    li    t1, 0x1800
+    csrw  mstatus, t1
+    andi  t0, t0, 0x80
     csrs  mstatus, t0
 
     lw    x4,   4 * 4(sp)

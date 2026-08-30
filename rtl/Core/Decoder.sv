@@ -96,7 +96,9 @@ always_comb begin
     inst_type = 3'd0;
     case(opcode)
         `INST_TYPE_I:            inst_type = 3'd1;  // ALU
-        `INST_TYPE_R_M:          inst_type = func7[0] ? 3'd6 : 3'd1;  // MULDIV or ALU
+        // 仅 M 扩展（funct7=0000001）为 MULDIV；Zbb min/max 的 funct7=0000101
+        // bit0 也是 1，必须按 ALU 处理，否则会被 HPM 误计入乘法/除法计数
+        `INST_TYPE_R_M:          inst_type = (func7 == 7'b0000001) ? 3'd6 : 3'd1;
         `INST_TYPE_B:            inst_type = 3'd4;  // BRANCH
         `INST_TYPE_S:            inst_type = 3'd3;  // STORE
         `INST_TYPE_L:            inst_type = 3'd2;  // LOAD

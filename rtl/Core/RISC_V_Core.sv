@@ -943,12 +943,21 @@ Executer #(
     .branch_predict_success(branch_predict_success_ex)
 );
 logic branch_taken_r;
-logic branch_jump_addr_r;
+logic [ADDR_WIDTH-1:0] branch_jump_addr_r;
 always_ff @(posedge clk) begin
     branch_taken_r <= branch_taken_ex;
     branch_jump_addr_r <= branch_jump_addr_ex;
 end
-assign next_inst_addr = branch_taken_ex ? branch_target_ex : branch_taken_r ? branch_jump_addr_ex : inst_addr_id;
+// 中断保存 mepc 时恢复点选取：
+//   1) 本拍 EX 有 taken 分支（branch_taken_ex=1）→ 用其跳转目标 branch_target_ex；
+//   2) 上一拍 EX 有 taken 分支、本拍该分支已离开 EX/被冲刷（如 ret/jalr 在 EX 停留
+//      两拍、c.j 后 fetch_wait）→ 必须用寄存一拍的 branch_jump_addr_r。本拍组合值
+//      branch_jump_addr_ex 会随 branch_taken 清零退化成 inst_addr_plus_len（顺延
+//      地址），branch_jump_addr_r 锁存的是分支真实目标，不受本拍冲刷影响；
+//   3) 否则取 ID 阶段指令地址 inst_addr_id。
+assign next_inst_addr = branch_taken_ex ? branch_target_ex
+                      : branch_taken_r ? branch_jump_addr_r
+                      : inst_addr_id;
 CSR_Reg_Access #(
     .ADDR_WIDTH     (ADDR_WIDTH),
     .DATA_WIDTH     (DATA_WIDTH),

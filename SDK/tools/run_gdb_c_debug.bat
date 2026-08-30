@@ -8,7 +8,7 @@ rem (-g debug info + -O0 so GDB can read local variables reliably).
 rem Result: logs\gdb_c_debug_result.txt, OpenOCD log logs\gdb_c_debug_ocd.log
 rem ============================================================================
 cd /d %~dp0..\..
-if not defined RISCV_GDB set RISCV_GDB=D:\RISCV_Tool\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gdb.exe
+if not defined RISCV_GDB set RISCV_GDB=D:\IC_Design_Toolkit\xpack-riscv-none-elf-gcc-15.2.0-1\bin\riscv-none-elf-gdb.exe
 mkdir logs 2>nul
 taskkill /f /im openocd.exe 2>nul
 echo [build] rebuilding breathing with --debug ...

@@ -1,0 +1,216 @@
+1|`include "./../SoC_Config.sv"
+2|`include "./../RV32_inst_Define.sv"
+3|timeunit 1ns;
+4|timeprecision 1ps;
+5|// =============================================================================
+6|// RVC_Expander 鈥� RV32C 鍘嬬缉鎸囦护 -> RV32I 绛変环鎸囦护锛堢函缁勫悎灞曞紑锛�
+7|// -----------------------------------------------------------------------------
+8|// 鏀�鎸佸畬鏁� RV32IMC 鍘嬬缉鎸囦护闆嗭紙鏃� F/D銆佹棤 RV64 鎸囦护銆佹棤 Zcb/Zcmp 瀛愭墿灞曪級銆�
+9|// 淇濈暀缂栫爜杈撳嚭 illegal_o=1锛汬INT 缂栫爜锛坮d=x0 绛夛級缁熶竴灞曞紑涓� NOP锛圛NST_NOP锛夈��
+10|// 缂栫爜浣嶅煙涓� RISC-V Unprivileged Spec / Ibex ibex_compressed_decoder 瀵圭収銆�
+11|// 鍏抽敭鐐癸細
+12|//   - C.JAL 浠呭湪 RV32 瀛樺湪锛堟�ゅ�勬寜 RV32 瀹炵幇锛夛紱
+13|//   - C.SLLI/C.SRLI/C.SRAI 鍦� RV32 涓� shamt[5] 蹇呴』涓� 0锛屽惁鍒欎繚鐣欙紱
+14|//   - 閾炬帴鍦板潃璇�涔夛紙C.JAL/C.JALR 鐨� pc+2锛夌敱娴佹按绾� is_compressed 鏍囧織澶勭悊锛�
+15|//     鏈�妯″潡鍙�璐熻矗鎸囦护缂栫爜灞曞紑銆�
+16|// =============================================================================
+17|module RVC_Expander (
+18|    input  logic [15:0] rvc_inst,   // 16 浣嶅帇缂╂寚浠わ紙浣� 16 浣嶏級
+19|    output logic [31:0] inst_o,     // 灞曞紑鍚庣殑 32 浣嶆寚浠�
+20|    output logic        illegal_o   // 淇濈暀缂栫爜锛堜繚鐣欐寚浠ゅ紓甯革級
+21|);
+22|
+23|  logic [2:0]  funct3;
+24|  logic [3:0]  funct4;
+25|  logic [2:0]  funct2;
+26|  logic [4:0]  rs1, rs2, rd, shamt;
+27|  logic [2:0]  rs1_c, rs2_c, rd_c;
+28|
+29|  assign funct3 = rvc_inst[15:13];
+30|  assign funct4 = rvc_inst[15:12];
+31|  assign funct2 = rvc_inst[6:5];
+32|  assign rs1    = rvc_inst[11:7];
+33|  assign rs2    = rvc_inst[6:2];
+34|  assign rd     = rvc_inst[11:7];
+35|  assign shamt  = rvc_inst[6:2];
+36|  assign rs1_c  = rvc_inst[9:7];
+37|  assign rs2_c  = rvc_inst[4:2];
+38|  assign rd_c   = rvc_inst[4:2];
+39|
+40|  always_comb begin
+41|    inst_o    = {16'b0, rvc_inst};          // 榛樿�わ細鍘熸牱锛堥潪娉曡矾寰勫厹搴曪級
+42|    illegal_o = 1'b0;
+43|
+44|    unique case (rvc_inst[1:0])
+45|      // ================= 璞￠檺 0锛圕IW/CL/CSS锛�=================
+46|      2'b00: begin
+47|        unique case (funct3)
+48|          3'b000: begin
+49|            // C.ADDI4SPN -> addi rd', x2, nzuimm[9:2]锛坣zuimm=0 淇濈暀锛�
+50|            inst_o = {2'b0, rvc_inst[10:7], rvc_inst[12:11], rvc_inst[5],
+51|                      rvc_inst[6], 2'b00, 5'h02, 3'b000, 2'b01, rd_c, 7'b0010011};
+52|            if (rvc_inst[12:5] == 8'b0) illegal_o = 1'b1;
+53|          end
+54|          3'b010: begin
+55|            // C.LW -> lw rd', imm(rs1')锛歶imm={i5,i12:10,i6}
+56|            inst_o = {5'b0, rvc_inst[5], rvc_inst[12:10], rvc_inst[6],
+57|                      2'b00, 2'b01, rs1_c, 3'b010, 2'b01, rd_c, 7'b0000011};
+58|          end
+59|          3'b110: begin
+60|            // C.SW -> sw rs2', imm(rs1')
+61|            inst_o = {5'b0, rvc_inst[5], rvc_inst[12], 2'b01, rs2_c,
+62|                      2'b01, rs1_c, 3'b010, rvc_inst[11:10], rvc_inst[6],
+63|                      2'b00, 7'b0100011};
+64|          end
+65|          3'b100: begin
+66|            // C0 鐨� 3'b100 鍦� RV32C 涓�鏃� MISC-ALU锛圡ISC-ALU 鍦� C1锛夛紱
+67|            // 鏈�璞￠檺 3'b100 涓轰繚鐣欑紪鐮侊紙Zcb 鏈�鍚�鐢�锛夆啋 闈炴硶
+68|            illegal_o = 1'b1;
+69|          end
+70|          default: illegal_o = 1'b1;   // C.FLD/C.LD/C.FSD/C.SD锛堟棤 F/闈� RV64锛�
+71|        endcase
+72|      end
+73|
+74|      // ================= 璞￠檺 1锛圕I/CL/CS锛�=================
+75|      2'b01: begin
+76|        unique case (funct3)
+77|          3'b000: begin
+78|            // C.ADDI -> addi rd, rd, imm锛坮d=x0 涓� C.NOP/HINT -> NOP锛�
+79|            inst_o = {{6{rvc_inst[12]}}, rvc_inst[12], rvc_inst[6:2],
+80|                      rd, 3'b000, rd, 7'b0010011};
+81|            if (rd == 5'b0) inst_o = `INST_NOP;
+82|          end
+83|          3'b001: begin
+84|            // C.JAL锛堜粎 RV32锛�-> jal x1, offset
+85|            inst_o = {rvc_inst[12], rvc_inst[8], rvc_inst[10:9], rvc_inst[6],
+86|                      rvc_inst[7], rvc_inst[2], rvc_inst[11], rvc_inst[5:3],
+87|                      {9{rvc_inst[12]}}, 4'b0, ~rvc_inst[15], 7'b1101111};
+88|          end
+89|          3'b010: begin
+90|            // C.LI -> addi rd, x0, imm锛坮d=x0 涓� HINT -> NOP锛�
+91|            inst_o = {{6{rvc_inst[12]}}, rvc_inst[12], rvc_inst[6:2], 5'b0,
+92|                      3'b000, rd, 7'b0010011};
+93|            if (rd == 5'b0) inst_o = `INST_NOP;
+94|          end
+95|          3'b011: begin
+96|            // C.ADDI16SP锛坮d=x2锛�/ C.LUI锛堝叾浣欙紝rd=x0 涓� HINT -> NOP锛�
+97|            if (rd == 5'h02) begin
+98|              // C.ADDI16SP -> addi x2, x2, nzimm<<4锛坣zimm=0 淇濈暀锛�
+99|              inst_o = {{3{rvc_inst[12]}}, rvc_inst[4:3], rvc_inst[5], rvc_inst[2],
+100|                        rvc_inst[6], 4'b0, 5'h02, 3'b000, 5'h02, 7'b0010011};
+101|              if ({rvc_inst[12], rvc_inst[6:2]} == 6'b0) illegal_o = 1'b1;
+102|            end else begin
+103|              // C.LUI -> lui rd, imm
+104|              inst_o = {{15{rvc_inst[12]}}, rvc_inst[6:2], rd, 7'b0110111};
+105|              if (rd == 5'b0) inst_o = `INST_NOP;
+106|            end
+107|          end
+108|          3'b100: begin
+109|            // C.MISC-ALU锛圕1锛夛細鍖哄垎浣嶄负 inst[11:10]
+110|            //   00/01: C.SRLI/C.SRAI锛坕nst[10] 鍐冲畾 srli/srai锛宨nst[12]=1 淇濈暀锛�
+111|            //   10:    C.ANDI
+112|            //   11:    C.SUB/C.XOR/C.OR/C.AND锛坕nst[12]&[6:5] 鍖哄垎锛�
+113|            unique case (rvc_inst[11:10])
+114|              2'b00,
+115|              2'b01: begin
+116|                // C.SRLI锛坕nst[10]=0锛�/ C.SRAI锛坕nst[10]=1锛�
+117|                // rd'=rs1'={01,inst[9:7]}锛坸8-x15 鍘嬬缉缂栫爜锛�
+118|                inst_o = {1'b0, rvc_inst[10], 5'b0, shamt, 2'b01, rs1_c,
+119|                          3'b101, 2'b01, rs1_c, 7'b0010011};
+120|                if (rvc_inst[12] == 1'b1) illegal_o = 1'b1;
+121|              end
+122|              2'b10: begin
+123|                // C.ANDI锛圕1锛夛細rd'=rs1'={01,inst[9:7]}
+124|                inst_o = {{6{rvc_inst[12]}}, rvc_inst[12], rvc_inst[6:2], 2'b01, rs1_c,
+125|                          3'b111, 2'b01, rs1_c, 7'b0010011};
+126|              end
+127|              2'b11: begin
+128|                unique case ({rvc_inst[12], rvc_inst[6:5]})
+129|                  3'b000: inst_o = {2'b01, 5'b0, 2'b01, rs2_c, 2'b01, rs1_c,
+130|                                    3'b000, 2'b01, rs1_c, 7'b0110011};
+131|                  3'b001: inst_o = {7'b0, 2'b01, rs2_c, 2'b01, rs1_c, 3'b100,
+132|                                    2'b01, rs1_c, 7'b0110011};
+133|                  3'b010: inst_o = {7'b0, 2'b01, rs2_c, 2'b01, rs1_c, 3'b110,
+134|                                    2'b01, rs1_c, 7'b0110011};
+135|                  3'b011: inst_o = {7'b0, 2'b01, rs2_c, 2'b01, rs1_c, 3'b111,
+136|                                    2'b01, rs1_c, 7'b0110011};
+137|                  default: illegal_o = 1'b1;
+138|                endcase
+139|              end
+140|              default: illegal_o = 1'b1;
+141|            endcase
+142|          end
+143|          3'b101: begin
+144|            // C.J -> jal x0, offset
+145|            inst_o = {rvc_inst[12], rvc_inst[8], rvc_inst[10:9], rvc_inst[6],
+146|                      rvc_inst[7], rvc_inst[2], rvc_inst[11], rvc_inst[5:3],
+147|                      {9{rvc_inst[12]}}, 4'b0, ~rvc_inst[15], 7'b1101111};
+148|          end
+149|          3'b110, 3'b111: begin
+150|            // C.BEQZ / C.BNEZ -> beq/bne rs1', x0, offset
+151|            // funct3 浣� [14:12] = {2'b00, inst[13]}锛�110(BEQZ)->000锛�111(BNEZ)->001
+152|            inst_o = {{4{rvc_inst[12]}}, rvc_inst[6:5], rvc_inst[2], 5'b0, 2'b01,
+153|                      rs1_c, 2'b00, rvc_inst[13], rvc_inst[11:10], rvc_inst[4:3],
+154|                      rvc_inst[12], 7'b1100011};
+155|          end
+156|          default: illegal_o = 1'b1;
+157|        endcase
+158|      end
+159|
+160|      // ================= 璞￠檺 2锛圕I/CR锛�=================
+161|      2'b10: begin
+162|        unique case (funct3)
+163|          3'b000: begin
+164|            // C.SLLI -> slli rd, rd, shamt锛圧V32 shamt[5]=1 淇濈暀锛�
+165|            inst_o = {7'b0, shamt, rd, 3'b001, rd, 7'b0010011};
+166|            if (rvc_inst[12] == 1'b1) illegal_o = 1'b1;
+167|          end
+168|          3'b010: begin
+169|            // C.LWSP -> lw rd, imm(x2)锛坮d=x0 淇濈暀锛�
+170|            inst_o = {4'b0, rvc_inst[3:2], rvc_inst[12], rvc_inst[6:4], 2'b00,
+171|                      5'h02, 3'b010, rd, 7'b0000011};
+172|            if (rd == 5'b0) illegal_o = 1'b1;
+173|          end
+174|          3'b100: begin
+175|            // CR锛欳.JR / C.MV / C.EBREAK / C.JALR
+176|            if (rvc_inst[12] == 1'b0) begin
+177|              if (rs2 != 5'b0) begin
+178|                // C.MV -> add rd, x0, rs2锛坮d=x0 涓� HINT -> NOP锛�
+179|                inst_o = {7'b0, rs2, 5'b0, 3'b000, rd, 7'b0110011};
+180|                if (rd == 5'b0) inst_o = `INST_NOP;
+181|              end else begin
+182|                // C.JR -> jalr x0, rs1, 0锛坮s1=x0 淇濈暀锛�
+183|                inst_o = {12'b0, rs1, 3'b000, 5'b0, 7'b1100111};
+184|                if (rs1 == 5'b0) illegal_o = 1'b1;
+185|              end
+186|            end else begin
+187|              if (rs2 != 5'b0) begin
+188|                // C.ADD -> add rd, rd, rs2锛坮d=x0 涓� HINT -> NOP锛�
+189|                inst_o = {7'b0, rs2, rd, 3'b000, rd, 7'b0110011};
+190|                if (rd == 5'b0) inst_o = `INST_NOP;
+191|              end else begin
+192|                if (rs1 == 5'b0) begin
+193|                  // C.EBREAK -> ebreak
+194|                  inst_o = 32'h00100073;
+195|                end else begin
+196|                  // C.JALR -> jalr x1, rs1, 0
+197|                  inst_o = {12'b0, rs1, 3'b000, 5'b00001, 7'b1100111};
+198|                end
+199|              end
+200|            end
+201|          end
+202|          3'b110: begin
+203|            // C.SWSP -> sw rs2, imm(x2)
+204|            inst_o = {4'b0, rvc_inst[8:7], rvc_inst[12], rvc_inst[6:2],
+205|                      5'h02, 3'b010, rvc_inst[11:9], 2'b00, 7'b0100011};
+206|          end
+207|          default: illegal_o = 1'b1;   // C.LDSP/C.FLWSP/C.SDSP锛堥潪 RV64/鏃� F锛�
+208|        endcase
+209|      end
+210|
+211|      default: illegal_o = 1'b1;   // 32 浣嶆寚浠や笉搴旇繘鍏ユ湰妯″潡
+212|    endcase
+213|  end
+214|
+215|endmodule
+216|

@@ -14,13 +14,13 @@ LINKER   = os.path.join(BSP_DIR, "ld", "link.ld")
 STARTUP  = os.path.join(BSP_DIR, "startup", "start.S")
 
 # xPack RISC-V 工具链 (默认编译+链接都用它；--clang 时仅 .c 编译改用 clang)
-TOOLCHAIN = os.environ.get("RISCV_TOOLCHAIN", "D:/RISCV_Tool/xpack-riscv-none-elf-gcc-15.2.0-1/bin")
+TOOLCHAIN = os.environ.get("RISCV_TOOLCHAIN", "D:/IC_Design_Toolkit/xpack-riscv-none-elf-gcc-15.2.0-1/bin")
 CC       = os.path.join(TOOLCHAIN, "riscv-none-elf-gcc")
 OBJCOPY  = os.path.join(TOOLCHAIN, "riscv-none-elf-objcopy")
 OBJDUMP  = os.path.join(TOOLCHAIN, "riscv-none-elf-objdump")
 
 # 官方 LLVM / Clang (方案A: clang 做 rv32 .c 代码生成, 复用 xpack 的 newlib 头与 libgcc 链接)
-LLVM_BIN = os.environ.get("LLVM_BIN", "D:/RISCV_Tool/llvm-22.1.8/bin")
+LLVM_BIN = os.environ.get("LLVM_BIN", "D:/IC_Design_Toolkit/llvm-22.1.8/bin")
 CLANG    = os.path.join(LLVM_BIN, "clang")
 LDLLD    = os.path.join(LLVM_BIN, "ld.lld")     # --lld 链接器（支持 LTO + ICF）
 XPACK_ROOT = os.path.dirname(TOOLCHAIN)                 # .../xpack-riscv-none-elf-gcc-15.2.0-1
@@ -425,6 +425,10 @@ def main():
     p.add_argument("--clang", action="store_true", help="Use LLVM/clang for .c compilation (linking still via xpack gcc)")
     p.add_argument("--rvc", action="store_true",
                    help="启用 C 压缩指令扩展（-march=rv32imc；需 RTL 已支持 RV32C）")
+    p.add_argument("--zcb", action="store_true",
+                   help="启用 Zcb 压缩字节/半字子扩展（隐含 --rvc；-march=rv32imc_zcb_zicsr，需 RTL 已支持 Zcb）")
+    p.add_argument("--zbb", action="store_true",
+                   help="启用 Zba+Zbb+Zbs 位操作扩展（-march 追加 _zba_zbb_zbs，可与 --rvc/--zcb 组合）")
     p.add_argument("--opt", default="Os", help="Optimization (Os, O2, O3, etc.)")
     p.add_argument("--extra", default="", help="Extra GCC flags")
     p.add_argument("--clang-extra", default="",
@@ -439,13 +443,23 @@ def main():
         print("ERROR: --picolibc 与 --newlib 互斥")
         sys.exit(1)
 
-    # --rvc：启用 C 压缩指令扩展（march rv32im → rv32imc）
-    if args.rvc:
+    # --zcb 隐含 --rvc（Zcb 是压缩指令子集）
+    if args.zcb:
+        args.rvc = True
+
+    # --rvc/--zcb/--zbb：拼接 march（rv32im[ c][_zcb][_zba_zbb_zbs]_zicsr）
+    if args.rvc or args.zbb:
         global MARCH
-        MARCH = "rv32imc_zicsr"
+        base = "rv32imc" if args.rvc else "rv32im"
+        ext = []
+        if args.zcb:
+            ext.append("zcb")
+        if args.zbb:
+            ext.append("zba_zbb_zbs")
+        MARCH = base + ("_" + "_".join(ext) if ext else "") + "_zicsr"
         for _lst in (CFLAGS, LDFLAGS, NEWLIB_CFLAGS, NEWLIB_LDFLAGS):
             for _i, _s in enumerate(_lst):
-                _lst[_i] = _s.replace("rv32im_zicsr", "rv32imc_zicsr")
+                _lst[_i] = _s.replace("rv32im_zicsr", MARCH)
 
     # Apply optimization override
     opt_flag = "-" + args.opt
