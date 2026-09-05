@@ -33,6 +33,7 @@ module Pipeline_Ctrl #(
     input   logic                       sba_bus_active,    // SBA 外设总线访问中（halt 保持）
     input   logic                       mem_split_stall,   // MEM 级非对齐拆分访问进行中
     input   logic                       itcm_data_stall,   // EX 级访问 ITCM（单端口让路）
+    input   logic                       zcmp_busy,         // Zcmp 展开中（延迟调试事件到整条完成）
     // from Forward
     input   logic                       load_use_flag,
     // from EX
@@ -225,7 +226,8 @@ always_ff @(posedge clk or negedge rst_n) begin
             end
             STEP_DRAIN: begin
                 // 只在总线就绪且 OITF 无阻塞时计数
-                if (bus_ready && !oitf_stall)
+                // Zcmp 展开期间不计数（等整条指令完成）
+                if (bus_ready && !oitf_stall && !zcmp_busy)
                     step_drain_cnt <= step_drain_cnt + 3'd1;
                 // 6 拍：充足余量确保指令退休
                 if (step_drain_cnt >= 3'd6)
@@ -265,22 +267,60 @@ always_ff @(posedge clk or negedge rst_n) begin
     else                   resume_hold <= 1'b0;
 end
 
+// Zcmp 展开期间延迟 halt/硬件断点：cm.push 是"整条"语义，序列中途 halt 会破坏
+// SP 调整/ret 尾部原子性，且 dbg_halted 应在整条完成后再确认
+wire dbg_halt_eff = dbg_halt_req & ~zcmp_busy;
+wire trigger_eff  = trigger_match & ~zcmp_busy;
+
 // 高优先级 stall（仅依赖寄存器信号，路径极短）
-wire hp_stall = (dbg_halt_req | step_halt | trigger_match | ebreak_halt)
+wire hp_stall = (dbg_halt_eff | step_halt | trigger_eff | ebreak_halt)
               | (dbg_resume_pulse & dbg_step)
               | resume_hold
               | step_run_active
-              | (step_drain_active & step_drain_d)
+              | (step_drain_active & step_drain_d & ~zcmp_busy)
               | waiting_int;
 
 // 低优先级 stall（来自数据通路，但不再被 trap/branch 屏蔽）
 // 注意 ITCM 让路只停返回拍（itcm_data_stall_d）而非访问拍（itcm_data_stall）：
 // 访问拍 PC 照常前进，使 inst_addr 停在"被抢占的那条指令"上，返回拍再取回；
 // 若访问拍就停 PC，会把已被 IF_ID 取走的指令地址冻住，load-use 停顿顺路重读 → 重复执行
-wire lp_stall = oitf_stall | ~bus_ready | load_use_flag | mem_split_stall | itcm_data_stall_d;
+// Zcmp 展开期间 IFU 冻结、不取指，ITCM 让路无保护对象，跳过以避免插入 NOP 气泡
+wire lp_stall = oitf_stall | ~bus_ready | load_use_flag | mem_split_stall | (itcm_data_stall_d & ~zcmp_busy);
 
 // step_drain_release 期间强制释放 PC（覆盖 lp_stall）
 assign pc_stall = (hp_stall | lp_stall) & ~step_drain_release;
+
+// ==========================================================================
+// trap 重定向寄存器：异常/中断/mret 的 PC 跳转打一拍发出（分支仍为当拍组合重定向）
+// -----------------------------------------------------------------------------
+// 动机：trap_jump_addr 的组合锥（EX 访存译码→异常优先级→CSR trap 地址 mux）与
+// branch/前递链串联后直达 IFU pc→TCM BRAM 引脚，是全设计最长路径（逻辑 3.5ns+
+// 布线 10.6ns，物理共置也无法消除）。寄存一拍后：trap 当拍仍完成各级 flush 与
+// mepc/mcause 采样（语义不变），仅目标地址的取指重定向晚一拍——当拍多取的顺延
+// 指令由重定向拍的 if_id_flush 丢弃。trap 罕见，性能无感；分支路径不受影响。
+// 保持语义：r_trap_redirect 置位后保持到 ctrl_jump 实际发出（防止被 oitf_stall
+// 等低优先级分支吃掉导致跳转丢失）；resume/重新 halt 时清除（dpc 重装会取代它）。
+// ==========================================================================
+logic r_trap_redirect;
+logic [ADDR_WIDTH-1:0] r_trap_addr;
+logic r_trap_flush_mem;     // trap 源自 EX 级时，重定向拍需追加 EX_MEM 冲刷
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        r_trap_redirect <= 1'b0;
+        r_trap_addr     <= 'h0;
+        r_trap_flush_mem <= 1'b0;
+    end else if (trap_jump) begin
+        r_trap_redirect <= 1'b1;
+        r_trap_addr     <= trap_jump_addr;
+        r_trap_flush_mem <= (sel_stage >= 2'd2);
+    end else if (dbg_resume_pulse) begin
+        r_trap_redirect <= 1'b0;    // resume 重装 dpc，未发出的 trap 跳转作废
+        r_trap_flush_mem <= 1'b0;
+    end else if (r_trap_redirect) begin
+        r_trap_redirect <= ~ctrl_jump_en;   // 保持到实际发出跳转
+        r_trap_flush_mem <= r_trap_flush_mem & ~ctrl_jump_en;
+    end
+end
 
 // =========================================================================
 // 流水线 flush/stall + 跳转：保持优先级结构（无长时序路径问题）
@@ -300,7 +340,7 @@ always_comb begin
     mem_wb_stall    = 1'b0;
     mem_wb_flush    = 1'b0;
     ctrl_jump_addr  = `BOOT_BASE_TAG;
-    if (dbg_halt_req || step_halt || trigger_match) begin
+    if (dbg_halt_eff || step_halt || trigger_eff) begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
@@ -326,7 +366,8 @@ always_comb begin
         if_id_flush     = 1'b1;
         id_ex_flush     = 1'b1;
     end else if (step_drain_active) begin
-        if_id_flush     = step_drain_d;
+        // Zcmp 展开期间抑制排水冲刷（微操作由 IF_ID 保持/重派发）
+        if_id_flush     = step_drain_d & ~zcmp_busy;
         // During single-step drain, let the stepped instruction's own
         // effects redirect the PC:
         //  - trap (exception / mret): jump to mtvec/mepc and flush like
@@ -340,23 +381,35 @@ always_comb begin
             if_id_flush    = 1'b1;
             id_ex_flush    = (sel_stage >= 2'd1);
             ex_mem_flush   = (sel_stage >= 2'd2);
+            // ctrl_jump 由下一拍的 r_trap_redirect 分支发出（trap 重定向统一打一拍）
+        end else if (r_trap_redirect) begin
+            if_id_flush    = 1'b1;
+            id_ex_flush    = 1'b1;
+            ex_mem_flush   = 1'b1;
             ctrl_jump_en   = 1'b1;
-            ctrl_jump_addr = trap_jump_addr;
+            ctrl_jump_addr = r_trap_addr;
         end else if (branch_jump_en) begin
             ctrl_jump_en   = 1'b1;
             ctrl_jump_addr = branch_jump_addr;
         end
+    end else if (r_trap_redirect) begin
+        // 寄存后的 trap 重定向拍：当拍多取的顺延指令全部冲刷。
+        // 优先级高于 waiting_int/oitf_stall/branch 等分支，保证跳转不被吃掉。
+        if_id_flush     = 1'b1;
+        id_ex_flush     = 1'b1;
+        ex_mem_flush    = r_trap_flush_mem;
+        ctrl_jump_en    = 1'b1;
+        ctrl_jump_addr  = r_trap_addr;
     end else if (waiting_int) begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
         mem_wb_stall    = 1'b1;
     end else if(trap_jump) begin
+        // trap 当拍：仅完成冲刷（sel_stage 分级）与 CSR 采样；PC 跳转延迟一拍
         if_id_flush = 1'b1;
         id_ex_flush = (sel_stage >= 2'd1);
         ex_mem_flush = (sel_stage >= 2'd2);
-        ctrl_jump_en = 1'b1;
-        ctrl_jump_addr = trap_jump_addr;
     end else if (mem_split_stall) begin
         // 非对齐拆分访问：停 IF/ID/EX_MEM，保持 EX 级访存参数与 EX_MEM 中的 rd；
         // 不停 MEM_WB，保证 P3 合并拍能正常写回
@@ -373,7 +426,7 @@ always_comb begin
         id_ex_flush  = 1'b1;
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = branch_jump_addr;
-    end else if (itcm_data_stall_d) begin
+    end else if (itcm_data_stall_d & ~zcmp_busy) begin
         // ITCM 单端口：数据返回拍禁止 IF_ID 捕获（取指在访问拍已停 PC），并冲刷 ID_EX：
         // IF_ID 保持时 ID 内容若继续被派发会重复执行；冲刷后下拍再正常派发（仅一次）。
         // 不能用 id_ex_stall：会把刚派发还未离开 EX 的长指令冻在 EX，
@@ -394,6 +447,6 @@ end
 
 // Debug halted 确认：halt 请求有效（含 step 完成 / trigger 命中）+ OITF 排空 + 总线空闲
 // SBA 外设总线访问期间 bus_ready 为 0（总线忙），此时仍视为 halt 保持
-assign dbg_halted = (dbg_halt_req || step_halt || trigger_match || ebreak_halt) && !oitf_stall && (bus_ready || sba_bus_active);
+assign dbg_halted = (dbg_halt_eff || step_halt || trigger_eff || ebreak_halt) && !oitf_stall && (bus_ready || sba_bus_active);
 
 endmodule

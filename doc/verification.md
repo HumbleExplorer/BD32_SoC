@@ -10,7 +10,7 @@
 ```bash
 cd test_data/custom_asm
 python build_asm.py <test_name>    # 单个测试
-python build_asm.py all            # 全部 38 个测试
+python build_asm.py all            # 全部 44 个测试
 ```
 
 编译参数：`-march=rv32im -mabi=ilp32 -O0 -mno-relax -nostdlib -static`；产物 `.elf` / `.dump` / `.dat`（readmemh 字流）。
@@ -56,8 +56,8 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 
 | 套件 | 顶层 | 运行 | 判定 |
 |---|---|---|---|
-| custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 38/38 全过 |
-| riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 50/50 全过（含 fence_i / ma_data） |
+| custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 44/44 全过 |
+| riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 51/51 全过（含 fence_i / ma_data / rvc） |
 | Debug 模块 | tb_debug | `script/debug_test/run_msim_debug.bat` | 94 PASS / 0 FAIL |
 | 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过（PLIC 52 项） |
 | SoC | tb_soc_top | `script/run_soc_test.bat` | 默认程序启动输出无异常 |
@@ -73,8 +73,8 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
   ```bash
   cd script
   python run_one.py <test_name>              # 单个 custom_asm 测试
-  python run_all_custom_asm.py               # custom_asm 全回归（38 项）
-  python run_all_riscv_tests.py              # riscv-tests 回归（50 项）
+  python run_all_custom_asm.py               # custom_asm 全回归（44 项）
+  python run_all_riscv_tests.py              # riscv-tests 回归（51 项）
   ```
   判定约定：x26=1 完成、x27=1 通过、x3(gp) 记录失败子测试编号。riscv-tests 中 `rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过。
 

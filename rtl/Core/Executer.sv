@@ -310,6 +310,14 @@ always_comb begin
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
+            else if (func7 == 7'b0000111) begin//Zicond: CZERO.EQZ/CZERO.NEZ
+                reg_rd_wen        = 1'b1;
+                case (func3)
+                    `INST_SR:  reg_rd_wdata = (alu_op2 == 32'h0) ? 32'h0 : alu_op1;  // CZERO.EQZ: rs2==0 → rd=0
+                    `INST_AND: reg_rd_wdata = (alu_op2 != 32'h0) ? 32'h0 : alu_op1;  // CZERO.NEZ: rs2!=0 → rd=0
+                    default:   reg_rd_wdata = alu_op1;
+                endcase
+            end
             else if(func7 == 7'b0000001) begin//RV_M → 结果走 OITF，但 reg_rd_wen/waddr 仍输出
                 // reg_rd_wen        = 1'b1;
                 mul_div_en = ~id_ex_stall;//在停顿的最后一周期启动

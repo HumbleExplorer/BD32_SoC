@@ -111,6 +111,7 @@ logic                       id_illegal_inst;
 logic                       id_illegal_total;   // 含压缩保留编码
 logic                       illegal_inst_if;    // IFU 展开器报保留编码
 logic                       illegal_inst_id;
+logic [ADDR_WIDTH-1:0]      fetch_word_addr_if; // 取指返回字地址（IFU req_addr，供取指数据区选）
 logic                       id_ecall;
 logic                       id_ebreak;
 logic                       ex_access_illegal;
@@ -172,6 +173,7 @@ logic                       fetch_wait_if; // IFU 取指字未就绪（非 stall
 logic                       is_compressed_if;
 logic                       fetch_served;   // 本拍取指请求地址确实被存储器服务
 logic                       predict_taken_if;
+logic                       predict_taken_gated;  // IFU 门控后的预测（Zcmp 微操作不预测）
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
 
 
@@ -407,11 +409,76 @@ logic   [2:0]               inst_type_id;
 logic   [2:0]               inst_type_ex;
 logic   [2:0]               inst_type_mem;
 logic   [2:0]               inst_type_wb;
-logic   [2:0]               hpm_inst_type;
+logic   [3:0]               hpm_inst_type;
 logic                       hpm_mispredict;
+// Zcmp 微操作 last 标志（IF_ID→…→MEM_WB 打拍，用于展开完成/退休判定）
+logic                       zcmp_micro_last_if;
+logic                       zcmp_micro_last_id;
+logic                       zcmp_micro_last_ex;
+logic                       zcmp_micro_last_mem;
+logic                       zcmp_micro_last_wb;
+logic                       zcmp_flush_any;     // IF/ID/EX/MEM 级 flush（abort 展开）
+logic                       zcmp_last_retired;  // 最后一个微操作已在 WB 退休
+logic                       zcmp_micro_any_if, zcmp_micro_any_id, zcmp_micro_any_ex,
+                              zcmp_micro_any_mem, zcmp_micro_any_wb;
+logic                       zcb_tag_if, zcb_tag_id, zcb_tag_ex, zcb_tag_mem, zcb_tag_wb;
+logic                       hpm_count_ok;       // WB 架构指令有效（非 last 微操作不计）
+logic   [1:0]               hpm_ext;            // 扩展标签：0 基础 / 1 Zcb / 2 B / 3 Zcmp
+logic                       zcmp_busy;          // Zcmp 展开进行中（中断/调试屏蔽）
 assign hpm_mispredict = ~branch_predict_success_ex;
 assign hpm_valid = mem_wb_valid & ~mem_wb_stall;
-assign hpm_inst_type = inst_type_wb;
+// WB 级指令类别补全：Decoder 的 6 类（1 ALU/2 LOAD/3 STORE/4 BRANCH/5 JUMP/6 MULDIV）
+// 之外，把 SYSTEM opcode(0x73) 细分为 CSR(7) 与系统指令(8)，fence/fence.i(0x0F)
+// 归入系统(8)；其余沿用 Decoder 的 inst_type（0=OTHER 不计数）。
+function automatic logic [3:0] wb_inst_cat(input logic [31:0] i,
+                                          input logic [2:0]  dt);
+    if (i[6:0] == 7'b1110011)
+        wb_inst_cat = (i[14:12] == 3'b000) ? 4'd8 : 4'd7;   // SYSTEM/CSR
+    else if (i[6:0] == 7'b0001111)
+        wb_inst_cat = 4'd8;                                 // fence / fence.i
+    else
+        wb_inst_cat = {1'b0, dt};
+endfunction
+assign hpm_inst_type = wb_inst_cat(inst_wb, inst_type_wb);
+// 注意：不能包含 id_ex_flush——itcm 单端口让路 / load-use 机制的 id_ex_flush
+// 是"IF_ID 保持 + ID_EX 冲刷重派发"的正常流程，微操作会从 IF_ID 重新派发，
+// 不是真正的 abort；真正的 abort（分支重定向/陷阱/调试/总线冲刷）都会同时
+// 断言 if_id_flush 或 ex_mem_flush。
+assign zcmp_flush_any    = if_id_flush | ex_mem_flush | mem_wb_flush;
+assign zcmp_last_retired = zcmp_micro_last_wb & mem_wb_valid & ~mem_wb_stall;
+
+// WB 阶段架构指令计数有效：Zcmp 非 last 微操作不计入（cm.push 整条计 1）
+assign hpm_count_ok = ~zcmp_micro_any_wb | zcmp_micro_last_wb;
+
+// WB 阶段从 inst 现算 B 扩展标签（B 指令都是原生 32 位，未展开）
+function automatic logic b_ext_instr(input logic [31:0] i);
+    logic [6:0] op, f7;
+    logic [2:0] f3;
+    op = i[6:0]; f7 = i[31:25]; f3 = i[14:12];
+    if (op == 7'b0110011) begin
+        unique case (f7)
+            7'b0100000: b_ext_instr = (f3 == 3'b100 || f3 == 3'b110 || f3 == 3'b111); // xnor/orn/andn
+            7'b0000101, 7'b0010000, 7'b0110000, 7'b0010100, 7'b0100100, 7'b0110100:
+                b_ext_instr = 1'b1;   // min/max、sh*add、rol/ror、bset/orc.b、bclr/bext、binv
+            7'b0000100: b_ext_instr = (f3 == 3'b100);   // zext.h
+            default:    b_ext_instr = 1'b0;
+        endcase
+    end else if (op == 7'b0010011) begin
+        unique case (f7)
+            7'b0110000, 7'b0010100, 7'b0100100, 7'b0110100:
+                b_ext_instr = 1'b1;   // clz/ctz/cpop/sext.*、bseti、bclri/bexti、binvi/rev8
+            default:    b_ext_instr = 1'b0;
+        endcase
+    end else begin
+        b_ext_instr = 1'b0;
+    end
+endfunction
+
+assign hpm_ext = zcb_tag_wb        ? 2'd1 :
+                 zcmp_micro_any_wb ? 2'd3 :
+                 b_ext_instr(inst_wb) ? 2'd2 : 2'd0;
+
+
 
 
 
@@ -464,6 +531,7 @@ Pipeline_Ctrl #(
     .mem_wb_flush        	(mem_wb_flush         ),
     .mem_split_stall        (split_stall          ),
     .itcm_data_stall        (itcm_access_active   ),
+    .zcmp_busy              (zcmp_busy            ),
     .oitf_flush          	(oitf_flush           ),
     .exception_inst_addr 	(exception_inst_addr  ),
     .exception_trap      	(exception_trap       ),
@@ -548,26 +616,43 @@ IFU_Buffer #(
     .dbg_load_addr  (dbg_pc_wdata),
     .w_new          (inst),
     .fetch_served   (fetch_served),
+    .zcmp_flush_any_i   (zcmp_flush_any),
+    .zcmp_last_retired_i(zcmp_last_retired),
     .pc             (pc),               // 下一条指令地址，给 BootROM/ITCM 读地址
     .inst_o         (inst_if),
     .inst_valid_o   (inst_valid_if),
     .fetch_wait_o   (fetch_wait_if),
     .is_compressed_o(is_compressed_if),
     .illegal_inst_o (illegal_inst_if),
+    .zcmp_micro_last_o (zcmp_micro_last_if),
+    .zcmp_micro_any_o  (zcmp_micro_any_if),
+    .zcb_tag_o         (zcb_tag_if),
+    .zcmp_busy_o       (zcmp_busy),
+    .predict_taken_o   (predict_taken_gated),
     .if_addr_misalign (if_addr_misalign),
     .if_access_fault  (if_access_fault),
-    .inst_addr_o    (inst_addr_if)      // 当前指令地址，给流水线
+    .inst_addr_o    (inst_addr_if),     // 当前指令地址，给流水线
+    .fetch_word_addr_o (fetch_word_addr_if) // 返回字地址（req_addr），供取指数据区选
 );
 
-// 指令来源 MUX（选择信号基于取指请求地址 pc = 返回字对应的区域）
+// 指令来源 MUX：按"返回字所属请求地址"（fetch_word_addr = IFU req_addr，寄存器）选区。
+// 不能用 pc：重定向拍 pc 已组合指向新目标，而 w_new 仍是旧地址的返回数据（该拍
+// can_issue=0、IF_ID 被冲刷，数据本不被消费）；且 pc 依赖 EX 级 trap/branch 长组合链，
+// 由此形成 pc→区选→inst_raw→展开器→zcmp_capture→预测门控→pc 的组合逻辑环（LUTLP-1），
+// 并把 22ns 关键路径引入取指数据路径。req_addr 在出指令拍恒等于 pc（逐分支核对），
+// 行为不变；仅重定向拍的数据值不同（被冲刷，不可见）。
 logic [DATA_WIDTH-1:0]    bootrom_inst;
 logic [DATA_WIDTH-1:0]    itcm_inst;
 logic                     bootrom_sel;
 logic                     itcm_store_sel;
+logic                     bootrom_fetch_sel;  // 返回字区域：BootROM（inst 区选用）
+logic                     itcm_fetch_sel;     // 返回字区域：ITCM（inst 区选用）
 wire  [ADDR_WIDTH-1:0]    bootrom_rd_addr;   // BootROM read addr: sba_addr when SBA hits 0x0000 region
 
 assign bootrom_sel   = (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
 assign itcm_store_sel= (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
+assign bootrom_fetch_sel = (fetch_word_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
+assign itcm_fetch_sel    = (fetch_word_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
 
 BootROM #(
     .MROM_DEPTH     (`MROM_DEPTH),
@@ -724,13 +809,13 @@ ITCM #(
 
 // 指令选择：BootROM → ITCM → NOP（非本地地址，未来走总线取指时扩展）
 `ifdef XILINX
-assign inst = bootrom_sel ? bootrom_inst :
-              itcm_store_sel    ? itcm_inst    :
+assign inst = bootrom_fetch_sel ? bootrom_inst :
+              itcm_fetch_sel    ? itcm_inst    :
               `INST_NOP;
 `else
 // 若取出的指令含不定态 X，替换为 NOP 防止 X 传播
-assign inst = bootrom_sel ? ($isunknown(bootrom_inst) ? `INST_NOP : bootrom_inst) :
-              itcm_store_sel    ? ($isunknown(itcm_inst)    ? `INST_NOP : itcm_inst)    :
+assign inst = bootrom_fetch_sel ? ($isunknown(bootrom_inst) ? `INST_NOP : bootrom_inst) :
+              itcm_fetch_sel    ? ($isunknown(itcm_inst)    ? `INST_NOP : itcm_inst)    :
               `INST_NOP;
 `endif
 IF_ID #(
@@ -745,12 +830,18 @@ IF_ID #(
     .inst_i             (inst_if),
     .is_compressed_i    (is_compressed_if),
     .illegal_inst_i     (illegal_inst_if),
-    .predict_taken_i    (predict_taken_if),
+    .zcmp_micro_last_i  (zcmp_micro_last_if),
+    .zcmp_micro_any_i   (zcmp_micro_any_if),
+    .zcb_tag_i          (zcb_tag_if),
+    .predict_taken_i    (predict_taken_gated),
     .predict_target_i   (predict_target_if),
     .inst_addr_o        (inst_addr_id),
     .inst_o             (inst_id),
     .is_compressed_o    (is_compressed_id),
     .illegal_inst_o     (illegal_inst_id),
+    .zcmp_micro_last_o  (zcmp_micro_last_id),
+    .zcmp_micro_any_o   (zcmp_micro_any_id),
+    .zcb_tag_o          (zcb_tag_id),
     .predict_taken_o    (predict_taken_id),
     .predict_target_o   (predict_target_id),
 `ifdef DISPLAY_INST_WAVE
@@ -883,6 +974,12 @@ ID_EX #(
 `endif
     .inst_type_i    (inst_type_id),
     .inst_type_o    (inst_type_ex),
+    .zcmp_micro_last_i (zcmp_micro_last_id),
+    .zcmp_micro_last_o (zcmp_micro_last_ex),
+    .zcmp_micro_any_i  (zcmp_micro_any_id),
+    .zcmp_micro_any_o  (zcmp_micro_any_ex),
+    .zcb_tag_i         (zcb_tag_id),
+    .zcb_tag_o         (zcb_tag_ex),
     .valid_i        (if_id_valid),
     .valid_o        (id_ex_valid)
 );
@@ -948,15 +1045,37 @@ always_ff @(posedge clk) begin
     branch_taken_r <= branch_taken_ex;
     branch_jump_addr_r <= branch_jump_addr_ex;
 end
+// 分支目标保持：taken 分支重定向后，IFU 装配目标指令（跨字 32 位 / 重新取指）需要
+// 1~2 拍，期间 IF_ID 已被冲刷（if_id_valid=0），inst_addr_id 残留的是被冲掉的顺延
+// 指令地址。若中断恰好在这段窗口采样，mepc 会锁存残留地址（如 c.j 落回其顺延函数）。
+// branch_taken_r 只覆盖 1 拍，不足；这里把跳转目标保持到"目标指令真正进入 ID"再清除，
+// 使 mepc 采样始终能取到正确的恢复点。
+logic                       branch_taken_hold;
+logic [ADDR_WIDTH-1:0]      branch_target_hold;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        branch_taken_hold  <= 1'b0;
+        branch_target_hold <= 'h0;
+    end else if (branch_taken_ex) begin
+        branch_taken_hold  <= 1'b1;
+        branch_target_hold <= branch_target_ex;
+    end else if (if_id_valid) begin
+        // 目标（或其后继）已进入 ID，恢复点由 inst_addr_id 提供
+        branch_taken_hold  <= 1'b0;
+    end
+end
 // 中断保存 mepc 时恢复点选取：
 //   1) 本拍 EX 有 taken 分支（branch_taken_ex=1）→ 用其跳转目标 branch_target_ex；
 //   2) 上一拍 EX 有 taken 分支、本拍该分支已离开 EX/被冲刷（如 ret/jalr 在 EX 停留
 //      两拍、c.j 后 fetch_wait）→ 必须用寄存一拍的 branch_jump_addr_r。本拍组合值
 //      branch_jump_addr_ex 会随 branch_taken 清零退化成 inst_addr_plus_len（顺延
 //      地址），branch_jump_addr_r 锁存的是分支真实目标，不受本拍冲刷影响；
-//   3) 否则取 ID 阶段指令地址 inst_addr_id。
+//   3) 重定向后目标尚未进入 ID（跨字装配/重新取指窗口，IF_ID 无效）→ 用保持的
+//      branch_target_hold，避免锁存被冲刷掉的顺延指令地址；
+//   4) 否则取 ID 阶段指令地址 inst_addr_id。
 assign next_inst_addr = branch_taken_ex ? branch_target_ex
                       : branch_taken_r ? branch_jump_addr_r
+                      : branch_taken_hold ? branch_target_hold
                       : inst_addr_id;
 CSR_Reg_Access #(
     .ADDR_WIDTH     (ADDR_WIDTH),
@@ -991,6 +1110,9 @@ CSR_Reg_Access #(
     .hpm_valid          (hpm_valid          ),
     .hpm_inst_type      (hpm_inst_type      ),
     .hpm_mispredict     (hpm_mispredict),
+    .hpm_count_ok       (hpm_count_ok       ),
+    .hpm_ext            (hpm_ext            ),
+    .zcmp_busy          (zcmp_busy          ),
     // Debug CSR（Abstract 通用 CSR 读写）
     .dbg_csr_we         (dbg_csr_we         ),
     .dbg_csr_addr       (dbg_csr_addr       ),
@@ -1026,6 +1148,12 @@ EX_MEM #(
 `endif
     .inst_type_i    (inst_type_ex),
     .inst_type_o    (inst_type_mem),
+    .zcmp_micro_last_i (zcmp_micro_last_ex),
+    .zcmp_micro_last_o (zcmp_micro_last_mem),
+    .zcmp_micro_any_i  (zcmp_micro_any_ex),
+    .zcmp_micro_any_o  (zcmp_micro_any_mem),
+    .zcb_tag_i         (zcb_tag_ex),
+    .zcb_tag_o         (zcb_tag_mem),
     .valid_i        (id_ex_valid),
     .valid_o        (ex_mem_valid)
 );
@@ -1130,6 +1258,12 @@ MEM_WB #(
 `endif
     .inst_type_i    (inst_type_mem),
     .inst_type_o    (inst_type_wb),
+    .zcmp_micro_last_i (zcmp_micro_last_mem),
+    .zcmp_micro_last_o (zcmp_micro_last_wb),
+    .zcmp_micro_any_i  (zcmp_micro_any_mem),
+    .zcmp_micro_any_o  (zcmp_micro_any_wb),
+    .zcb_tag_i         (zcb_tag_mem),
+    .zcb_tag_o         (zcb_tag_wb),
     .valid_i        (ex_mem_valid),
     .valid_o        (mem_wb_valid)
 );

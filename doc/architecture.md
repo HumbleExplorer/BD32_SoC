@@ -2,7 +2,7 @@
 
 ## 概览
 
-BD32 是 32 位 RV32IMC 处理器，经典 5 级流水线（IF → ID → EX → MEM → WB），
+BD32 是 32 位 RV32IMC 处理器（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），经典 5 级流水线（IF → ID → EX → MEM → WB），
 配备深度 4 的 OITF（乱序退休 FIFO），让多周期乘除指令可与短指令并行执行、乱序写回。
 
 ```
@@ -31,7 +31,7 @@ BD32 是 32 位 RV32IMC 处理器，经典 5 级流水线（IF → ID → EX →
 - 寄存器堆双写端口：Port1（正常 WB）与 Port2（OITF 退休），同地址冲突时 Port2 优先；
   旁路读取优先级 Port2 > Port1 > 寄存器阵列。
 
-## 取指（IFU_Buffer + RVC 展开器）
+## 取指（IFU_Buffer + RVC/Zcmp 展开器）
 
 - **IFU_Buffer**：替代传统 PC_counter，负责 16/32 位指令装配。取指按字流推进，
   装配器按 `pc_asm[1]` 与指令长度编码从 `{cur_w, w_new}` 中切出 16/32 位指令；
@@ -42,10 +42,15 @@ BD32 是 32 位 RV32IMC 处理器，经典 5 级流水线（IF → ID → EX →
     （JAL/JALR 需流经流水线完成链接写回与 RAS 更新），`fetch_addr` 指向目标+4；
   - 取指字未就绪（非 stall/redirect）时输出 `fetch_wait`，由流水线控制保持 IF_ID
     并冲刷 ID_EX，避免 "NOP+地址" 错配对导致指令在 EX 变 NOP。
-- **RVC_Expander**：纯组合的 RV32C→RV32I 展开器（完整 RV32IMC，不含 F/D/Zcb/Zcmp；
-  保留编码置 illegal，hint 展开为 NOP）。压缩指令在 IF 阶段展开为 32 位等价指令，
-  Decoder/Executer 零改动；链接地址语义（C.JAL/C.JALR 的 pc+2）由流水线
-  `is_compressed` 标志处理（`inst_addr_plus_len = pc + (压缩 ? 2 : 4)`）。
+- **RVC_Expander**：纯组合的 RV32C→RV32I 展开器（完整 RV32IMC + Zcb：c.lbu/c.lhu/c.lh/c.sb/c.sh/
+  c.mul/c.zext.b/c.not 及依赖 Zbb 的 c.zext.h/c.sext.b/c.sext.h；不含 F/D；C2 象限的 Zcmp 编码
+  只做合法性识别，展开交给 Zcmp_Expander；保留编码置 illegal，hint 展开为 NOP）。
+  压缩指令在 IF 阶段展开为 32 位等价指令，Decoder/Executer 零改动；链接地址语义
+  （C.JAL/C.JALR 的 pc+2）由流水线 `is_compressed` 标志处理（`inst_addr_plus_len = pc + (压缩 ? 2 : 4)`）。
+- **Zcmp_Expander**：时钟 FSM（Ibex 路线），把 cm.push/cm.pop/cm.popret(z)/cm.mvsa01/cm.mva01s
+  逐拍展开为标准 lw/sw/addi/jalr 微操作流；展开期间冻结取指/装配并屏蔽中断、调试事件
+  （halt/断点以整条 Zcmp 指令为粒度），busy 保持到最后一个微操作 WB 退休，
+  HPM 按整条 1 条架构指令计数。
 - 分支预测器 BTB/RAS 按 16 位对齐索引（ALIGN_WIDTH=1）；RAS 压栈使用 EX 级计算好的
   实际链接地址（32 位 call +2 半字 / 16 位 call +1 半字），返回预测不会错位。
 
@@ -53,6 +58,8 @@ BD32 是 32 位 RV32IMC 处理器，经典 5 级流水线（IF → ID → EX →
 
 - 乘法：4 级流水基 4 Booth 乘法器（S0 输入+部分积 → S1 压缩 → S2 CLA+修正 → S3 输出；每拍可接受新输入）。
 - 除法：32 周期迭代恢复余数除法器。
+- 位操作（Zba/Zbb/Zbs）：全部单周期实现于 EX 级（andn/orn/xnor、min/max、sh1-3add、rol/ror、
+  clz/ctz/cpop、rev8/orc.b、单比特置位/清除/反转/提取及其立即数形式），走正常流水线不占用 OITF。
 
 ## 分支预测
 

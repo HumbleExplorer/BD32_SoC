@@ -431,7 +431,7 @@ initial begin
     dmi_write(ADDR_COMMAND, 32'h0022_C301);
     jtag_idle(10);
     dmi_read(ADDR_DATA0, rd_data);
-    check("misa readback", rd_data, 32'h4000_1100);
+    check("misa readback", rd_data, 32'h4000_1106);
     // 写 mtvec = 0x1234_5000 再读回
     dmi_write(ADDR_DATA0, 32'h1234_5000);
     dmi_write(ADDR_COMMAND, 32'h0023_C305);

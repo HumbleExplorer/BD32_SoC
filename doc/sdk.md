@@ -14,6 +14,9 @@
 | `--no-bin` | 跳过 .mem/.uartbin 生成 |
 | `--opt O2` | 优化等级（默认 Os） |
 | `--rvc` | 启用 C 压缩指令扩展（`-march=rv32imc_zicsr`；需 RTL 支持 RV32C，`rv32uc-p-rvc` 已通过） |
+| `--zcb` | 启用 Zcb 压缩字节/半字子扩展（隐含 --rvc；`-march=rv32imc_zcb_zicsr`，需 RTL 已支持 Zcb） |
+| `--zbb` | 启用 Zba+Zbb+Zbs 位操作扩展（`-march` 追加 `_zba_zbb_zbs`，可与 --rvc/--zcb/--zcmp 组合） |
+| `--zcmp` | 启用 Zcmp 压缩堆栈操作扩展（隐含 --rvc；`-march` 追加 `_zcmp`，可与 --zcb/--zbb 组合） |
 | `--clang` | 用 Clang 做前端代码生成（链接仍走 GCC） |
 | `--clang-extra "..."` | 只传给 Clang .c 编译的附加参数（如 `-mllvm -enable-machine-outliner=0`；不会污染 GCC 汇编步骤） |
 | `--ld-extra "..."` | 只传给链接阶段的附加参数（如 `-Wl,--icf=all`） |

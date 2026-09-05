@@ -329,7 +329,7 @@ always_comb    begin
             is_fence_i      = func3[0];
         end
         default: begin
-            invalid_inst = |inst;
+            invalid_inst = 1'b1;   // 未知 opcode 一律非法（含 32 位全 0，规范行为）
         end
     endcase 
 end

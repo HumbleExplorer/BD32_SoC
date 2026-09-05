@@ -429,6 +429,10 @@ def main():
                    help="启用 Zcb 压缩字节/半字子扩展（隐含 --rvc；-march=rv32imc_zcb_zicsr，需 RTL 已支持 Zcb）")
     p.add_argument("--zbb", action="store_true",
                    help="启用 Zba+Zbb+Zbs 位操作扩展（-march 追加 _zba_zbb_zbs，可与 --rvc/--zcb 组合）")
+    p.add_argument("--zcmp", action="store_true",
+                   help="启用 Zcmp 压缩堆栈操作扩展（隐含 --rvc；-march 追加 _zcmp，可与 --zcb/--zbb 组合）")
+    p.add_argument("--zicond", action="store_true",
+                   help="启用 Zicond 条目件零写扩展（-march 追加 _zicond，可与 --rvc/--zcb/--zbb/--zcmp 组合）")
     p.add_argument("--opt", default="Os", help="Optimization (Os, O2, O3, etc.)")
     p.add_argument("--extra", default="", help="Extra GCC flags")
     p.add_argument("--clang-extra", default="",
@@ -446,16 +450,23 @@ def main():
     # --zcb 隐含 --rvc（Zcb 是压缩指令子集）
     if args.zcb:
         args.rvc = True
+    # --zcmp 隐含 --rvc（Zcmp 是压缩指令子集）
+    if args.zcmp:
+        args.rvc = True
 
-    # --rvc/--zcb/--zbb：拼接 march（rv32im[ c][_zcb][_zba_zbb_zbs]_zicsr）
-    if args.rvc or args.zbb:
+    # --rvc/--zcb/--zbb/--zcmp：拼接 march（rv32im[ c][_zcb][_zcmp][_zba_zbb_zbs][_zicond]_zicsr）
+    if args.rvc or args.zbb or args.zicond:
         global MARCH
         base = "rv32imc" if args.rvc else "rv32im"
         ext = []
         if args.zcb:
             ext.append("zcb")
+        if args.zcmp:
+            ext.append("zcmp")
         if args.zbb:
             ext.append("zba_zbb_zbs")
+        if args.zicond:
+            ext.append("zicond")
         MARCH = base + ("_" + "_".join(ext) if ext else "") + "_zicsr"
         for _lst in (CFLAGS, LDFLAGS, NEWLIB_CFLAGS, NEWLIB_LDFLAGS):
             for _i, _s in enumerate(_lst):

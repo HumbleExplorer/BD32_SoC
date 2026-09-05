@@ -18,7 +18,9 @@ timeprecision 1ps;
 module RVC_Expander (
     input  logic [15:0] rvc_inst,   // 16 位压缩指令（低 16 位）
     output logic [31:0] inst_o,     // 展开后的 32 位指令
-    output logic        illegal_o   // 保留编码（保留指令异常）
+    output logic        illegal_o,  // 保留编码（保留指令异常）
+    output logic        zcmp_en_o,  // Zcmp 指令（由 Zcmp_Expander FSM 展开）
+    output logic        zcb_en_o    // Zcb 指令（HPM 扩展计数用）
 );
 
   logic [2:0]  funct3;
@@ -41,6 +43,8 @@ module RVC_Expander (
   always_comb begin
     inst_o    = {16'b0, rvc_inst};          // 默认：原样（非法路径兜底）
     illegal_o = 1'b0;
+    zcmp_en_o = 1'b0;
+    zcb_en_o  = 1'b0;
 
     unique case (rvc_inst[1:0])
       // ================= 象限 0（CIW/CL/CSS）=================
@@ -72,6 +76,7 @@ module RVC_Expander (
                 // C.LBU -> lbu rd', uimm(rs1')（funct3=100，零扩展）
                 inst_o = {10'b0, rvc_inst[5], rvc_inst[6], 2'b01, rs1_c,
                           3'b100, 2'b01, rd_c, 7'b0000011};
+                zcb_en_o = 1'b1;
               end
               3'b001: begin
                 if (rvc_inst[6] == 1'b0) begin
@@ -83,11 +88,13 @@ module RVC_Expander (
                   inst_o = {10'b0, rvc_inst[5], 1'b0, 2'b01, rs1_c,
                             3'b001, 2'b01, rd_c, 7'b0000011};
                 end
+                zcb_en_o = 1'b1;
               end
               3'b010: begin
                 // C.SB -> sb rs2', uimm(rs1')（funct3=000）
                 inst_o = {7'b0, 2'b01, rs2_c, 2'b01, rs1_c, 3'b000,
                           3'b0, rvc_inst[5], rvc_inst[6], 7'b0100011};
+                zcb_en_o = 1'b1;
               end
               3'b011: begin
                 if (rvc_inst[6] == 1'b0) begin
@@ -97,6 +104,7 @@ module RVC_Expander (
                 end else begin
                   illegal_o = 1'b1;   // inst[6]=1 为保留编码
                 end
+                zcb_en_o = 1'b1;
               end
               default: illegal_o = 1'b1;   // 其余 C0 3'b100 编码保留
             endcase
@@ -172,6 +180,7 @@ module RVC_Expander (
                     // C.MUL（Zcb）-> mul rd', rd', rs2'（需 M 扩展）
                     inst_o = {7'b0000001, 2'b01, rs2_c, 2'b01, rs1_c, 3'b000,
                               2'b01, rs1_c, 7'b0110011};
+                    zcb_en_o = 1'b1;
                   end
                   3'b111: begin
                     // Zcb 寄存器-立即数运算（rd'=inst[4:2] 区分）：
@@ -182,26 +191,31 @@ module RVC_Expander (
                         // C.ZEXT.B -> andi rd', rd', 0xff
                         inst_o = {4'b0, 8'hff, 2'b01, rs1_c, 3'b111,
                                   2'b01, rs1_c, 7'b0010011};
+                        zcb_en_o = 1'b1;
                       end
                       3'b001: begin
                         // C.SEXT.B -> sext.b rd', rd'（Zbb）
                         inst_o = {7'b0110000, 5'b00100, 2'b01, rs1_c, 3'b001,
                                   2'b01, rs1_c, 7'b0010011};
+                        zcb_en_o = 1'b1;
                       end
                       3'b010: begin
                         // C.ZEXT.H -> zext.h rd', rd'（Zbb）
                         inst_o = {7'b0000100, 5'b0, 2'b01, rs1_c, 3'b100,
                                   2'b01, rs1_c, 7'b0110011};
+                        zcb_en_o = 1'b1;
                       end
                       3'b011: begin
                         // C.SEXT.H -> sext.h rd', rd'（Zbb）
                         inst_o = {7'b0110000, 5'b00101, 2'b01, rs1_c, 3'b001,
                                   2'b01, rs1_c, 7'b0010011};
+                        zcb_en_o = 1'b1;
                       end
                       3'b101: begin
                         // C.NOT -> xori rd', rd', -1
                         inst_o = {12'hfff, 2'b01, rs1_c, 3'b100,
                                   2'b01, rs1_c, 7'b0010011};
+                        zcb_en_o = 1'b1;
                       end
                       default: illegal_o = 1'b1;   // C.ZEXT.W 仅 RV64
                     endcase
@@ -275,6 +289,29 @@ module RVC_Expander (
             // C.SWSP -> sw rs2, imm(x2)
             inst_o = {4'b0, rvc_inst[8:7], rvc_inst[12], rvc_inst[6:2],
                       5'h02, 3'b010, rvc_inst[11:9], 2'b00, 7'b0100011};
+          end
+          3'b101: begin
+            // Zcmp 压缩堆栈操作（C2 象限 [15:13]=101，与原保留的 C.FLDSP 空间重叠）。
+            // 编码（规范 28.9/28.13，GCC 15.2 实测一致）：
+            //   [12:8]=11000 cm.push / 11010 cm.pop / 11100 cm.popretz / 11110 cm.popret
+            //           rlist=[7:4]，spimm=[3:2]
+            //   [12:8]=011?? cm.mvsa01([6:5]=01) / cm.mva01s([6:5]=11)，rs1'=[9:7]，rs2'=[4:2]
+            // 展开由 Zcmp_Expander FSM 完成；这里只做合法性识别。
+            unique casez (rvc_inst[12:8])
+              5'b11000, 5'b11010, 5'b11100, 5'b11110: begin
+                if (rvc_inst[7:4] < 4'd4) illegal_o = 1'b1;   // rlist<4 保留
+                else                      zcmp_en_o = 1'b1;
+              end
+              5'b011??: begin
+                if (rvc_inst[6:5] == 2'b01 || rvc_inst[6:5] == 2'b11) begin
+                  if (rvc_inst[9:7] == rvc_inst[4:2]) illegal_o = 1'b1;  // r1s'==r2s' 保留
+                  else                                zcmp_en_o = 1'b1;
+                end else begin
+                  illegal_o = 1'b1;
+                end
+              end
+              default: illegal_o = 1'b1;
+            endcase
           end
           default: illegal_o = 1'b1;   // C.LDSP/C.FLWSP/C.SDSP（非 RV64/无 F）
         endcase

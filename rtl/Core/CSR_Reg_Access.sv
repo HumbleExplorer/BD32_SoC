@@ -46,8 +46,11 @@ module CSR_Reg_Access #(
     output  logic                           waiting_int,
 
     input   logic                           hpm_valid,
-    input   logic   [2:0]                   hpm_inst_type,
-    input   logic                           hpm_mispredict
+    input   logic   [3:0]                   hpm_inst_type,
+    input   logic                           hpm_mispredict,
+    input   logic                           hpm_count_ok,   // WB 架构指令有效（Zcmp 微操作排除）
+    input   logic   [1:0]                   hpm_ext,        // 扩展标签：0基础/1Zcb/2B/3Zcmp
+    input   logic                           zcmp_busy       // Zcmp 展开中（屏蔽中断）
 // to CLINT
 );
 
@@ -90,7 +93,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         minstret <= #1 'h0;
     else if(mcountinhibit[2])
         minstret <= #1 minstret;
-    else if (hpm_valid && mcounteren[2])
+    else if (hpm_valid && hpm_count_ok && mcounteren[2])
         minstret <= #1 minstret + 'h1;
 end
 
@@ -103,8 +106,14 @@ end
 //   mhp_counter7 (JUMP)     4
 //   mhp_counter8 (MULDIV)   5
 //   mhp_counter9 (MISPREDICT) 6
+//   mhp_counter10 (Zcb)       7
+//   mhp_counter11 (B 扩展)    8
+//   mhp_counter12 (Zcmp)      9
+//   mhp_counter13 (CSR)      10
+//   mhp_counter14 (SYSTEM)   11
 // WB 级指令类型: 0:OTHER 1:ALU 2:LOAD 3:STORE 4:BRANCH 5:JUMP 6:MULDIV
-logic   [2*DATA_WIDTH-1:0]  mhpmcounter[7];
+//               7:CSR 8:SYSTEM(ecall/ebreak/mret/wfi/fence)
+logic   [2*DATA_WIDTH-1:0]  mhpmcounter[12];
 
 generate
     genvar i;
@@ -119,7 +128,7 @@ generate
             else if(mcountinhibit[i+3]) begin
                 mhpmcounter[i] <= #1 mhpmcounter[i];
             end
-            else if (hpm_valid && mcounteren[i+3] && hpm_inst_type == i+1) begin
+            else if (hpm_valid && hpm_count_ok && mcounteren[i+3] && hpm_inst_type == i+1) begin
                 mhpmcounter[i] <= #1 mhpmcounter[i] + 'h1;
             end
         end
@@ -132,9 +141,43 @@ always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)                              mhpmcounter[6] <= #1 'h0;
     else if(mcounterclr[9])                 mhpmcounter[6] <= #1 'h0;
     else if(mcountinhibit[9])               mhpmcounter[6] <= #1 mhpmcounter[6];
-    else if(hpm_valid && mcounteren[9] && (hpm_inst_type == 3'd4 || hpm_inst_type == 3'd5) && hpm_mispredict)
+    else if(hpm_valid && hpm_count_ok && mcounteren[9] && (hpm_inst_type == 3'd4 || hpm_inst_type == 3'd5) && hpm_mispredict)
                                             mhpmcounter[6] <= #1 mhpmcounter[6] + 'h1;
 end
+
+
+// CSR 指令计数（mhp_counter13，CSR 0xBCD，控制位 13）
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                              mhpmcounter[10] <= #1 'h0;
+    else if(mcounterclr[13])                mhpmcounter[10] <= #1 'h0;
+    else if(mcountinhibit[13])              mhpmcounter[10] <= #1 mhpmcounter[10];
+    else if(hpm_valid && hpm_count_ok && mcounteren[13] && hpm_inst_type == 4'd7)
+                                            mhpmcounter[10] <= #1 mhpmcounter[10] + 'h1;
+end
+
+// 系统指令计数（mhp_counter14，CSR 0xBCE，控制位 14：ecall/ebreak/mret/wfi/fence）
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                              mhpmcounter[11] <= #1 'h0;
+    else if(mcounterclr[14])                mhpmcounter[11] <= #1 'h0;
+    else if(mcountinhibit[14])              mhpmcounter[11] <= #1 mhpmcounter[11];
+    else if(hpm_valid && hpm_count_ok && mcounteren[14] && hpm_inst_type == 4'd8)
+                                            mhpmcounter[11] <= #1 mhpmcounter[11] + 'h1;
+end
+
+
+// 每类扩展指令独立计数（mhp_counter10/11/12，受 mcounteren/inhibit/clr 位 10/11/12 控制）
+generate
+    genvar e;
+    for (e = 0; e < 3; e = e + 1) begin : gen_hpm_ext
+        always_ff @(posedge clk or negedge rst_n) begin
+            if(!rst_n)                              mhpmcounter[7+e] <= #1 'h0;
+            else if(mcounterclr[10+e])              mhpmcounter[7+e] <= #1 'h0;
+            else if(mcountinhibit[10+e])            mhpmcounter[7+e] <= #1 mhpmcounter[7+e];
+            else if(hpm_valid && hpm_count_ok && mcounteren[10+e] && hpm_ext == e+1)
+                                                    mhpmcounter[7+e] <= #1 mhpmcounter[7+e] + 'h1;
+        end
+    end
+endgenerate
 
 
 logic   int_trap;
@@ -151,7 +194,8 @@ logic                    mret_done;      // mret 完成后的第一拍（mret_re
 assign external_int_trap = mstatus[3] & mip[11] & mie[11];
 assign software_int_trap = mstatus[3] & mip[3] & mie[3] & (!external_int_trap);
 assign timer_int_trap    = mstatus[3] & mip[7] & mie[7] & (!external_int_trap & !software_int_trap);
-assign int_come     = (mip[11] & mie[11]) | (mip[3] & mie[3]) | (mip[7] & mie[7]);
+// Zcmp 展开期间整段屏蔽中断（规范允许"实现可定义"，且保证 SP 调整/ret 尾部不被拆开）
+assign int_come     = ((mip[11] & mie[11]) | (mip[3] & mie[3]) | (mip[7] & mie[7])) & ~zcmp_busy;
 assign int_trap     = mstatus[3] & int_come;
 
 assign priv_mode = mstatus[12:11];
@@ -313,7 +357,7 @@ always_comb begin
     if (csr_en) begin
         case(csr_addr)
             12'h300  : csr_rdata = mstatus;
-            12'h301  : csr_rdata = 32'h4000_1100; // misa: RV32(MXL=01) + I(bit8) + M(bit12)
+            12'h301  : csr_rdata = 32'h4000_1106; // misa: RV32(MXL=01) + I(bit8) + M(bit12) + C(bit2) + B(bit1)
             12'h304  : csr_rdata = mie;
             12'h305  : csr_rdata = mtvec;
             12'h306  : csr_rdata = mcounteren;
@@ -334,7 +378,12 @@ always_comb begin
             12'hbc6  : csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
             12'hbc7  : csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
             12'hbc8  : csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
-            12'hbc9  : csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];  // 预测成功
+        12'hbc9  : csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];  // 预测成功
+        12'hbca  : csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];  // Zcb 指令
+        12'hbcb  : csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];  // B 扩展指令
+        12'hbcc  : csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];  // Zcmp 指令
+        12'hbcd  : csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0]; // CSR 指令
+        12'hbce  : csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0]; // 系统指令
             // hpm_counter3h-9h (高32位)
             12'hc43  : csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
             12'hc44  : csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
@@ -342,7 +391,12 @@ always_comb begin
             12'hc46  : csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
             12'hc47  : csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
             12'hc48  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc49  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc49  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4a  : csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4b  : csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4c  : csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4d  : csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4e  : csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
             // time / timeh — 只读影子寄存器（mtime_shadow 来自 CLINT）
             12'hc01  : csr_rdata = mtime_shadow[DATA_WIDTH-1:0];          // time (低32位)
             12'hc81  : csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH]; // timeh (高32位)
@@ -358,7 +412,7 @@ always_comb begin
     dbg_csr_rdata = 'h0;
     case (dbg_csr_addr)
         12'h300  : dbg_csr_rdata = mstatus;
-        12'h301  : dbg_csr_rdata = 32'h4000_1100; // misa
+        12'h301  : dbg_csr_rdata = 32'h4000_1106; // misa
         12'h304  : dbg_csr_rdata = mie;
         12'h305  : dbg_csr_rdata = mtvec;
         12'h306  : dbg_csr_rdata = mcounteren;
@@ -379,6 +433,11 @@ always_comb begin
         12'hbc7  : dbg_csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];
         12'hbc8  : dbg_csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];
         12'hbc9  : dbg_csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];
+        12'hbca  : dbg_csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];
+        12'hbcb  : dbg_csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];
+        12'hbcc  : dbg_csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];
+        12'hbcd  : dbg_csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0];
+        12'hbce  : dbg_csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0];
         12'hc43  : dbg_csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hc44  : dbg_csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hc45  : dbg_csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
@@ -386,6 +445,11 @@ always_comb begin
         12'hc47  : dbg_csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hc48  : dbg_csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hc49  : dbg_csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4a  : dbg_csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4b  : dbg_csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4c  : dbg_csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4d  : dbg_csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hc4e  : dbg_csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hc01  : dbg_csr_rdata = mtime_shadow[DATA_WIDTH-1:0];
         12'hc81  : dbg_csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH];
         default : dbg_csr_rdata = 'h0;

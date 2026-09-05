@@ -36,6 +36,12 @@ module EX_MEM #(
 
     input   logic   [2:0]                   inst_type_i,
     output  logic   [2:0]                   inst_type_o,
+    input   logic                           zcmp_micro_last_i,
+    output  logic                           zcmp_micro_last_o,
+    input   logic                           zcmp_micro_any_i,
+    output  logic                           zcmp_micro_any_o,
+    input   logic                           zcb_tag_i,
+    output  logic                           zcb_tag_o,
     input   logic                           valid_i,
     output  logic                           valid_o
 );
@@ -49,7 +55,10 @@ always_ff @(posedge clk or negedge rst_n) begin
         reg_rd_wen_o    <= #1 1'b0;
         reg_rd_waddr_o  <= #1 'h0;
         reg_rd_wdata_o  <= #1 'h0;
-        inst_type_o     <= #1 3'd0;
+    inst_type_o     <= #1 3'd0;
+    zcmp_micro_last_o <= #1 1'b0;
+    zcmp_micro_any_o  <= #1 1'b0;
+    zcb_tag_o         <= #1 1'b0;
     end else begin
         if(flush) begin
             inst_o          <= #1 `INST_NOP;
@@ -60,7 +69,10 @@ always_ff @(posedge clk or negedge rst_n) begin
             // breathing 第 3 次中断崩溃根因）。清成 x0 后写回被 RegFile 丢弃。
             reg_rd_waddr_o  <= #1 'h0;
             reg_rd_wdata_o  <= #1 'h0;
-            inst_type_o     <= #1 3'd0;
+    inst_type_o     <= #1 3'd0;
+    zcmp_micro_last_o <= #1 1'b0;
+    zcmp_micro_any_o  <= #1 1'b0;
+    zcb_tag_o         <= #1 1'b0;
         end else if(!stall) begin
             inst_addr_o     <= #1 inst_addr_i;
             inst_o          <= #1 inst_i;
@@ -69,7 +81,10 @@ always_ff @(posedge clk or negedge rst_n) begin
             reg_rd_wen_o    <= #1 reg_rd_wen_i;
             reg_rd_waddr_o  <= #1 reg_rd_waddr_i;
             reg_rd_wdata_o  <= #1 reg_rd_wdata_i;
-            inst_type_o     <= #1 inst_type_i;
+    inst_type_o     <= #1 inst_type_i;
+    zcmp_micro_last_o <= #1 zcmp_micro_last_i;
+    zcmp_micro_any_o  <= #1 zcmp_micro_any_i;
+    zcb_tag_o         <= #1 zcb_tag_i;
         end
     end
 end

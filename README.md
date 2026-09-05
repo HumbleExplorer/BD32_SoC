@@ -7,10 +7,12 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IMC) 流水线处理器 SoC，采�
 ## 特性
 
 - RV32IMC 指令集（含 M 扩展乘除法 + C 压缩指令扩展；取指 16 位对齐，压缩指令经硬件展开器译码）
+- 指令集扩展：Zcb（压缩字节/半字访存）、Zba/Zbb/Zbs（B 位操作，全单周期）、Zcmp（压缩堆栈操作，IF 侧 FSM 多拍展开，中断/调试以整条指令为粒度）
 - 5 级流水线：IF → ID → EX → MEM → WB
 - OITF（Out-of-order Instruction Termination Facility）：深度 4 的 FIFO，允许多周期乘除法指令乱序执行
 - 流水线型 Booth-4 乘法器
 - 32 周期迭代恢复余数除法器
+- HPM 性能计数器（mhpmcounter）：ALU/Load/Store/Branch/Jump/MulDiv/误预测/CSR/系统指令分类计数，Zcb/B/Zcmp 扩展独立计数
 - 基于Gshare的动态分支预测器：GHR+BTB+RAS
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：CLINT、PLIC 中断控制器、UART（含程序、数据下载功能）、APB Timer（含输入捕获和输出比较功能）、GPIO
@@ -118,11 +120,11 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 │   ├── debug_test/           # Debug Module 仿真（run_msim_debug.bat 一键回归）
 │   ├── uart_test/ gpio_test/ plic_test/ timer_test/  # 外设独立仿真
 │   ├── run_one.py            # 运行单个 custom_asm 测试
-│   ├── run_all_custom_asm.py # custom_asm 全回归（38 个测试）
-│   └── run_all_riscv_tests.py # riscv-tests 全回归（rv32ui + rv32um）
+│   ├── run_all_custom_asm.py # custom_asm 全回归（44 个测试）
+│   └── run_all_riscv_tests.py # riscv-tests 全回归（rv32ui + rv32um + rv32uc）
 ├── test_data/
-│   ├── custom_asm/           # 38 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
-│   ├── riscv-tests/          # riscv-tests 测试产物（rv32ui 42 + rv32um 8 全过；源码来自官方 riscv-tests 仓库，见 doc/sdk.md）
+│   ├── custom_asm/           # 44 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
+│   ├── riscv-tests/          # riscv-tests 测试产物（rv32ui 42 + rv32um 8 + rv32uc-p-rvc 共 51 全过；源码来自官方 riscv-tests 仓库，见 doc/sdk.md）
 │   └── soc/c/                # 固件构建产物（.uartbin / .mem，由 build.py 同步）
 ├── third_party/              # 第三方源码依赖（riscv-tests、rt-thread-3.1.5 / rt-thread-5.1.0、picolibc-1.8.12、OpenOCD，不随仓库分发）
 ├── SDK/
@@ -154,14 +156,16 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 - [x] **FENCE.I / 自修改代码**：已实现（ITCM 字节写使能 + FENCE.I 冲刷取指路径），`rv32ui-p-fence_i` 通过
 - [x] **非对齐访存**：已实现（DTCM/总线内存拆分为两次对齐访问），`rv32ui-p-ma_data` 通过
 - [x] **RV32C：C 压缩指令扩展**：已实现（取指 16 位对齐 + IFU_Buffer 指令装配 + RVC_Expander 硬件展开），`rv32uc-p-rvc` 通过；`build.py --rvc` 编译 rv32imc 固件
+- [x] **ISA 子扩展：Zcb / Zba+Zbb+Zbs / Zcmp**：已实现（Zcb 于 RVC_Expander 1:1 展开；B 扩展全单周期；Zcmp 由 Zcmp_Expander FSM 多拍展开并保证中断/调试原子性），`zcb_test`/`b_extension_test`/`zcmp_test` 通过；`build.py --zcb/--zbb/--zcmp`
 - [ ] **RV32A：A 原子扩展**（LR/SC + AMO，为 RTOS/多核同步铺路）
 - [ ] **RV32F / D：F/D 浮点扩展**（FPU 数据通路 + ABI 切换）
+- [x] **Zicond**：已实现（czero.eqz/nez 单周期，Executer 内 func7 分支扩展），`zicond_test` 12 节通过；`build.py --zicond`
 - [x] **RT-Thread 移植**：v5.1.0 与 lts-v3.1.x 双版本（仅 M-mode，无 U-mode / MPU / SMP）
-- [ ] **SPI / QSPI Flash 启动**：片外 Flash 引导
-- [ ] **总线取指（XIP）**：支持经 AXI 总线从 Flash/DDR 取指执行，而非仅从 ITCM 取指
+- [ ] **QSPI Flash 启动与总线取指（XIP）**：片外 Flash 引导 + 经 AXI 总线取指执行（替代仅 ITCM 取指）；引入时需同步建立访存延时校准（可配置/随机延时从机模型 + 性能计数器，使仿真延时可校准到真实器件）
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器
-- [ ] **SV 工程化重构**：package 、interface、SVA等高级语法特性
+- [ ] **AXI-Lite 总线完整性整改**：互连当前为单 master 地址译码（CPU 独占），XIP/DMA 接入前需补多 master 仲裁；BUS_TIMEOUT 强拆（DECERR）后从机侧半事务回收；随机 ready 延时从机模型（LFSR 驱动）纳入回归
+- [ ] **SV 工程化与形式验证**：package、interface、SVA 断言体系，并基于断言对 OITF / Zcmp_Expander / AXI master 做单元级 BMC 形式验证（覆盖退休语义竞态、握手协议等仿真难穷尽的场景）
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……
 - [ ] **详细PDF设计文档**：正在写……
