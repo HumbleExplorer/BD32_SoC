@@ -327,7 +327,18 @@ module Zcmp_Expander (
     end
   end
 
-  assign busy_o = busy_q;
-  assign retire_ok_o = last_retired_i && tail_armed_q;
+    assign busy_o = busy_q;
+    assign retire_ok_o = last_retired_i && tail_armed_q;
+
+`ifndef SYNTHESIS
+// ===========================================================================
+// SVA: Zcmp busy 语义守护（背靠背展开竞态场景）
+// busy 期间若无 abort 且尾部退休条件未满足，busy 必须保持——
+// 防止上一条残留标签提前清 busy 截断新展开（tail_armed 门控语义）
+// ===========================================================================
+a_zcmp_busy_hold: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (busy_q && !abort_i && !retire_ok_o) |=> busy_q);
+`endif
 
 endmodule

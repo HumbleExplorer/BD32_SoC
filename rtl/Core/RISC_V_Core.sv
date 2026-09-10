@@ -401,6 +401,11 @@ assign inst_addr_if_display = inst_addr_if;
 // HPM：流水线 valid 链
 logic                       if_id_valid;
 logic                       id_ex_valid;
+logic                       int_accept_kill;    // 中断接受拍同拍冲刷（CSR int_trap_jump_n）
+// 中断边界：id_ex_inst_addr 为 ID_EX 顶端未执行指令的 PC，
+// 中断接受时 CSR 将其锁存进 mepc，被冲刷的边界指令在 mret 后重执行
+logic   [ADDR_WIDTH-1:0]    id_ex_inst_addr;
+assign inst_addr_ex = id_ex_inst_addr;
 logic                       ex_mem_valid;
 logic                       mem_wb_valid;
 logic                       hpm_valid;
@@ -493,6 +498,7 @@ Pipeline_Ctrl #(
     .trap_jump           	(trap_jump            ),
     .trap_jump_addr      	(trap_jump_addr       ),
     .trap_jump_exc         (trap_jump_exc         ),
+    .int_accept_kill       (int_accept_kill       ),
     .priv_mode           	(priv_mode            ),
     .waiting_int           	(waiting_int          ),
     .dbg_halt_req           (dbg_halt_req         ),
@@ -947,7 +953,7 @@ ID_EX #(
     .branch_req_i   (branch_req_id),
     .push_ras_i     (push_ras_id),
     .pop_ras_i      (pop_ras_id),
-    .inst_addr_o    (inst_addr_ex),
+    .inst_addr_o    (id_ex_inst_addr),
     .inst_o         (inst_ex),
     .predict_taken_o(predict_taken_ex),
     .predict_target_o(predict_target_ex),
@@ -1100,6 +1106,10 @@ CSR_Reg_Access #(
     .external_int   	(external_int       ),
     .software_int   	(software_int       ),
     .timer_int      	(timer_int          ),
+    .id_ex_inst_addr	(id_ex_inst_addr    ),
+    .id_ex_inst_valid	(id_ex_valid        ),
+    .branch_en_ex   	({branch_jump_en_ex, branch_req_ex}),
+    .int_accept_kill	(int_accept_kill    ),
     .mtime_shadow   	(mtime_shadow       ),
     .ex_illegal_csr     (ex_illegal_csr     ),
     .priv_mode      	(priv_mode          ),

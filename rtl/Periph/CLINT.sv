@@ -124,4 +124,15 @@ always_comb begin
     end
 end
 
+`ifndef SYNTHESIS
+// ===========================================================================
+// SVA: timer_int 电平语义自检（mtime>=mtimecmp 时必须为高，reload 后立即撤销）
+// 电平中断语义是"handler 必须重装 mtimecmp"约定（NMSIS/E203 同款）的硬件基础；
+// 若比较逻辑被误改为边沿/脉冲语义，软件 reload 约定即失效，此断言立即触发。
+// ===========================================================================
+a_timer_int_level: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (timer_int == (mtime >= mtimecmp)));
+`endif
+
 endmodule

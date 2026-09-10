@@ -53,8 +53,9 @@ generate
         // Reg 模式：模拟 BRAM 同步读行为（用于仿真）
         // 写：同周期写入；读：下一拍输出
         //--------------------------------------------
-        logic [DATA_WIDTH-1:0] ram_mem [0:DTCM_DEPTH-1];
+        logic [DATA_WIDTH-1:0] ram_mem [0:DTCM_DEPTH-1] = '{default: '0};
         `ifdef DIRECT_LOAD
+            // 声明处零默认：未覆盖区域为 0，对齐 FPGA BRAM 上电态
             initial begin
                 $readmemh(FULL_PATH,ram_mem);
             end
@@ -71,15 +72,28 @@ generate
             end
         end
 
-        // 同步读：地址在本沿采样，数据下一沿输出（模拟 BRAM 行为）
+        // 同步读：地址在本沿采样，数据下一沿输出。
+        // WRITE_FIRST 语义（与 dmem BRAM IP 一致）：同沿写读同地址时读出本沿写入的新值
         always_ff @(posedge clk or negedge rst_n) begin
             if (!rst_n)
                 rd_data <= #1 'h0;
+            else if (|dtcm_we)
+                rd_data <= #1 dtcm_wdata;
             else
                 rd_data <= #1 ram_mem[dtcm_addr[DTCM_SIZE_WIDTH-1:ALIGN_WIDTH]];
         end
 
+        `ifndef SYNTHESIS
+        // SVA: WRITE_FIRST 语义自检——有写的下一拍 rd_data 必须是写入值。
+        // 本断言固定 Reg 分支与 dmem BRAM IP 的语义一致性：
+        // 若有人把 WRITE_FIRST 分支删掉（同沿写读回退为 READ_FIRST）立即触发。
+        a_write_first_readback: assert property (
+            @(posedge clk) disable iff (!rst_n)
+            (|dtcm_we) |=> (rd_data == $past(dtcm_wdata)));
+        `endif
+
     end
 endgenerate
+
 
 endmodule

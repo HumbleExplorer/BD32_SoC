@@ -16,6 +16,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IMC) 流水线处理器 SoC，采�
 - 基于Gshare的动态分支预测器：GHR+BTB+RAS
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：CLINT、PLIC 中断控制器、UART（含程序、数据下载功能）、APB Timer（含输入捕获和输出比较功能）、GPIO
+- 中断在指令边界接受：被打断的下一条指令在流水线内被冲刷并以 mepc 重执行，EX/MEM 在途旧指令正常提交；中断与 mret 重叠、EX 级分支未决、流水线停顿等窗口均延后响应
 - CoreMark 验证通过，跑分达2.8CoreMark/MHz
 - 支持自修改代码和非对齐访存
 - RT-Thread 移植：v5.1.0 与 lts-v3.1.x（v3.1.5）双版本，`--rtthread` 一键构建（默认 lts-v3.1.x，`--rtthread-version 51` 切 v5.1.0），双线程 demo 已仿真与上板验证，详见 [SDK 构建工具与协议](doc/sdk.md)「RT-Thread 应用开发」
@@ -120,10 +121,10 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 │   ├── debug_test/           # Debug Module 仿真（run_msim_debug.bat 一键回归）
 │   ├── uart_test/ gpio_test/ plic_test/ timer_test/  # 外设独立仿真
 │   ├── run_one.py            # 运行单个 custom_asm 测试
-│   ├── run_all_custom_asm.py # custom_asm 全回归（44 个测试）
+│   ├── run_all_custom_asm.py # custom_asm 全回归（49 个测试）
 │   └── run_all_riscv_tests.py # riscv-tests 全回归（rv32ui + rv32um + rv32uc）
 ├── test_data/
-│   ├── custom_asm/           # 44 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
+│   ├── custom_asm/           # 49 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
 │   ├── riscv-tests/          # riscv-tests 测试产物（rv32ui 42 + rv32um 8 + rv32uc-p-rvc 共 51 全过；源码来自官方 riscv-tests 仓库，见 doc/sdk.md）
 │   └── soc/c/                # 固件构建产物（.uartbin / .mem，由 build.py 同步）
 ├── third_party/              # 第三方源码依赖（riscv-tests、rt-thread-3.1.5 / rt-thread-5.1.0、picolibc-1.8.12、OpenOCD，不随仓库分发）

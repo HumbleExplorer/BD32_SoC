@@ -36,6 +36,14 @@ void serr_handler(uint32_t mcause, uint32_t mepc)
     uart_puthex(mepc);
     uart_puts(" mtval=0x");
     uart_puthex(core_get_mtval());
+    uart_puts("\r\n[SERR] self=0x");
+    uart_puthex((uint32_t)self);
+    uart_puts(" mstatus=0x");
+    uart_puthex(read_csr(mstatus));
+    uart_puts(" mtvec=0x");
+    uart_puthex(read_csr(mtvec));
+    uart_puts(" mscratch=0x");
+    uart_puthex(read_csr(mscratch));
     uart_puts("\r\n");
     while (1);
 }

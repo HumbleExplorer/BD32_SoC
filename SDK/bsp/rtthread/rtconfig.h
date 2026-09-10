@@ -15,7 +15,7 @@
 #define RT_TICK_PER_SECOND        1000
 
 #define RT_USING_OVERFLOW_CHECK
-#define IDLE_THREAD_STACK_SIZE    4096
+#define IDLE_THREAD_STACK_SIZE    8192   /* tick 轻量帧+SW 全量帧嵌套深度，4KB 不够 */
 
 /* ============ IPC ============ */
 #define RT_USING_SEMAPHORE

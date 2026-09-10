@@ -47,6 +47,18 @@ test_data/custom_asm/*.dump
 # --- 本地编译产物（build/ 与 build_O*/build_clang_* 等优化变体目录，均不入库；克隆后由 build.py 重新生成）---
 **/build*/
 
+# --- FPGA 工具运行产物 ---
+.Xil/
+vivado*.jou
+vivado*.log
+vivado*.str
+wave_analysis/
+
+# --- JTAG/OpenOCD 内存镜像与临时脚本产物 ---
+**/dtcm_crash.bin
+**/dtcm_freeze.bin
+**/*_freeze.bin
+
 # --- 编辑器 / OS 临时文件 ---
 **/~$*
 .history/

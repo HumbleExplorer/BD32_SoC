@@ -21,6 +21,7 @@ module Pipeline_Ctrl #(
     input   logic                       trap_jump,
     input   logic   [ADDR_WIDTH-1:0]    trap_jump_addr,
     input   logic                       trap_jump_exc, // exception/mret only (no interrupt), for single-step drain
+    input   logic                       int_accept_kill, // 中断接受拍脉冲（与 mepc 锁存同拍冲刷）
     input   logic   [1:0]               priv_mode,
     input   logic                       waiting_int,
     // from Debug Module
@@ -322,6 +323,26 @@ always_ff @(posedge clk or negedge rst_n) begin
     end
 end
 
+`ifndef SYNTHESIS
+// ===========================================================================
+// SVA: trap 重定向寄存器不变式
+// ===========================================================================
+// 1) 未发出的 pending 重定向保持置位（仅 resume 清除/新 trap 重锁存例外）
+a_trap_pending_stable: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (r_trap_redirect && !ctrl_jump_en && !dbg_resume_pulse) |=> r_trap_redirect);
+// 2) 挂起的重定向必须发出（同拍或 8 拍内 ctrl_jump——重定向与寄存器置位
+//    同周期组合发出，窗口含第 0 拍）；调试停止/恢复为合法等待/清除出口
+a_trap_fires: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (r_trap_redirect && !dbg_halt_eff && !ebreak_halt) |-> ##[0:8]
+    (ctrl_jump_en || dbg_halt_eff || ebreak_halt || dbg_resume_pulse));
+// 3) 重定向地址在挂起期间保持稳定（未被重新锁存时）
+a_trap_addr_stable: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (r_trap_redirect && !trap_jump) |=> (r_trap_addr == $past(r_trap_addr)));
+`endif
+
 // =========================================================================
 // 流水线 flush/stall + 跳转：保持优先级结构（无长时序路径问题）
 // =========================================================================
@@ -405,11 +426,20 @@ always_comb begin
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
         mem_wb_stall    = 1'b1;
-    end else if(trap_jump) begin
-        // trap 当拍：仅完成冲刷（sel_stage 分级）与 CSR 采样；PC 跳转延迟一拍
+    end else if (trap_jump || int_accept_kill) begin
+        // trap 当拍完成冲刷与 CSR 采样，PC 跳转延迟一拍。
+        // 中断（接受拍 int_accept_kill 与 int_trap_jump 拍动作相同）：冲 IF_ID+ID_EX，
+        // 边界指令（ID_EX 顶端）未进 EX 即被冲掉，其 PC 已由 CSR 锁存进 mepc，
+        // mret 后重执行；EX_MEM/MEM_WB 的更老指令照常提交。
+        // 异常（trap_jump_exc=1）有故障指令级，按 sel_stage 部分冲刷。
         if_id_flush = 1'b1;
-        id_ex_flush = (sel_stage >= 2'd1);
-        ex_mem_flush = (sel_stage >= 2'd2);
+        if (trap_jump_exc) begin
+            id_ex_flush  = (sel_stage >= 2'd1);
+            ex_mem_flush = (sel_stage >= 2'd2);
+        end else begin
+            id_ex_flush  = 1'b1;
+            ex_mem_flush = 1'b0;
+        end
     end else if (mem_split_stall) begin
         // 非对齐拆分访问：停 IF/ID/EX_MEM，保持 EX 级访存参数与 EX_MEM 中的 rd；
         // 不停 MEM_WB，保证 P3 合并拍能正常写回
@@ -423,7 +453,7 @@ always_comb begin
         mem_wb_stall    = 1'b1;
     end else if (branch_jump_en) begin
         if_id_flush  = 1'b1;
-        id_ex_flush  = 1'b1;
+        id_ex_flush  = (sel_stage >= 2'd1);
         ctrl_jump_en = 1'b1;
         ctrl_jump_addr = branch_jump_addr;
     end else if (itcm_data_stall_d & ~zcmp_busy) begin
@@ -448,5 +478,22 @@ end
 // Debug halted 确认：halt 请求有效（含 step 完成 / trigger 命中）+ OITF 排空 + 总线空闲
 // SBA 外设总线访问期间 bus_ready 为 0（总线忙），此时仍视为 halt 保持
 assign dbg_halted = (dbg_halt_eff || step_halt || trigger_eff || ebreak_halt) && !oitf_stall && (bus_ready || sba_bus_active);
+
+`ifndef SYNTHESIS
+// ===========================================================================
+// SVA: 中断接受拍冲刷契约（2026-09 中断边界语义修复的防线）
+// 契约：接受拍冲 IF_ID+ID_EX（边界指令死在 ID_EX，mepc 已锁存其 PC），
+//       EX_MEM 不冲（更老指令照常提交）。动作若与契约背离立即触发。
+// ===========================================================================
+// 1) 接受拍必须冲 IF_ID（无论是否与异常同拍重叠）
+a_accept_kill_ifid: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (int_accept_kill |-> if_id_flush));
+// 2) 纯中断接受拍（无异常重叠）：冲 ID_EX、保 EX_MEM
+a_accept_kill_flush: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    ((int_accept_kill && !trap_jump_exc) |->
+     (id_ex_flush && !ex_mem_flush)));
+`endif
 
 endmodule

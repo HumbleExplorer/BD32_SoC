@@ -25,6 +25,34 @@ static rt_uint8_t t1_stack[T1_STACK_SIZE];
 static struct rt_thread t2;
 static rt_uint8_t t2_stack[T2_STACK_SIZE];
 
+/* ---- tidle sp 爬移诊断（2026-09-05 stack overflow 排查，查完可删）----
+ * 主线程每秒采样一次 tidle TCB：
+ *   1) TCB 保存的 sp 相对栈底偏移——递减 = 中断帧泄漏（sp 本身被侵蚀）
+ *   2) 栈底 +4/+8 的 '#' 水印字——被改写 = 杂散 store 越界（内存腐蚀）
+ * 仅在数值变化时打印。 */
+static struct rt_thread *tidle_cb;
+static rt_uint32_t last_off;
+static rt_uint32_t last_wm;
+
+static void tidle_probe(void)
+{
+    rt_uint32_t base, off, wm4, wm8;
+    if (tidle_cb == RT_NULL) return;
+    base = (rt_uint32_t)tidle_cb->stack_addr;
+    off = (rt_uint32_t)tidle_cb->sp - base;
+    wm4 = *(volatile rt_uint32_t *)(base + 4);
+    wm8 = *(volatile rt_uint32_t *)(base + 8);
+    if (wm4 != 0x23232323 || wm8 != 0x23232323)
+        rt_kprintf("[SPW] WATERMARK broken: base+4=%08x base+8=%08x\n", wm4, wm8);
+    if (off != last_off || wm4 != last_wm)
+    {
+        rt_kprintf("[SPW] tcb_sp=%08x base=%08x off=%d wm4=%08x\n",
+                   (rt_uint32_t)tidle_cb->sp, base, off, wm4);
+        last_off = off;
+        last_wm = wm4;
+    }
+}
+
 static void t1_entry(void *parameter)
 {
     (void)parameter;
@@ -54,7 +82,11 @@ int main(void)
     rt_thread_startup(&t1);
     rt_thread_startup(&t2);
 
+    /* tidle 诊断：定位 TCB，主线程每秒采样（sp 爬移 + 水印探针） */
+    tidle_cb = rt_thread_find("tidle");
+
     while (1) {
         rt_thread_mdelay(1000);
+        tidle_probe();
     }
 }

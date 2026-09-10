@@ -49,9 +49,10 @@ generate
         );
         assign itcm_inst = rst_n ? inst : `INST_NOP;
     `else
-        logic [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1];
+        logic [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1] = '{default: '0};
 
         `ifdef DIRECT_LOAD
+            // 声明处零默认：未覆盖区域为 0，对齐 FPGA BRAM 上电态
             initial begin
                 $readmemh(ITCM_FULL_PATH, itcm_mem);
             end

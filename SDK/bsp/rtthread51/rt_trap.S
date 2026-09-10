@@ -64,13 +64,18 @@ irq_unhandled:
     j irq_unhandled
 
 /* ============================================================
- * 轻量中断入口：只保存 caller 寄存器（不切换，返回原上下文）
- * 处理在中断栈上运行（trap_entry 之后 mscratch 已指向 __rt_rvstack）
+ * 轻量中断入口：只保存 caller 寄存器（不切换，返回原上下文）。
+ * 入口先 csrrw 切到 mscratch 指向的中断栈再保存：handler 的 C 调用链
+ * 不能跑在被打断线程的栈上，否则 rt_schedule 在中断上下文走协作切换时，
+ * from->sp 保存的是 handler 调用链深度的 sp，会污染线程栈本体
+ * （对照 Nuclei e310 的中断入口均先切栈）。退出时反向 csrrw 切回线程栈，
+ * 并恢复 mscratch=中断栈顶，与 SW_handler 的 mscratch 用法一致。
  * ============================================================ */
 .macro LIGHT_IRQ name, handler
 .align 2
 .global \name
 \name:
+    csrrw sp, mscratch, sp      # sp←中断栈顶；mscratch←被打断线程 sp
     addi sp, sp, -17*4
     sw   ra, 0(sp)
     sw   tp, 4(sp)
@@ -112,6 +117,7 @@ irq_unhandled:
     lw   t5, 60(sp)
     lw   t6, 64(sp)
     addi sp, sp, 17*4
+    csrrw sp, mscratch, sp      # 切回被打断线程栈；mscratch←中断栈顶（复原）
     mret
 .endm
 
@@ -190,11 +196,11 @@ unified_irq:
 
     la   s0, rt_interrupt_from_thread
     lw   s1, 0(s0)
-    sw   sp, 0(s1)
+    sw   sp, 20(s1)
 
     la   s0, rt_interrupt_to_thread
     lw   s1, 0(s0)
-    lw   sp, 0(s1)
+    lw   sp, 20(s1)
 
     lw   a0, 0*4(sp)
     csrw mepc, a0

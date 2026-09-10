@@ -35,6 +35,9 @@ module CSR_Reg_Access #(
     input                                   external_int,
     input                                   software_int,
     input                                   timer_int,
+    input   logic   [ADDR_WIDTH-1:0]        id_ex_inst_addr,// ID_EX 边界指令 PC（中断接受 mepc 源）
+    input   logic                           id_ex_inst_valid,// ID_EX 持有有效指令（接受门控）
+    input   logic [1:0]                     branch_en_ex,// bit0=EX 级分支未决，bit1=EX_MEM 重定向拍（均推迟中断接受）
     input   logic   [2*DATA_WIDTH-1:0]      mtime_shadow,// 只读影子
 // to EX
     output  logic                           ex_illegal_csr,
@@ -43,6 +46,7 @@ module CSR_Reg_Access #(
     (* MAX_FANOUT = 16 *)output  logic                           trap_jump,
     output  logic   [DATA_WIDTH-1:0]        trap_jump_addr,
     output  logic                           trap_jump_exc, // exception/mret only (no interrupt), for single-step drain
+    output  logic                           int_accept_kill, // 中断接受拍脉冲（=int_trap_jump_n）：同拍冲刷 IF_ID/ID_EX，边界指令死在 ID_EX
     output  logic                           waiting_int,
 
     input   logic                           hpm_valid,
@@ -238,16 +242,17 @@ end
 
 logic int_trap_jump_n;
 // mret 与中断重叠时禁止中断抢占锁存：mret 周期若同时锁存 int_trap_jump，
-// mepc 会被写成 mret 指令的下一条（next_inst_addr），mret 随后跳转到错误地址。
-// 加上 ~mret_req 后，中断延后一拍，在 mret 完成（PC=mepc 目标）后再响应，
-// 此时 mepc 锁存为 mret 目标地址，行为正确。
+// CSR 优先级让 mret 分支赢了 mepc 写（mepc 保持旧值），但 int_trap_jump 寄存器
+// 无优先级照样锁存 → 陷阱带陈旧 mepc 发出，SW_handler 会把旧 PC 存进上下文帧，
+// 切回时从错误 PC 恢复。~mret_req 让中断延后一拍，在 mret 完成（PC=mepc 目标）
+// 后再响应，此时 mepc 锁存为 mret 目标地址。~mret_done 为双保险
+// （mret 下一拍 gap 尚未生效前的窗口，见下方 mret_gap_cnt）。
 // 中断锁存必须同时满足：当前周期真实 pending（int_trap=1，保证 mcause_n 有效）。
 // 仅 int_waiting_jump 残留（如 tick 已处理、mip 已清）时不得触发，
 // 否则 mcause_n 落到默认 0，中断被误锁存成同步异常（mret 后尤为常见）。
 // mret 后屏蔽中断 N 拍：mret 执行后流水线需要几拍（RVC 16 位取指延迟更明显）
 // 才能让 IF/ID 反映 mret 目标地址。若 mret 后立即允许中断进入，
-// mepc <= next_inst_addr 会取到 IF/ID 里残留的 mret 顺延地址（fall-through），
-// 恢复后跳错（如 0x101cc -> light_external 死循环）。
+// mepc 会锁存到 IF/ID 里残留的 mret 顺延地址，恢复后跳错。
 logic [2:0] mret_gap_cnt;
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n)
@@ -257,9 +262,11 @@ always_ff @(posedge clk or negedge rst_n) begin
     else if (mret_gap_cnt > 3'd0)
         mret_gap_cnt <= #1 mret_gap_cnt - 3'd1;
 end
+assign int_accept_kill = int_trap_jump_n;   // 中断接受拍脉冲：Pipeline_Ctrl 同拍冲刷，与 mepc 锁存同边沿
 assign int_trap_jump_n = (int_waiting_jump | int_trap) && int_trap
                        && (bus_ready && ~oitf_stall) && ~int_trap_jump
-                       && (mret_gap_cnt == 3'd0);
+                       && (mret_gap_cnt == 3'd0) && ~mret_req && ~mret_done
+                       && id_ex_inst_valid && ~branch_en_ex[0] && ~branch_en_ex[1];
 
 // mret 完成后的第一拍，IF/ID 流水线尚未反映 mret 跳转目标，
 // next_inst_addr 仍可能是 mret 指令的下一条（旧流水线地址）。
@@ -313,7 +320,7 @@ always_ff @(posedge clk or negedge rst_n) begin
             mstatus[7]  <= #1 1'b1;
         end else if(int_trap_jump_n && ~mret_done) begin//int_trap_jump前一周期判断；mret 后第一拍保持 mepc（mret 目标），避免锁存旧流水线地址
             mcause      <= #1 mcause_n;//写入中断原因（仅陷入时更新，否则保持）
-            mepc        <= #1 next_inst_addr;
+            mepc        <= #1 id_ex_inst_addr;//中断 mepc=边界指令自身 PC；该指令在被冲刷前从未执行，mret 后重执行
             mstatus[7]  <= #1 mstatus[3];
             mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus
         end else if(csr_en) begin
@@ -455,5 +462,32 @@ always_comb begin
         default : dbg_csr_rdata = 'h0;
     endcase
 end
+
+`ifndef SYNTHESIS
+// ===========================================================================
+// SVA: 中断接受门控不变式（2026-09 中断边界语义修复的防线）
+// 门控链一旦被改动破坏（如 EX_MEM 重定向拍门控被删），以下断言立即触发
+// ===========================================================================
+// 1) EX_MEM 分支重定向拍禁止接受中断（branch_en_ex[1] 门控）
+a_redirect_no_accept: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (branch_en_ex[1] |-> !int_trap_jump_n));
+// 2) Zcmp 多拍展开中禁止接受中断（int_come 门控含 ~zcmp_busy，此处防线冗余）
+a_zcmp_no_accept: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (zcmp_busy |-> !int_trap_jump_n));
+// 3) mret 屏蔽窗口内禁止接受中断（mret_gap_cnt + mret_req/done 门控）
+a_mret_gap_no_accept: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    ((mret_gap_cnt > 3'd0) |-> !int_trap_jump_n));
+// 4) 中断接受拍的 mepc 锁存源必须是合法指令地址（RVC 最低半字对齐）
+a_accept_pc_aligned: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (int_trap_jump_n |-> (id_ex_inst_addr[0] == 1'b0)));
+// 5) 重定向拍 trap_jump 必须包含 int_trap_jump（防汇总式改动丢失中断分支）
+a_int_trap_fire: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (int_trap_jump |-> trap_jump));
+`endif
 
 endmodule

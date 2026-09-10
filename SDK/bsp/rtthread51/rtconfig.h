@@ -15,7 +15,7 @@
 #define RT_TICK_PER_SECOND        1000
 
 #define RT_USING_OVERFLOW_CHECK
-#define IDLE_THREAD_STACK_SIZE    4096
+#define IDLE_THREAD_STACK_SIZE    12288  /* 12KB: TCB@0x23578 距 t2栈(0x24738)有0xB8C余量 */
 
 /* ============ IPC ============ */
 #define RT_USING_SEMAPHORE

@@ -263,5 +263,19 @@ module AXI_Lite_Master #(
     end
 
 
+`ifndef SYNTHESIS
+// ===========================================================================
+// SVA: AXI4-Lite 握手稳定性（VALID 拉起后必须保持到握手完成）
+// ===========================================================================
+a_aw_stable: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (m_awvalid && !m_awready) |=> m_awvalid && $stable(m_awaddr));
+a_w_stable: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (m_wvalid && !m_wready) |=> m_wvalid && $stable(m_wdata) && $stable(m_wstrb));
+a_ar_stable: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (m_arvalid && !m_arready) |=> m_arvalid && $stable(m_araddr));
+`endif
 
 endmodule

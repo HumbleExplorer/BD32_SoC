@@ -16,8 +16,8 @@ localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
 localparam  PATH  = `PATH;//vsim路径
 localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE};
-localparam  CPU_FREQUENCY = 75_000_000;
-localparam  CLK_PERIOD = 1_000_000_000 / CPU_FREQUENCY; // 1ns/75MHz
+localparam  CPU_FREQUENCY = 70_000_000;  // 与 clk_wiz_0 实际输出一致（50MHz × 21 ÷ 15）
+localparam  CLK_PERIOD = 1_000_000_000 / CPU_FREQUENCY; // ~14.29ns
 // 真实波特率周期 (ns)：模拟真实串口助手的发送节拍
 localparam  BAUD_PERIOD_NS = 1_000_000_000 / 115200;  // ~8680ns per bit @ 115200
 

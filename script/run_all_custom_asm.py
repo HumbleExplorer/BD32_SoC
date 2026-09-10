@@ -133,6 +133,11 @@ def compile_design(vlog_exe):
 
 def run_single_test(vsim_exe, test_name, sim_time_us=SIM_TIME_US, timeout=TIMEOUT_SEC):
     do_cmd = f"run {sim_time_us}us; quit -f"
+    # memstress 依赖 timer 中断风暴（CLINT 电平中断，handler reload mtimecmp 才能周期触发）；
+    # 裸核回归无 CLINT 时钟源，需按 memstress_run.do 同款注入 timer_int 脉冲
+    if test_name.startswith("memstress"):
+        do_cmd = ("force -freeze sim:/tb_core_top/timer_int 1 0 ns, 0 40 ns -repeat 1500 ns; "
+                  + do_cmd)
     cmd = [
         vsim_exe, "-batch", "-voptargs=+acc", "tb_core_top",
         "-G", f"ITCM_FILE={test_name}",

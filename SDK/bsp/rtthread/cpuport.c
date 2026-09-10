@@ -126,8 +126,11 @@ rt_uint8_t *rt_hw_stack_init(void       *tentry,
 /** rt_hw_context_switch_interrupt */
 void rt_hw_context_switch_interrupt(rt_ubase_t from, rt_ubase_t to)
 {
-    if (rt_thread_switch_interrupt_flag == 0)
-        rt_interrupt_from_thread = from;
+    /* from 必须无条件更新：MSIP 服务有延迟，窗口内多源切换请求交叠时，
+       旧写法 flag 已置就跳过 from 更新会导致 from/to 配对错位——
+       SW_handler 用旧 from 保存了新被打断线程的现场，线程恢复到陈旧帧。
+       from 的语义是"最后一个真正被打断的线程"。 */
+    rt_interrupt_from_thread = from;
 
     rt_interrupt_to_thread = to;
     rt_thread_switch_interrupt_flag = 1;
