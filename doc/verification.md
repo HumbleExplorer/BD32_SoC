@@ -97,6 +97,10 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
   ```
   `rtthread_sim*.do` 通过 `+define+ITCM_FILE/DTCM_FILE` 加载 `test_data/soc/c/rtthread*_os_*.mem`（构建产物自动同步，中断模式不影响产物名），输出 RT-Thread banner + t1/t2 交替即通过。仿真窗口取 80ms：soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 mdelay 唤醒以确认轮转稳定。
 
+  中断/调度压力回归：`vsim -batch -do "do rtthread_sim_fasttick.do"` 将 CLINT tick 提速到 35.7MHz（正常 1MHz），高频中断下压测上下文切换与中断边界；输出同上（0 SERR + t1/t2 交替）。
+
+  疑难定位：`rtthread_sim_fail_trace.do`（先 `run 60ms` 再开 VCD——全量 dump 会被 1GB 上限截断在约 40ms 处，故障窗口丢失）+ `parse_fail_window.py`（按 clk 上升沿采样重建故障前数据通路表，含 pc/inst_ex/访存地址/读数据/rvalid/MEM_WB 写回/stall-flush 全列）。
+
 - **Debug**：`script/debug_test/run_msim_debug.bat`（94 项回归，输出 `logs/msim_out.txt`）。
 
 - **外设**：`script/run_periph_regression.bat`（UART / GPIO / PLIC / Timer 四合一，输出 `logs/*_test_out.txt`）。

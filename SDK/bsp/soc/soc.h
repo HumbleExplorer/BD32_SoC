@@ -44,7 +44,7 @@
  * CPU 频率（Hz）— 编译期常量
  * 直接使用宏定义，避免全局变量 gp/s0 寄存器破坏问题
  * =================================================================== */
-#define CPU_FREQ_HZ_DEFAULT  70000000UL  /* clk_wiz CLKOUT0 实际输出 70MHz（requested 70） */
+#define CPU_FREQ_HZ_DEFAULT  62500000UL  /* clk_wiz CLKOUT0 实际输出 62.5MHz（requested 62.5） */
 
 #define CPU_FREQ_HZ          CPU_FREQ_HZ_DEFAULT
 #define CPU_FREQ_KHZ         (CPU_FREQ_HZ / 1000UL)

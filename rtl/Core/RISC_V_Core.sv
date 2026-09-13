@@ -501,6 +501,7 @@ Pipeline_Ctrl #(
     .int_accept_kill       (int_accept_kill       ),
     .priv_mode           	(priv_mode            ),
     .waiting_int           	(waiting_int          ),
+    .ex_access_en           (access_en_ex         ),
     .dbg_halt_req           (dbg_halt_req         ),
     .dbg_halted             (dbg_halted           ),
     .dbg_step               (dbg_step             ),
@@ -746,8 +747,22 @@ wire [DATA_WIDTH-1:0]  itcm_wr_data     = itcm_wr_en_cpu ? access_wdata_ex :
                                           (sba_req_valid & sba_itcm_store_sel & sba_write) ? sba_wdata : '0;
 
 // DTCM 访问 mux：SBA 覆盖 EX 级（DTCM 自带字节使能 wmask）
-wire [ADDR_WIDTH-1:0]  dtcm_addr_sba  = (sba_req_valid & sba_dtcm_sel) ? sba_addr :
+// 端口地址保持（2026-09-11 SERR 第 3 层修复）：rd_data 每拍跟踪端口地址，而端口在
+// 非访问拍会摆上后续指令的 ALU 垃圾结果；tcm_rvalid 按"stall 期间保持"设计跨越
+// 多拍消费数据，消费窗内 rd_data 被垃圾地址刷新（撞上栈 '#' 填充）→ 错误写回。
+// 非真实访问拍冻结端口为上一访问地址，读数据即保持正确（Reg 分支与 BRAM douta 行为一致）。
+wire [ADDR_WIDTH-1:0]  dtcm_addr_next  = (sba_req_valid & sba_dtcm_sel) ? sba_addr :
                                          split_active ? split_addr_use : access_addr_ex;
+wire                   dtcm_port_upd   = (sba_req_valid & sba_dtcm_sel) || split_active
+                                       || (access_en_ex && dtcm_sel && ~(ex_mem_stall || ex_mem_flush));
+logic [ADDR_WIDTH-1:0] dtcm_port_addr_q;
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)
+        dtcm_port_addr_q <= '0;
+    else if (dtcm_port_upd)
+        dtcm_port_addr_q <= dtcm_addr_next;
+end
+wire [ADDR_WIDTH-1:0]  dtcm_addr_sba  = dtcm_port_upd ? dtcm_addr_next : dtcm_port_addr_q;
 wire                    dtcm_wen_sba   = (sba_req_valid & sba_dtcm_sel & sba_write) ? 1'b1 :
                                           split_wen_p1 ? 1'b1 :
                                           split_wen ? 1'b1 :

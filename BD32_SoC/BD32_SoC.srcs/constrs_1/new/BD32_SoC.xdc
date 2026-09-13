@@ -79,3 +79,10 @@ set_false_path -from [get_clocks sys_clk] -to [get_clocks clk_cpu_clk_wiz_0]
 # clk_cpu -> sys_clk: CLINT timer divider async reset release path
 set_false_path -from [get_clocks clk_cpu_clk_wiz_0] -to [get_clocks sys_clk]
 
+
+# 禁止 Vivado 对 sys_clk 自动插入 IBUF（clk_wiz 内部已有 IBUF）
+set_property IS_GLOBAL_CLOCK false [get_ports sys_clk]
+
+# 禁止 Vivado 自动插入 IBUF（clk_wiz 内部已含 IBUF，双重缓冲导致 illegal port）
+set_property IF_DELAY 0.0 [get_ports sys_clk]
+set_property IOSTANDARD LVCMOS33 [get_ports sys_clk]

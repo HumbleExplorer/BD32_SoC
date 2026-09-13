@@ -89,7 +89,15 @@ BD32 是 32 位 RV32IMC 处理器（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），经
 
 - Debug Module：不占用系统地址空间（非内存映射外设），经 JTAG DMI 访问核心寄存器/CSR；SBA 按地址在核内分发——BootROM/ITCM/DTCM 直连，总线区（外设等）借用 CPU 侧总线主机口发起事务（AXI 互联层仅一个主机）。
 - 总线：AXI-Lite 主接口 + AXI Interconnect（APB 桥 + 错误从机）+ APB 外设互联。
-- 时钟：FPGA 板级 MMCM 输出 CPU 时钟（75MHz）；CLINT 由独立 1MHz 定时器时钟驱动。
+- 时钟：FPGA 板级 MMCM 输出 CPU 时钟（62.5MHz，xc7z020clg400-2 时序收敛签核值）；CLINT 由独立 1MHz 定时器时钟驱动。
+
+## 中断与异常
+
+- **中断接受（指令边界）**：中断挂起且 MIE 开启时，在 EX 级指令边界接受——冲刷 IF_ID、ID_EX 与 EX_MEM（EX 级边界指令连同其执行结果一并作废），mepc 锁存边界指令 PC，mret 后单次重执行；EX_MEM/MEM_WB 的更老指令照常提交。
+  - ⚠️ 接受拍若不冲 EX_MEM（仅冲 IF_ID+ID_EX），边界指令的结果会泄漏完成写回，mret 后又重执行——非幂等指令（如 `addi` 累加类）状态被双重提交（曾致 RT-Thread tidle SERR，2026-09-12 修复，SVA `a_accept_kill_flush` 固化该契约）。
+- **多重窗口延后接受**：EX 级分支未决/重定向拍、流水线停顿（OITF/总线/拆分访问）、Zcmp 展开期间、mret 后 gap 数拍内均延后中断接受，避免边界错位。
+- **异常（同步）**：当拍按故障指令所在级（sel_stage）部分冲刷；陷阱码经 get_priority 优先级选择（IF 访错 > ID 非法/ecall/ebreak > EX 访错/非法 CSR/未对齐），无异常级为全 1 哨兵值。
+- Debug halt/断点为独立通路（不影响架构状态），详见 [调试模块](debug_module.md)。
 
 ## 调试挂钩
 

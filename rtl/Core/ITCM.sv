@@ -36,29 +36,21 @@ wire [ALIGN_BYTES-1:0] ram_we   = itcm_download_en ? {ALIGN_BYTES{1'b1}} : itcm_
 wire [ADDR_WIDTH-1:0]  ram_addr = itcm_download_en ? itcm_download_addr : itcm_access_addr;
 wire [DATA_WIDTH-1:0]  ram_din  = itcm_download_en ? itcm_download_data : itcm_wr_data;
 
-// ITCM 地址寄存器：打断 EX→ITCM BRAM 地址输入的长路由关键路径。
-// 原始路径：reg_rs1_raddr_o_reg → Data_Hazard_Forward MUX → Executer carry adder → ITCM addra/ENA
-//           （逻辑 4.4ns + 路由 ~9.6ns，在 70MHz 下 WNS ≈ -0.35ns）
-// 寄存器后：EX 级组合逻辑（Mux+Adder）→ reg_itcm_addr_q → ITCM BRAM（下一拍读）
-//           布线距离缩短至 ~2-3ns，时序裕量 ~+5ns
-// 语义不变：ITCM 同步读本身已有一次周期延迟（地址 N 给，数据 N+1 出），
-// 再加一级地址寄存器仅让有效指令晚一拍进入，与正常 pipeline IF→ID→EX 节奏一致。
-logic [ADDR_WIDTH-1:0] reg_itcm_addr_q;
-always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n)
-        reg_itcm_addr_q <= '0;
-    else
-        reg_itcm_addr_q <= #1 itcm_access_addr;
-end
+// 注意：曾尝试用地址寄存器打断 EX→BRAM 长路径（2026-09-11，已回退）。
+// 该方案在 FPGA 上有两处功能性错误：
+//   1) wea/写入数据仍是组合信号，与寄存后的 addra 错拍 —— store 会写到上一拍请求地址；
+//   2) BRAM 读整体晚一拍，IFU_Buffer 的 req_addr↔w_new 字流配对被破坏（sim 走非 XILINX
+//      分支，该寄存器为死代码，仿真回归发现不了）。
+// 正确修法需把 LSU 请求整体打一拍并改取指仲裁时序（微架构改动），详见 Memory_Log。
 
-generate 
+generate
     `ifdef XILINX
         logic [DATA_WIDTH-1:0] inst;
         // 例化 Xilinx 单端口 BRAM IP（读+写共用 Port A）
         imem u_imem (
             .clka (clk),
             .wea  (ram_we),
-            .addra(reg_itcm_addr_q[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]),
+            .addra(ram_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]),
             .dina (ram_din),
             .douta(inst)
         );

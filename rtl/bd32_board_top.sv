@@ -39,14 +39,23 @@ module bd32_board_top #(
 );
 
 // =========================================================================
-// MMCM 时钟生成：50MHz → 90MHz / 16MHz / 8.388MHz
+// MMCM 时钟生成：50MHz → 70MHz / 16MHz / 8.388MHz
 // =========================================================================
+// =========================================================================
+// MMCM 时钟生成：50MHz 晶振 → 70MHz clk_cpu / 16MHz / 8.388MHz
+// =========================================================================
+// sys_clk_buf：IBUF 缓冲后的内部信号，供给 clk_wiz（含 IBUF）。
+// sys_clk 端口直接供给 clk_div_static / Cdc_Sync（不经过 IBUF），
+// 避免端口同时驱动 IBUF 输入和其他逻辑的 illegal port connection。
+wire sys_clk_buf;
+IBUF u_sys_clk_ibuf (.I(sys_clk), .O(sys_clk_buf));
+
 logic clk_wiz_locked;
 logic clk_cpu, clk_16mhz, clk_8m388;
 
 clk_wiz_0 u_clk_wiz_0 (
-    .clk_in     (sys_clk),
-    .clk_cpu  (clk_cpu),
+    .clk_in     (sys_clk_buf),
+    .clk_cpu    (clk_cpu),
     .clk_8m388  (clk_8m388),
     .reset      (~sys_rst_n),
     .locked     (clk_wiz_locked)
@@ -120,7 +129,7 @@ Cdc_Sync #(
     .RESET_VAL   (0),
     .DELAY_STAGES(3)
 ) u_cdc_rst_clint_sync (
-    .dst_clk    (sys_clk),
+    .dst_clk    (sys_clk_buf),
     .dst_rst_n  (rst_n_bufg),
     .async_sig  (1'b1),
     .sync_sig   (rst_n_clint_sync)
@@ -129,7 +138,7 @@ Cdc_Sync #(
 clk_div_static #(
     .DIV_NUM (50)
 ) u_clint_timer_div (
-    .clk_in  (sys_clk),
+    .clk_in  (sys_clk_buf),
     .rst_n   (rst_n_clint_sync),
     .clk_out (clk_1mhz)
 );

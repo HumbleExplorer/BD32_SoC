@@ -287,9 +287,17 @@ always_ff @(posedge clk or negedge rst_n) begin
         // 的首拍会被残留的 stall_flsuh_r 盖住，rvalid 捕获被跳过导致读数据丢失
         if (split_active)
             stall_flsuh_r <= #1 1'b0;
-        // 拆分检测拍（IDLE）不清除旧的 rvalid 会污染下一次写回：
-        // 拆分 load 的写回由 split_rvalid 在 P3 单独给出，检测拍与拆分进行中均强制清 rvalid
-        if (~stall_flsuh_r && ~split_active && ~split_misaligned) begin
+        // rvalid 提交门（2026-09-12 SERR 第 3 层修复）：
+        // 影子门 stall_flsuh_r 是上一拍 stall/flush 的延迟影像，会在"停顿后的
+        // 第一个恢复拍"错误吞掉 load 的访存提交——tidle 的 WFI（waiting_int）唤醒
+        // 后第一条 load（defunct 链表头读）正是这种拍：提交被吞 → load 无写回 →
+        // x15 残留旧值（上下文切换 sp 0x22dd0）→ 野指针 → SERR。
+        // 修复：影子=0 照常；影子=1 但当拍 unstalled（停顿释放拍）也放行提交。
+        // stall 延续拍（影子=1 且当拍仍 stall/flush）保持阻塞（访问未发生）。
+        // 【对比失败尝试】曾整体替换为当拍条件 ~(ex_mem_stall|ex_mem_flush)：
+        // stall 延续拍改为"保持 rvalid 旧值"，陈旧 rvalid=1 跨 stall 污染
+        // MEM_WB 捕获 → measure_cpu_freq 死循环系统无法启动，已回退。
+        if ((~stall_flsuh_r || (~ex_mem_stall && ~ex_mem_flush)) && ~split_active && ~split_misaligned) begin
             tcm_rvalid_q   <= #1 (~access_wr && (dtcm_sel || itcm_load_sel));
             // CORE_TEST 下 ITCM/DTCM 共享窗口（tag 相同）：load 数据取 DTCM（镜像），不取 ITCM 读口
             itcm_load_r    <= #1 (~access_wr && itcm_load_sel && ~dtcm_sel);

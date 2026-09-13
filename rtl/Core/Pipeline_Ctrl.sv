@@ -34,6 +34,10 @@ module Pipeline_Ctrl #(
     input   logic                       sba_bus_active,    // SBA 外设总线访问中（halt 保持）
     input   logic                       mem_split_stall,   // MEM 级非对齐拆分访问进行中
     input   logic                       itcm_data_stall,   // EX 级访问 ITCM（单端口让路）
+    input   logic                       ex_access_en,      // EX 级有在途访存（load/store 未提交）：
+                                                           // waiting_int 冻结必须让位，否则该访问的
+                                                           // rvalid 提交被 stall 门拦掉，唤醒后 load 带
+                                                           // 端口陈旧数据写回（tidle wfi+load SERR 根因）
     input   logic                       zcmp_busy,         // Zcmp 展开中（延迟调试事件到整条完成）
     // from Forward
     input   logic                       load_use_flag,
@@ -81,26 +85,33 @@ module Pipeline_Ctrl #(
 function automatic [3:0] get_priority;
     input [1:0] stage; // 0:IF, 1:ID, 2:EX
     input [DATA_WIDTH-2:0] code;
+    // 只比较 [3:0]：所有合法异常码都是 {{(DATA_WIDTH-5){1'b0}},4'dX} 零扩展，
+    // 全 1 哨兵的 [3:0]=4'hF 不命中任何表项仍返回 15，语义与全宽 case 等价；
+    // 砍掉 27 位比较是该函数进入 EX→trap 关键路径后的时序补偿（2026-09-11）
 begin
     get_priority = {4{1'b1}};
     case(stage)
         2'd0: begin // IF阶段
-            case(code)
+            case(code[3:0])
                 4'd0: get_priority = 4'd4;//指令地址未对齐
                 4'd1: get_priority = 4'd2;//指令访问错误
             endcase
         end
         2'd1: begin // ID阶段
-            case(code)
+            case(code[3:0])
                 4'd2: get_priority = 4'd3; // 非法指令
                 4'd3: get_priority = 4'd6; // 环境断点
                 4'd8,4'd9,4'd11: get_priority = 4'd5; // 环境调用
             endcase
         end
         2'd2: begin // EX阶段（含访存异常）
-            case(code)
+            case(code[3:0])
                 4'd2: get_priority = 4'd3; // 非法指令CSR
                 4'd5,4'd7: get_priority = 4'd10; // 访存错误
+                4'd4,4'd6: get_priority = 4'd10; // 访存未对齐（ITCM store/BootROM/APB 拆分不可覆盖时）。
+                                                 // 缺失本项时 code 携带合法 bit30=0 却查表落默认 15，
+                                                 // sel_stage 保持 default → 异常码 mux 输出全 1 哨兵 + mepc=0，
+                                                 // 陷阱以 mcause=0x7FFFFFFF 发出（2026-09-11 RT-Thread SERR 根因）
             endcase
         end
     endcase
@@ -421,16 +432,23 @@ always_comb begin
         ex_mem_flush    = r_trap_flush_mem;
         ctrl_jump_en    = 1'b1;
         ctrl_jump_addr  = r_trap_addr;
-    end else if (waiting_int) begin
+    end else if (waiting_int && ~ex_access_en) begin
+        // WFI 睡眠冻结：但 EX 级若有在途访存（access_en_ex=1），必须先放行一拍让
+        // 该访问正常提交（rvalid），否则唤醒后该 load 用端口残留数据写回（bug 2026-09-11）。
+        // 次拍 access_en_ex=0 后重新冻结，wfi 语义不变。
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
         ex_mem_stall    = 1'b1;
         mem_wb_stall    = 1'b1;
     end else if (trap_jump || int_accept_kill) begin
         // trap 当拍完成冲刷与 CSR 采样，PC 跳转延迟一拍。
-        // 中断（接受拍 int_accept_kill 与 int_trap_jump 拍动作相同）：冲 IF_ID+ID_EX，
-        // 边界指令（ID_EX 顶端）未进 EX 即被冲掉，其 PC 已由 CSR 锁存进 mepc，
-        // mret 后重执行；EX_MEM/MEM_WB 的更老指令照常提交。
+        // 中断（接受拍 int_accept_kill 与 int_trap_jump 拍动作相同）：冲 IF_ID+ID_EX+EX_MEM，
+        // 边界指令（EX 级）连同其 EX 结果一并冲掉，PC 已由 CSR 锁存进 mepc，mret 后重执行；
+        // EX_MEM 的更老指令同拍已进 MEM_WB 照常提交（ex_mem_flush 不损失任何提交）。
+        // 【2026-09-12 SERR 根因修复】原实现 ex_mem_flush=0（只冲 IF_ID+ID_EX）：边界指令
+        // 的 EX 结果仍泄漏进 EX_MEM 完成写回（第一次提交），mret 后又按 mepc 重执行
+        // （第二次提交）——非幂等指令（如 addi s0,s0,1768）状态被双重累加：
+        // tidle 的 s0=0x226e8+1768=0x22dd0 → defunct 读野指针 → SERR。
         // 异常（trap_jump_exc=1）有故障指令级，按 sel_stage 部分冲刷。
         if_id_flush = 1'b1;
         if (trap_jump_exc) begin
@@ -438,7 +456,7 @@ always_comb begin
             ex_mem_flush = (sel_stage >= 2'd2);
         end else begin
             id_ex_flush  = 1'b1;
-            ex_mem_flush = 1'b0;
+            ex_mem_flush = 1'b1;
         end
     end else if (mem_split_stall) begin
         // 非对齐拆分访问：停 IF/ID/EX_MEM，保持 EX 级访存参数与 EX_MEM 中的 rd；
@@ -489,11 +507,12 @@ assign dbg_halted = (dbg_halt_eff || step_halt || trigger_eff || ebreak_halt) &&
 a_accept_kill_ifid: assert property (
     @(posedge clk) disable iff (!rst_n)
     (int_accept_kill |-> if_id_flush));
-// 2) 纯中断接受拍（无异常重叠）：冲 ID_EX、保 EX_MEM
+// 2) 纯中断接受拍（无异常重叠）：冲 ID_EX+EX_MEM（边界指令连 EX 结果一并冲，
+//    防止其写回泄漏 + mret 重执行的双重提交【2026-09-12 SERR 根因】）
 a_accept_kill_flush: assert property (
     @(posedge clk) disable iff (!rst_n)
     ((int_accept_kill && !trap_jump_exc) |->
-     (id_ex_flush && !ex_mem_flush)));
+     (id_ex_flush && ex_mem_flush)));
 `endif
 
 endmodule
