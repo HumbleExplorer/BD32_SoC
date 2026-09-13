@@ -10,7 +10,13 @@ LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'logs
 MARK = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'logs', 'soak_SERR_FOUND.marker')
 
 deadline = time.time() + HOURS * 3600
-ser = serial.Serial(PORT, BAUD, timeout=1)
+# DTR 安全打开：先配置再 open，避免 open() 的 DTR 脉冲把板子复位进
+# BootROM 下载等待（板载 CH340 DTR/RTS 接复位/下载电路；裸 open 曾致
+# 全程静默——2026-09-14 soak 教训）
+ser = serial.Serial()
+ser.port, ser.baudrate, ser.timeout = PORT, BAUD, 1
+ser.dtr, ser.rts = False, False
+ser.open()
 buf = []
 with open(LOG, 'a', encoding='utf-8', errors='replace') as f:
     f.write(f"\n===== soak start {time.strftime('%Y-%m-%d %H:%M:%S')} ({HOURS}h) =====\n")
