@@ -84,4 +84,14 @@ always_ff @(posedge clk or negedge rst_n) begin
             regs[reg_rd_waddr2] <= #1 reg_rd_wdata2;
     end
 end
+
+`ifndef SYNTHESIS
+// ===== SVA：RegFile 不变式 =====
+// x0 读恒 0（含旁路窗口——防旁路分支重排到 x0 检查之前）
+a_x0_read: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    ((reg_rs1_raddr == '0) && (reg_rs2_raddr == '0)) |->
+    ((reg_rs1_rdata == '0) && (reg_rs2_rdata == '0)));
+`endif
+
 endmodule

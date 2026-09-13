@@ -94,4 +94,16 @@ always_ff @(posedge clk or negedge rst_n) begin
     else                 valid_o <= #1 ~stall & valid_i;
 end
 
+`ifndef SYNTHESIS
+// ===== SVA：流水线寄存器控制一致性 =====
+// flush 次拍指令有效位必须清零（边界指令死亡语义）
+a_flush_clear: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (flush) |=> (!valid_o));
+// stall（非 flush）时指令内容保持——字段由 !stall 门保持，不许漂移
+a_stall_hold: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (stall && !flush) |=> ($stable(inst_o) && $stable(inst_addr_o)));
+`endif
+
 endmodule

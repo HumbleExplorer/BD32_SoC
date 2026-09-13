@@ -266,4 +266,16 @@ always_ff @(posedge clk or negedge rst_n) begin
     end
 end
 
+`ifndef SYNTHESIS
+// ===== SVA：FIFO 一致性 =====
+// 计数永不超深度（入队/退休/flush 三方更新无双重计数）
+a_cnt_range: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (cnt <= OITF_DEPTH));
+// 异常 flush 清空 FIFO：次拍 cnt=0 且读指针归位写指针
+a_flush_empty: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (flush) |=> (cnt == '0 && rd_ptr == wr_ptr));
+`endif
+
 endmodule
