@@ -442,13 +442,9 @@ always_comb begin
         mem_wb_stall    = 1'b1;
     end else if (trap_jump || int_accept_kill) begin
         // trap 当拍完成冲刷与 CSR 采样，PC 跳转延迟一拍。
-        // 中断（接受拍 int_accept_kill 与 int_trap_jump 拍动作相同）：冲 IF_ID+ID_EX+EX_MEM，
-        // 边界指令（EX 级）连同其 EX 结果一并冲掉，PC 已由 CSR 锁存进 mepc，mret 后重执行；
-        // EX_MEM 的更老指令同拍已进 MEM_WB 照常提交（ex_mem_flush 不损失任何提交）。
-        // 【2026-09-12 SERR 根因修复】原实现 ex_mem_flush=0（只冲 IF_ID+ID_EX）：边界指令
-        // 的 EX 结果仍泄漏进 EX_MEM 完成写回（第一次提交），mret 后又按 mepc 重执行
-        // （第二次提交）——非幂等指令（如 addi s0,s0,1768）状态被双重累加：
-        // tidle 的 s0=0x226e8+1768=0x22dd0 → defunct 读野指针 → SERR。
+        // 中断接受拍：IF_ID+ID_EX+EX_MEM 全冲（ex_mem_flush=1 必须保留——
+        // 否则边界指令泄漏 EX_MEM 完成写回 + mret 重执行 = 双重提交，SERR 根因
+        // 2026-09-12，详见 Memory_Log 同日条目）。
         // 异常（trap_jump_exc=1）有故障指令级，按 sel_stage 部分冲刷。
         if_id_flush = 1'b1;
         if (trap_jump_exc) begin

@@ -345,4 +345,16 @@ module IFU_Buffer #(
     end
   end
 
+`ifndef SYNTHESIS
+// ===== SVA：取指窗口一致性 =====
+// 装配地址恒 16 位对齐（C 扩展取指粒度）
+a_inst_addr_aligned: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    (inst_addr_o[0] == 1'b0));
+// 重定向清空装配窗口：jump_en/dbg_load_en 次拍 have_cur=0（字流从目标重取）
+a_redirect_clear: assert property (
+    @(posedge clk) disable iff (!rst_n)
+    ((jump_en || dbg_load_en) |=> (!have_cur)));
+`endif
+
 endmodule

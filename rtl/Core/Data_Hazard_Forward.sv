@@ -147,4 +147,17 @@ assign  access_wdata_temp = forward_C ? reg_rd_wdata_mem : access_wdata;
 assign  access_wdata_temp = access_wdata;
 `endif
 
+`ifndef SYNTHESIS
+// ===== SVA：前递选择无 X =====
+// forward_A/B 是位掩码（bit0=OITF/bit1=WB/bit2=MEM），多位同置合法
+//（优先级 mux 裁决，如 MEM+WB 同拍命中同 rd），不存在"非法编码"。
+// 唯一病理是 X 传播（选择信号未定义），此处只查 X。
+a_fwd_a_no_x: assert property (
+    @(posedge clk)
+    (!$isunknown(forward_A))) else $error("[SVA][FWD] forward_A 含 X: %b", forward_A);
+a_fwd_b_no_x: assert property (
+    @(posedge clk)
+    (!$isunknown(forward_B))) else $error("[SVA][FWD] forward_B 含 X: %b", forward_B);
+`endif
+
 endmodule

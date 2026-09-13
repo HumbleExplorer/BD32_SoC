@@ -64,9 +64,8 @@ always_ff @(posedge clk or negedge rst_n) begin
             inst_o          <= #1 `INST_NOP;
             access_en_o     <= #1 1'b0;
             reg_rd_wen_o    <= #1 1'b0;
-            // 冲刷时清掉残留的写回目标/数据：否则中断/异常进入时被取消指令的
-// 陈旧 waddr 会配合保持的 tcm_rvalid 被强制写回（ra 被垃圾覆盖，
-            // breathing 第 3 次中断崩溃根因）。清成 x0 后写回被 RegFile 丢弃。
+            // 冲刷时清残留 waddr/wdata：否则被取消指令的陈旧 waddr 会配合
+            // 保持的 tcm_rvalid 强制写回（幽灵写回家族，breathing 崩溃根因）。
             reg_rd_waddr_o  <= #1 'h0;
             reg_rd_wdata_o  <= #1 'h0;
     inst_type_o     <= #1 3'd0;

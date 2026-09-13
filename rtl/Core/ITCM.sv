@@ -36,12 +36,9 @@ wire [ALIGN_BYTES-1:0] ram_we   = itcm_download_en ? {ALIGN_BYTES{1'b1}} : itcm_
 wire [ADDR_WIDTH-1:0]  ram_addr = itcm_download_en ? itcm_download_addr : itcm_access_addr;
 wire [DATA_WIDTH-1:0]  ram_din  = itcm_download_en ? itcm_download_data : itcm_wr_data;
 
-// 注意：曾尝试用地址寄存器打断 EX→BRAM 长路径（2026-09-11，已回退）。
-// 该方案在 FPGA 上有两处功能性错误：
-//   1) wea/写入数据仍是组合信号，与寄存后的 addra 错拍 —— store 会写到上一拍请求地址；
-//   2) BRAM 读整体晚一拍，IFU_Buffer 的 req_addr↔w_new 字流配对被破坏（sim 走非 XILINX
-//      分支，该寄存器为死代码，仿真回归发现不了）。
-// 正确修法需把 LSU 请求整体打一拍并改取指仲裁时序（微架构改动），详见 Memory_Log。
+// 【勿再尝试】对本 BRAM addra 单独打拍：会与组合的 wea 错拍（store 写错地址）
+// 且取指晚一拍破坏 IFU_Buffer 字流配对。XILINX-only 分支仿真回归覆盖不到，
+// 详见 Memory_Log/2026-09-11 条目。
 
 generate
     `ifdef XILINX
