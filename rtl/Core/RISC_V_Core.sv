@@ -1259,6 +1259,23 @@ assign reg_rd_wen_selected_mem   = (tcm_rvalid || (bus_rvalid && ~bus_error)) ? 
 // 非对齐拆分期间 EX_MEM 被 mem_split_stall 保持，rd 仍有效，无需走 bus_load_waddr 旁路
 assign reg_rd_waddr_selected_mem = (bus_rvalid && ~split_active) ? bus_load_waddr : reg_rd_waddr_mem;
 
+`ifndef SYNTHESIS
+// ===== SVA：访存一致性 =====
+// 契约：tcm_rvalid 延伸（连续 ≥2 拍）期间，若 EX 级仍是同一条访存指令
+// （inst_ex 不变 = 流水线停顿持有该访问），则 DTCM 端口地址必须稳定——
+// 消费窗口内端口不得漂移（2026-09-12 rvalid×脏端口家族疫苗；
+// dtcm_port_addr_q 端口保持固化此契约）。
+// 背靠背不同 load（inst_ex 变化、rvalid 连续服务两条 load）是合法流，
+// 端口按新访问切换，不在本断言约束内。
+property p_rv_port_stable;
+    @(posedge clk) disable iff (!rst_n)
+    (tcm_rvalid && $past(tcm_rvalid) && (inst_ex == $past(inst_ex))
+     ) |-> $stable(dtcm_addr_sba);
+endproperty
+a_rv_port_stable: assert property (p_rv_port_stable)
+    else $error("[SVA][CORE] 同指令 rvalid 延伸拍端口地址漂移: inst=%h port=%h", inst_ex, dtcm_addr_sba);
+`endif
+
 MEM_WB #(
     .ADDR_WIDTH     (ADDR_WIDTH),
     .DATA_WIDTH     (DATA_WIDTH),

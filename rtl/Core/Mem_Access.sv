@@ -383,5 +383,17 @@ always_comb begin
     end
 end
 
+`ifndef SYNTHESIS
+// ===== SVA：访存一致性 =====
+// split FSM 无卡死：同一非 IDLE 状态持续 >4096 拍视为病理性卡死
+// （总线挂死时亦会触发——本身即病理，报告价值大于误报风险）
+property p_split_liveness;
+    @(posedge clk) disable iff (!rst_n)
+    (split_active && $past(split_active, 4096) &&
+     (split_state == $past(split_state, 4096))) |-> 1'b0;
+endproperty
+a_split_liveness: assert property (p_split_liveness)
+    else $error("[SVA][MA] split FSM 状态 %h 停留超 4096 拍（疑似总线/握手卡死）", split_state);
+`endif
 
 endmodule

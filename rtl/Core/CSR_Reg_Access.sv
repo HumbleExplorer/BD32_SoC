@@ -488,6 +488,22 @@ a_accept_pc_aligned: assert property (
 a_int_trap_fire: assert property (
     @(posedge clk) disable iff (!rst_n)
     (int_trap_jump |-> trap_jump));
+// 6) 陷阱码哨兵：exception_trap 时选中的异常码不得携带全 1 哨兵（bit30=1）——
+//    get_priority 优先级表缺项时 sel_stage 落 default，异常码 mux 输出全 1 且
+//    mepc=0（2026-09-12 修复，mcause=0x7FFFFFFF 即此家族）
+property p_exc_code_valid;
+    @(posedge clk) disable iff (!rst_n)
+    (exception_trap |-> !mcause_n[30]);
+endproperty
+a_exc_code_valid: assert property (p_exc_code_valid)
+    else $error("[SVA][CSR] exception_trap 携带哨兵码 mcause_n=%h（核对 get_priority）", mcause_n);
+// 7) 中断原因编码合法：软件 3 / 定时 7 / 外部 11，且中断位（bit31）必须置位
+property p_int_code_legal;
+    @(posedge clk) disable iff (!rst_n)
+    (int_trap_jump_n |-> (mcause_n[31] && (mcause_n[3:0] inside {4'd3, 4'd7, 4'd11})));
+endproperty
+a_int_code_legal: assert property (p_int_code_legal)
+    else $error("[SVA][CSR] 中断原因码非法 mcause_n=%h", mcause_n);
 `endif
 
 endmodule

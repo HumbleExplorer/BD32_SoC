@@ -10,3 +10,4 @@
 ../../rtl/Periph/plic/*.sv
 ../../rtl/Periph/uart/*.sv
 ../../rtl/Periph/timer/*.sv
+../../rtl/assert/*.sv

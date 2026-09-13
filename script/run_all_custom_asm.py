@@ -150,6 +150,11 @@ def run_single_test(vsim_exe, test_name, sim_time_us=SIM_TIME_US, timeout=TIMEOU
                                 text=True, timeout=timeout)
         output = result.stdout + result.stderr
 
+        # SVA 断言触发视为 FAIL（疫苗判据，优先于功能 PASS——2026-09-12）
+        if re.search(r"\*\* Error: \[SVA\]", output):
+            m = re.findall(r"\[SVA\]\[\w+\] (.+)", output)
+            return ("FAIL", "SVA: " + (m[0][:60] if m else "assertion fired"))
+
         if "test passed !!!!!" in output:
             return ("PASS", "")
         elif "test failed !!!!!" in output:
