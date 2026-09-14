@@ -11,4 +11,3 @@
 ../../rtl/Periph/uart/*.sv
 ../../rtl/Periph/timer/*.sv
 ../../rtl/assert/*.sv
-../../rtl/assert/*.sv

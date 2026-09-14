@@ -401,6 +401,24 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 4. 关联：将 divergence 对应的 PC 映射回反汇编，确认是哪条指令拿到错误值
 ```
 
+## 形式验证（SymbiYosys）
+
+SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。首个对象 OITF 已全绿
+（BMC depth30、abc-pdr 无界证明、cover 3/3），属性计划与落地记录见
+[property_plan_oitf.md](property_plan_oitf.md)。
+
+```bat
+call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat
+cd /d Working\rtl\assert\formal
+sby -f oitf_formal.sby           :: 三任务全跑；指定单任务：sby -f oitf_formal.sby prove
+```
+
+要点（Windows 环境坑与 Yosys SVA 子集约束详见属性计划文档"落地结果"一节）：
+- 必须经 `environment.bat` 启动（yosys 裸跑报 0xC0000139）；
+- OITF.sv 存储为按字段并行数组（Yosys 不支持结构体数组的下标访问，会产生隐式 wire 静默失真）；
+- 模块内 `ifdef FORMAL` 断言与仿真 SVA（`ifndef SYNTHESIS`）共用一套 Yosys 兼容写法，
+  ModelSim 同样接受。
+
 ## 回归建议
 
 - 每次 RTL 改动：custom_asm + riscv-tests + tb_debug 全量回归 + 全部 demo + CoreMark + 上板串口验证。

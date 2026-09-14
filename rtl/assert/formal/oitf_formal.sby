@@ -1,0 +1,27 @@
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc: mode bmc
+bmc: depth 30
+prove: mode prove
+prove: depth 20
+cover: mode cover
+cover: depth 30
+
+[engines]
+bmc: smtbmc
+prove: abc pdr
+cover: smtbmc
+
+[script]
+read -formal -sv oitf_formal_top.sv
+read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/OITF.sv
+prep -top oitf_formal_top
+
+[files]
+oitf_formal_top.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/OITF.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv

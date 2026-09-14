@@ -12,10 +12,17 @@
 //
 // 通用化：NUM_LP_UNITS 控制长周期硬件单元数量。
 // 当前 2（MUL=0, DIV=1），加 FPU 只需增大参数并连好信号。
+//
+// 【存储表示说明】条目状态用「按字段拆分的并行数组」表示
+// （cur_vld/cur_unit_id/... 而非 struct 数组）。原因：Yosys（形式验证
+// 端）不支持结构体数组的任何下标访问（常数/变量下标都会产生隐式
+// wire）；拍平表示在 ModelSim/Vivado/Yosys 三端语义一致。
 // ==========================================================================
 `include "./../SoC_Config.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 module OITF #(
     parameter OITF_DEPTH     = 4,
     parameter DATA_WIDTH     = `DATA_WIDTH,
@@ -54,23 +61,21 @@ module OITF #(
 );
 
 // ==========================================================================
-// 类型定义
+// 信号定义（条目状态：按字段拆分的并行数组，见文件头说明）
 // ==========================================================================
-typedef struct packed {
-    logic                           vld;
-    logic   [UNIT_ID_W-1:0]         unit_id;        // 所属长周期单元
-    logic   [REG_ADDR_WIDTH-1:0]    rd_addr;
-    logic                           rd_wen;
-    logic                           ready;          // 结果已就绪
-    logic   [DATA_WIDTH-1:0]        result;
-} oitf_entry_t;
+logic   [OITF_DEPTH-1:0]            cur_vld;
+logic   [OITF_DEPTH-1:0]            cur_ready;
+logic   [OITF_DEPTH-1:0]            cur_rd_wen;
+logic   [UNIT_ID_W-1:0]             cur_unit_id  [OITF_DEPTH-1:0];
+logic   [REG_ADDR_WIDTH-1:0]        cur_rd_addr  [OITF_DEPTH-1:0];
+logic   [DATA_WIDTH-1:0]            cur_result   [OITF_DEPTH-1:0];
 
-// ==========================================================================
-// 信号定义
-// ==========================================================================
-// 条目数组
-oitf_entry_t    oitf_cur    [OITF_DEPTH-1:0];
-oitf_entry_t    oitf_nxt    [OITF_DEPTH-1:0];
+logic   [OITF_DEPTH-1:0]            nxt_vld;
+logic   [OITF_DEPTH-1:0]            nxt_ready;
+logic   [OITF_DEPTH-1:0]            nxt_rd_wen;
+logic   [UNIT_ID_W-1:0]             nxt_unit_id  [OITF_DEPTH-1:0];
+logic   [REG_ADDR_WIDTH-1:0]        nxt_rd_addr  [OITF_DEPTH-1:0];
+logic   [DATA_WIDTH-1:0]            nxt_result   [OITF_DEPTH-1:0];
 
 // FIFO 指针
 logic   [ITAG_WIDTH-1:0]    wr_ptr;
@@ -109,8 +114,8 @@ assign  full    = (cnt == OITF_DEPTH);
 assign  disp_fire = lp_valid & ~oitf_stall & ~flush;
 
 // --- 退休条件 ---
-assign  retire_fire = oitf_cur[rd_ptr].vld
-                    & oitf_cur[rd_ptr].ready;
+assign  retire_fire = cur_vld[rd_ptr]
+                    & cur_ready[rd_ptr];
 
 // --- RAW 依赖（EX 阶段：当前 EX 指令的 rs 与 OITF 条目的 rd 冲突）---
 // 修复：仅当匹配条目"本拍正在退休"（位于 FIFO 头部且 ready）时才解除阻塞。
@@ -121,14 +126,14 @@ assign  retire_fire = oitf_cur[rd_ptr].vld
 generate
     genvar j;
     for (j = 0; j < OITF_DEPTH; j++) begin : gen_raw_match
-        assign rs1_match[j] = oitf_cur[j].vld
-                             & oitf_cur[j].rd_wen
-                             & (oitf_cur[j].rd_addr == reg_rs1_raddr_ex)
-                             & ~((j == rd_ptr) & oitf_cur[j].ready);
-        assign rs2_match[j] = oitf_cur[j].vld
-                             & oitf_cur[j].rd_wen
-                             & (oitf_cur[j].rd_addr == reg_rs2_raddr_ex)
-                             & ~((j == rd_ptr) & oitf_cur[j].ready);
+        assign rs1_match[j] = cur_vld[j]
+                             & cur_rd_wen[j]
+                             & (cur_rd_addr[j] == reg_rs1_raddr_ex)
+                             & ~((j == rd_ptr) & cur_ready[j]);
+        assign rs2_match[j] = cur_vld[j]
+                             & cur_rd_wen[j]
+                             & (cur_rd_addr[j] == reg_rs2_raddr_ex)
+                             & ~((j == rd_ptr) & cur_ready[j]);
     end
 endgenerate
 
@@ -146,10 +151,10 @@ assign  raw_hazard = (ex_rs1_valid & rs1_hit) | (ex_rs2_valid & rs2_hit);
 generate
     genvar k;
     for (k = 0; k < OITF_DEPTH; k++) begin : gen_waw_match
-        assign waw_match[k] = oitf_cur[k].vld
-                             & oitf_cur[k].rd_wen
-                             & (oitf_cur[k].rd_addr == reg_rd_waddr_ex)
-                             & ~((k == rd_ptr) & oitf_cur[k].ready);
+        assign waw_match[k] = cur_vld[k]
+                             & cur_rd_wen[k]
+                             & (cur_rd_addr[k] == reg_rd_waddr_ex)
+                             & ~((k == rd_ptr) & cur_ready[k]);
     end
 endgenerate
 
@@ -162,17 +167,17 @@ assign  waw_hit = |waw_match;
 generate
     genvar u;
     for (u = 0; u < NUM_LP_UNITS; u++) begin : gen_wbck_match
+        wire [UNIT_ID_W-1:0] u_w = u;
         always_comb begin
             wbck_sel[u] = '0;//每个 unit 有自己的 OITF_DEPTH 位宽的位向量wbck_sel，bit i = 1 表示 entry i 应当接收该 unit 的写回结果。
             if (unit_wbck_valid[u]) begin//这个 unit 刚完成运算,需要匹配
                 for (int offset = 0; offset < OITF_DEPTH; offset++) begin//遍历所有 OITF_DEPTH 个条目。注意这里不是按索引 0→1→2→3 的顺序扫，而是从 rd_ptr 开始。
-                    automatic int idx;
-                    idx = (int'(rd_ptr) + offset >= OITF_DEPTH) ? (int'(rd_ptr) + offset - OITF_DEPTH) : int'(rd_ptr) + offset;
-                    if (oitf_cur[idx].vld
-                        && (oitf_cur[idx].unit_id == u[UNIT_ID_W-1:0])
-                        && !oitf_cur[idx].ready
+                    // 环形索引用模运算内联
+                    if (cur_vld[(rd_ptr + offset) % OITF_DEPTH]
+                        && (cur_unit_id[(rd_ptr + offset) % OITF_DEPTH] == u_w)
+                        && !cur_ready[(rd_ptr + offset) % OITF_DEPTH]
                         && (wbck_sel[u] == '0)) begin//"首匹配" 条件。已经找到了就停下，后面的不再选。这保证只选最老的那个匹配条目。
-                        wbck_sel[u][idx] = 1'b1;
+                        wbck_sel[u][(rd_ptr + offset) % OITF_DEPTH] = 1'b1;
                     end
                 end
             end
@@ -187,40 +192,45 @@ assign  oitf_stall = (lp_valid & (full | (lp_unit_id == 1 && ~unit_ready[1])))//
 
 // --- 退休输出（双写端口，OITF 退休走 Port2，无需与 WB 互斥）---
 assign  retire_valid    = retire_fire;
-assign  retire_rd_addr  = oitf_cur[rd_ptr].rd_addr;
-assign  retire_rd_data  = oitf_cur[rd_ptr].result;
-assign  retire_rd_wen   = oitf_cur[rd_ptr].rd_wen;
+assign  retire_rd_addr  = cur_rd_addr[rd_ptr];
+assign  retire_rd_data  = cur_result[rd_ptr];
+assign  retire_rd_wen   = cur_rd_wen[rd_ptr];
 
 // --- 条目状态更新 ---
 always_comb begin
     for (int i = 0; i < OITF_DEPTH; i++) begin
-        oitf_nxt[i] = oitf_cur[i];
+        // 默认保持
+        nxt_vld[i]      = cur_vld[i];
+        nxt_ready[i]    = cur_ready[i];
+        nxt_rd_wen[i]   = cur_rd_wen[i];
+        nxt_unit_id[i]  = cur_unit_id[i];
+        nxt_rd_addr[i]  = cur_rd_addr[i];
+        nxt_result[i]   = cur_result[i];
         if (flush) begin
-            oitf_nxt[i].vld   = 1'b0;
-            oitf_nxt[i].ready = 1'b0;
+            nxt_vld[i]   = 1'b0;
+            nxt_ready[i] = 1'b0;
         end else begin
             // 派发：写入新条目
+            // 注意：不用 '{...} struct assignment pattern——Yosys 不支持
             if (disp_fire && (ITAG_WIDTH'(i) == wr_ptr)) begin
-                oitf_nxt[i] = '{
-                    vld:     1'b1,
-                    unit_id: lp_unit_id,
-                    rd_addr: disp_rd_addr,
-                    rd_wen:  disp_rd_wen,
-                    ready:   1'b0,
-                    result:  '0
-                };
+                nxt_vld[i]     = 1'b1;
+                nxt_unit_id[i] = lp_unit_id;
+                nxt_rd_addr[i] = disp_rd_addr;
+                nxt_rd_wen[i]  = disp_rd_wen;
+                nxt_ready[i]   = 1'b0;
+                nxt_result[i]  = '0;
             end
             // 写回：unit 完成时标记对应条目就绪
             for (int u = 0; u < NUM_LP_UNITS; u++) begin
                 if (wbck_sel[u][i]) begin
-                    oitf_nxt[i].ready  = 1'b1;
-                    oitf_nxt[i].result = result_wbck[u*DATA_WIDTH +: DATA_WIDTH];
+                    nxt_ready[i]  = 1'b1;
+                    nxt_result[i] = result_wbck[u*DATA_WIDTH +: DATA_WIDTH];
                 end
             end
             // 退休：清除头部条目
             if (retire_fire && (ITAG_WIDTH'(i) == rd_ptr)) begin
-                oitf_nxt[i].vld   = 1'b0;
-                oitf_nxt[i].ready = 1'b0;
+                nxt_vld[i]   = 1'b0;
+                nxt_ready[i] = 1'b0;
             end
         end
     end
@@ -252,14 +262,26 @@ end
 // ==========================================================================
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        for (int i = 0; i < OITF_DEPTH; i++)
-            oitf_cur[i] <= #1 '0;
+        for (int i = 0; i < OITF_DEPTH; i++) begin
+            cur_vld[i]     <= #1 '0;
+            cur_ready[i]   <= #1 '0;
+            cur_rd_wen[i]  <= #1 '0;
+            cur_unit_id[i] <= #1 '0;
+            cur_rd_addr[i] <= #1 '0;
+            cur_result[i]  <= #1 '0;
+        end
         wr_ptr <= #1 '0;
         rd_ptr <= #1 '0;
         cnt    <= #1 '0;
     end else begin
-        for (int i = 0; i < OITF_DEPTH; i++)
-            oitf_cur[i] <= #1 oitf_nxt[i];
+        for (int i = 0; i < OITF_DEPTH; i++) begin
+            cur_vld[i]     <= #1 nxt_vld[i];
+            cur_ready[i]   <= #1 nxt_ready[i];
+            cur_rd_wen[i]  <= #1 nxt_rd_wen[i];
+            cur_unit_id[i] <= #1 nxt_unit_id[i];
+            cur_rd_addr[i] <= #1 nxt_rd_addr[i];
+            cur_result[i]  <= #1 nxt_result[i];
+        end
         wr_ptr <= #1 wr_ptr_nxt;
         rd_ptr <= #1 rd_ptr_nxt;
         cnt    <= #1 cnt_nxt;
@@ -267,15 +289,68 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 `ifndef SYNTHESIS
-// ===== SVA：FIFO 一致性 =====
-// 计数永不超深度（入队/退休/flush 三方更新无双重计数）
-a_cnt_range: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    (cnt <= OITF_DEPTH));
-// 异常 flush 清空 FIFO：次拍 cnt=0 且读指针归位写指针
-a_flush_empty: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    (flush) |=> (cnt == '0 && rd_ptr == wr_ptr));
+// ===== SVA：FIFO 一致性（仿真 + 形式共享）=====
+// Yosys SVA 子集写法：时钟取自外层 always（模块级 @(posedge) 不支持）、
+// disable iff 改为 if 守卫、蕴含 |=> 改写为 $past 守卫（ModelSim 同样接受）
+always @(posedge clk) begin
+    if (rst_n) begin
+        // 计数永不超深度（入队/退休/flush 三方更新无双重计数）
+        a_cnt_range: assert property (cnt <= OITF_DEPTH);
+        // 异常 flush 清空 FIFO：次拍 cnt=0 且读指针归位写指针
+        if ($past(flush)) begin
+            a_flush_empty: assert property ((cnt == '0) && (rd_ptr == wr_ptr));
+        end
+    end
+end
+`endif
+
+`ifdef FORMAL
+// ===== 形式验证属性（SymbiYosys BMC/prove）=====
+// FIFO 序不变式（核心）：环形偏移 rel < cnt ⟺ 条目在队
+genvar gf;
+for (gf = 0; gf < OITF_DEPTH; gf++) begin : gen_fml_order
+    wire [ITAG_WIDTH-1:0] gf_w      = gf;
+    wire [ITAG_WIDTH-1:0] ring_rel_f = (gf_w - rd_ptr);
+    // 与全宽 cnt 比较（cnt==OITF_DEPTH 满时低 2 位为 00，截断比较会误判为空）
+    wire                  in_win_f   = ({1'b0, ring_rel_f} < cnt);
+    always @(posedge clk) begin
+        if (rst_n) begin
+            // 无标签：generate 展开时 Yosys 不接受同名 assert cell，自动命名即可
+            assert property (cur_vld[gf] == in_win_f);
+        end
+    end
+end
+// 停顿一致性：oitf_stall 的独立重构（wire 声明于模块级，always 内引用）
+wire fml_exp_raw   = ((ex_rs1_valid & rs1_hit) | (ex_rs2_valid & rs2_hit));
+wire fml_exp_stall = (lp_valid & (full | ((lp_unit_id == 1'b1) && !unit_ready[1])))
+                   | fml_exp_raw
+                   | (reg_rd_wen_ex & waw_hit);
+// 指针范围 / 退休合法性 / 停顿一致性：同一 always 内集中书写
+always @(posedge clk) begin
+    if (rst_n) begin
+        a_fml_wr_range: assert property (wr_ptr < OITF_DEPTH);
+        a_fml_rd_range: assert property (rd_ptr < OITF_DEPTH);
+        // 退休合法性：retire_valid ⇔ 头部 vld&&ready
+        a_fml_retire_def: assert property
+            (retire_valid == (cur_vld[rd_ptr] && cur_ready[rd_ptr]));
+        // 空 FIFO 无退休
+        if (cnt == '0) begin
+            a_fml_no_retire_empty: assert property (!retire_valid);
+        end
+        // 退休输出与头部条目一致
+        if (retire_valid) begin
+            a_fml_retire_out: assert property
+                ((retire_rd_addr == cur_rd_addr[rd_ptr]) &&
+                 (retire_rd_data == cur_result[rd_ptr]));
+        end
+        // 停顿一致性
+        a_fml_stall_match: assert property (oitf_stall == fml_exp_stall);
+        // cover：稀有路径
+        c_fml_full:  cover property (full);
+        c_fml_rf_fl: cover property (retire_fire && flush);
+        c_fml_dp_rt: cover property (disp_fire && retire_fire);
+    end
+end
 `endif
 
 endmodule

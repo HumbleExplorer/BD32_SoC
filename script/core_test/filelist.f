@@ -6,4 +6,4 @@
 ../../rtl/Core/*.sv
 ../../rtl/Core/Mul_Div/*.sv
 ../../rtl/Debug/*.sv
-../../rtl/assert/*.sv
+../../rtl/assert/bind_core.sv
