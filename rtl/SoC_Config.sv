@@ -164,7 +164,13 @@
 `define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000  // 高16位 >= 此值走 AXI
 
 // AXI 超时（时钟周期）：75MHz 下 1024 周期 ≈ 13.65μs
+// 形式验证（sby 定义 FORMAL）下缩小到 8：验证的是超时机制本身而非标定值，
+// 且 BMC depth 30 可全程覆盖逃逸路径；PDR 无需归纳 16 位计数器关系
+`ifdef FORMAL
+`define BUS_TIMEOUT  8
+`else
 `define BUS_TIMEOUT  1024
+`endif
 
 // --- 16 位设备标签（快速地址译码用）---
 `define BOOT_BASE_TAG  `DEVICE_TAG_WIDTH'h0000

@@ -1,6 +1,8 @@
 `include "./../SoC_Config.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 
 // =============================================================================
 // AXI_Lite_Master - AXI4-Lite 主设备（全寄存器版）
@@ -266,16 +268,76 @@ module AXI_Lite_Master #(
 `ifndef SYNTHESIS
 // ===========================================================================
 // SVA: AXI4-Lite 握手稳定性（VALID 拉起后必须保持到握手完成）
+// Yosys SVA 子集写法：时钟取自外层 always、$stable 改 $past、|=> 改 $past 守卫
+// （ModelSim 同样接受）；总线超时逃逸拍豁免——超时强制撤 valid 是设计行为
 // ===========================================================================
-a_aw_stable: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    (m_awvalid && !m_awready) |=> m_awvalid && $stable(m_awaddr));
-a_w_stable: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    (m_wvalid && !m_wready) |=> m_wvalid && $stable(m_wdata) && $stable(m_wstrb));
-a_ar_stable: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    (m_arvalid && !m_arready) |=> m_arvalid && $stable(m_araddr));
+always @(posedge clk) begin
+    if (rst_n) begin
+        if ($past(m_awvalid && !m_awready && !bus_timeout)) begin
+            a_aw_stable: assert property
+                (m_awvalid && (m_awaddr == $past(m_awaddr)));
+        end
+        if ($past(m_wvalid && !m_wready && !bus_timeout)) begin
+            a_w_stable: assert property
+                (m_wvalid && (m_wdata == $past(m_wdata)) && (m_wstrb == $past(m_wstrb)));
+        end
+        if ($past(m_arvalid && !m_arready && !bus_timeout)) begin
+            a_ar_stable: assert property
+                (m_arvalid && (m_araddr == $past(m_araddr)));
+        end
+    end
+end
+`endif
+
+`ifdef FORMAL
+// ===== 形式验证属性（SymbiYosys）=====
+// 6 态 one-hot FSM 合法性 + 输出一致性 + 等待态有界逃逸（超时计数器保证，
+// 无需环境假设——挂死场景由 BUS_TIMEOUT 强制 DONE 并回 DECERR）
+localparam logic [5:0] FML_S_IDLE      = 6'b000001;
+localparam logic [5:0] FML_S_WAIT_W_AW = 6'b000010;
+localparam logic [5:0] FML_S_WAIT_B    = 6'b000100;
+localparam logic [5:0] FML_S_WAIT_AR   = 6'b001000;
+localparam logic [5:0] FML_S_WAIT_R    = 6'b010000;
+localparam logic [5:0] FML_S_DONE      = 6'b100000;
+// 等待态年龄计数（有界逃逸检查用）
+logic [15:0] fml_wait_age;
+always_ff @(posedge clk) begin
+    if (!rst_n)            fml_wait_age <= '0;
+    else if (in_wait_state) fml_wait_age <= fml_wait_age + 1'b1;
+    else                    fml_wait_age <= '0;
+end
+always @(posedge clk) begin
+    if (rst_n) begin
+        // FSM 只允许落在 6 个合法 one-hot 编码
+        fml_a_state_legal: assert property
+            ((state == FML_S_IDLE) || (state == FML_S_WAIT_W_AW) || (state == FML_S_WAIT_B)
+          || (state == FML_S_WAIT_AR) || (state == FML_S_WAIT_R) || (state == FML_S_DONE));
+        // CPU 侧契约：req_ready/rsp_valid 与状态一致（蕴含式——req_ready 是
+        // 寄存器输出，复位后第一拍 state=IDLE 而 req_ready 仍为复位值 0，
+        // 精确相等式会在启动拍误报）
+        if (req_ready) begin
+            fml_a_req_ready_fwd: assert property
+                ((state == FML_S_DONE) || (state == FML_S_IDLE));
+        end
+        fml_a_rsp_valid: assert property (rsp_valid == (state == FML_S_DONE));
+        // 等待态有界逃逸：至多 TIMEOUT_VAL+1 拍必被超时强制离开（活性 → 有界活性）
+        fml_a_wait_bounded: assert property (fml_wait_age <= `BUS_TIMEOUT + 2);
+        // DONE 拍 req_ready 必为高（响应当拍可被接收/背靠背发射）
+        if (state == FML_S_DONE) begin
+            fml_a_done_ready: assert property (req_ready);
+        end
+        // W 通道仅与 AW 同窗口有效（Lite 单事务：AW 与 W 同拍窗口）
+        if (m_awvalid) begin
+            fml_a_w_with_aw: assert property (m_wvalid);
+        end
+        // cover：读写事务完成 / 背靠背 / 超时逃逸
+        // （FORMAL 下 BUS_TIMEOUT 缩为 8，见 SoC_Config——超时路径深度可达）
+        fml_c_write_done: cover property ((state == FML_S_DONE) && req_write_i && !bus_timeout);
+        fml_c_read_done:  cover property ((state == FML_S_DONE) && !req_write_i && !bus_timeout);
+        fml_c_b2b:        cover property ((state == FML_S_DONE) && req_valid && req_ready);
+        fml_c_timeout:    cover property (bus_timeout);
+    end
+end
 `endif
 
 endmodule

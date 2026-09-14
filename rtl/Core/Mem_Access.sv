@@ -1,7 +1,9 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 module Mem_Access #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -377,16 +379,66 @@ always_comb begin
 end
 
 `ifndef SYNTHESIS
-// ===== SVA：访存一致性 =====
+`ifndef FORMAL
+// ===== SVA：访存一致性（仅仿真；形式验证用下方 FORMAL 有界版）=====
+// Yosys SVA 子集写法：时钟取自外层 always、disable iff 改 if 守卫（ModelSim 同样接受）
 // split FSM 无卡死：同一非 IDLE 状态持续 >4096 拍视为病理性卡死
 // （总线挂死时亦会触发——本身即病理，报告价值大于误报风险）
-property p_split_liveness;
-    @(posedge clk) disable iff (!rst_n)
-    (split_active && $past(split_active, 4096) &&
-     (split_state == $past(split_state, 4096))) |-> 1'b0;
-endproperty
-a_split_liveness: assert property (p_split_liveness)
-    else $error("[SVA][MA] split FSM 状态 %h 停留超 4096 拍（疑似总线/握手卡死）", split_state);
+always @(posedge clk) begin
+    if (rst_n && $past(split_active, 4096) && (split_state == $past(split_state, 4096))) begin
+        a_split_liveness: assert property (split_state == 3'd0)
+            else $error("[SVA][MA] split FSM 状态 %h 停留超 4096 拍（疑似总线/握手卡死）", split_state);
+    end
+end
+`endif
+`endif
+
+`ifdef FORMAL
+// ===== 形式验证属性（SymbiYosys）=====
+// 环境公平性假设：总线拆分访问等待 bus_tran_done 期间，完成信号至多
+// FML_BUS_RESP 拍内到达（健康 AXI 互连的环境契约；挂死场景由
+// AXI_Lite_Master 的 BUS_TIMEOUT 超时逃逸负责，不在本模块证明范围）
+localparam int FML_BUS_RESP  = 8;
+localparam int FML_SPLIT_MAX = 2 * FML_BUS_RESP + 4;   // P1+P2 各 ≤RESP+1 拍 + P3 一拍 + 裕量
+logic [7:0] fml_bus_wait;
+always_ff @(posedge clk) begin
+    if (!rst_n)
+        fml_bus_wait <= '0;
+    else if (split_is_bus && split_xfer && !bus_tran_done)
+        fml_bus_wait <= fml_bus_wait + 1'b1;
+    else
+        fml_bus_wait <= '0;
+end
+// 拆分全程有界计时（进入拆分起算）
+logic [7:0] fml_split_age;
+always_ff @(posedge clk) begin
+    if (!rst_n)                  fml_split_age <= '0;
+    else if (split_active)       fml_split_age <= fml_split_age + 1'b1;
+    else                         fml_split_age <= '0;
+end
+always @(posedge clk) begin
+    if (rst_n) begin
+        // 公平性假设（欠此则总线挂死是合法环境，liveness 无从谈起）
+        fml_assume_bus_resp: assume property (fml_bus_wait <= FML_BUS_RESP);
+        // 拆分 FSM 有界完成（活性 → 有界活性）
+        fml_a_split_liveness: assert property (fml_split_age <= FML_SPLIT_MAX);
+        // P3 恒为收尾态：次拍必回 IDLE（FSM 结构）
+        if (split_state == 3'd3) begin
+            fml_a_p3_to_idle: assert property (split_next == 3'd0);
+        end
+        // 拆分期间锁存 rvalid 必为 0（rvalid 提交门：拆分拍强制清，
+        // 读数据只允许由 split_rvalid 在 P3 合并拍给出——rvalid×脏端口家族疫苗）
+        if (split_active) begin
+            fml_a_rvalid_gate: assert property (!tcm_rvalid_q);
+            fml_a_stall_contract: assert property (split_stall);
+        end
+        // cover：四条典型拆分路径
+        fml_c_bus_split_load: cover property (split_is_bus && !split_is_wr && (split_state == 3'd3));
+        fml_c_bus_split_store: cover property (split_is_bus && split_is_wr && (split_state == 3'd3));
+        fml_c_dtcm_split_load: cover property (!split_is_bus && !split_is_wr && (split_state == 3'd3));
+        fml_c_dtcm_split_store: cover property (!split_is_bus && split_is_wr && (split_state == 3'd3));
+    end
+end
 `endif
 
 endmodule

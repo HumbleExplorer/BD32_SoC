@@ -1,0 +1,28 @@
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc: mode bmc
+bmc: depth 30
+prove: mode prove
+prove: depth 20
+cover: mode cover
+cover: depth 30
+
+[engines]
+bmc: smtbmc
+prove: abc pdr
+cover: smtbmc
+
+[script]
+read -formal -sv mem_access_formal_top.sv
+read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Mem_Access.sv
+prep -top mem_access_formal_top
+
+[files]
+mem_access_formal_top.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Mem_Access.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/RV32_inst_Define.sv

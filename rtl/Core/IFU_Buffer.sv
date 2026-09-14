@@ -1,7 +1,9 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 // =============================================================================
 // IFU_Buffer — 取指缓冲 + 16/32 位指令装配 + RVC 展开（替代 PC_counter）
 // -----------------------------------------------------------------------------
@@ -97,7 +99,10 @@ module IFU_Buffer #(
   logic                  zcmp_restore_have_cur, zcmp_restore_served_d;
   logic                  zcmp_redirected_q;  // 展开期间发生重定向（popret 的 ret）
 
-  assign head = cur_eff[(pc_asm[1] ? 31 : 15) -: 16];
+  // 显式 mux 取 pc_asm 所在半字。原写法 cur_eff[(pc_asm[1] ? 31 : 15) -: 16]
+  // 是变量基址 part-select，会被 Yosys 降为 $shift，techmap 展开时越界 padding
+  // 为 x，毒化形式验证 AIGER 后端；mux 形式三端等价
+  assign head = pc_asm[1] ? cur_eff[31:16] : cur_eff[15:0];
   assign is32 = (head[1:0] == 2'b11);
   assign unaligned32 = is32 & pc_asm[1];
   assign inst_len = is32 ? 3'd4 : 3'd2;        // 4 / 2 字节
@@ -300,6 +305,12 @@ module IFU_Buffer #(
                 zcmp_restore_cur_w_addr <= req_addr;
                 zcmp_restore_have_cur   <= 1'b1;
               end else begin
+                // 字内 16 位 cm.push（crossing=0 且 refill_now=0）：窗口字保持不变。
+                // cur_w/cur_w_addr 必须一并锁存——restore 寄存器仅在 capture 拍写入，
+                // 漏锁存会把上一条展开（或复位值）的陈旧窗口恢复进来，取指流错位
+                // （形式验证 fml_a_window_pair 反例定位，2026-09-15）
+                zcmp_restore_cur_w      <= cur_w;
+                zcmp_restore_cur_w_addr <= cur_w_addr;
                 zcmp_restore_have_cur   <= have_cur;
               end
               if (have_cur) begin
@@ -347,14 +358,59 @@ module IFU_Buffer #(
 
 `ifndef SYNTHESIS
 // ===== SVA：取指窗口一致性 =====
-// 装配地址恒 16 位对齐（C 扩展取指粒度）
-a_inst_addr_aligned: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    (inst_addr_o[0] == 1'b0));
-// 重定向清空装配窗口：jump_en/dbg_load_en 次拍 have_cur=0（字流从目标重取）
-a_redirect_clear: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    ((jump_en || dbg_load_en) |=> (!have_cur)));
+// Yosys SVA 子集写法：时钟取自外层 always、disable iff 改 if 守卫、|=> 改 $past 守卫
+// （ModelSim 同样接受）
+always @(posedge clk) begin
+    if (rst_n) begin
+        // 装配地址恒 16 位对齐（C 扩展取指粒度）
+        a_inst_addr_aligned: assert property (inst_addr_o[0] == 1'b0);
+        // 重定向清空装配窗口：jump_en/dbg_load_en 次拍 have_cur=0（字流从目标重取），
+        // 且请求/预取指针落位目标字流（req=目标字，fetch=目标字+4）
+        // $past(rst_n) 守卫：等价原 disable iff 语义（复位拍发起的求值线程无效）
+        if (rst_n && $past(rst_n) && $past(jump_en || dbg_load_en)) begin
+            a_redirect_clear: assert property
+                (!have_cur && (req_addr[1:0] == 2'b00) && (fetch_addr == req_addr + 4));
+        end
+    end
+end
+`endif
+
+`ifdef FORMAL
+// ===== 形式验证属性（SymbiYosys）=====
+// 取指窗口簿记不变式（字流错位家族疫苗）。w_new/fetch_served 全自由穷举；
+// Zcmp 退休契约假设：last_retired 只允许出现在展开进行中（与核内实际连线一致，
+// 欠此则自由输入可伪造"未展开先退休"，restore 路径加载未捕获状态产生假失败）
+always @(posedge clk) begin
+    if (rst_n) begin
+        if (zcmp_last_retired_i) begin
+            fml_assume_retire_busy: assume property (zcmp_busy_o);
+        end
+        // 取指请求恒字对齐
+        fml_a_pc_word_aligned: assert property (pc[1:0] == 2'b00);
+        // 窗口一致：cur_w 持有时，最后一次请求字必为窗口字或其下一字。
+        // （跨字 32 位指令消费拍后：cur_w' = 刚到达的下一字、req_addr' = 原窗口
+        // 下一字地址，二者相同——重复请求无害，是设计语义而非簿记违约）
+        if (have_cur) begin
+            fml_a_window_pair: assert property
+                ((req_addr == cur_w_addr + 4) || (req_addr == cur_w_addr));
+        end
+        // 非冻结消费路径：have_cur 时本拍请求 cur_w 下一字（16 位流两拍/字的簿记合同）
+        if (have_cur && !stall && !redirect && !predict_redirect && !zcmp_active && !zcmp_capture) begin
+            fml_a_req_next_word: assert property (pc == cur_w_addr + 4);
+        end
+        // 展开冻结期指针保持（capture/restore 恢复语义的前提）
+        if (zcmp_active && !$past(zcmp_consume) && !$past(redirect)) begin
+            fml_a_zcmp_freeze: assert property
+                ((pc_asm == $past(pc_asm)) && (fetch_addr == $past(fetch_addr)) &&
+                 (req_addr == $past(req_addr)));
+        end
+        // cover：跨字 32 位指令出窗 / refill 装填 / 重定向 / Zcmp 捕获
+        fml_c_crossing:  cover property (can_issue && unaligned32);
+        fml_c_refill:    cover property (refill_now);
+        fml_c_redirect:  cover property (redirect && !zcmp_active);
+        fml_c_zcmp_cap:  cover property (zcmp_capture);
+    end
+end
 `endif
 
 endmodule

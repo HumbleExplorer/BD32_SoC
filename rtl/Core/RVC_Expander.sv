@@ -1,7 +1,9 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 // =============================================================================
 // RVC_Expander — RV32C 压缩指令 -> RV32I 等价指令（纯组合展开）
 // -----------------------------------------------------------------------------

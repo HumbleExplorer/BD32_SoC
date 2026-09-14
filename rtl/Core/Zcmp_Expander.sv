@@ -1,7 +1,9 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 // =============================================================================
 // Zcmp_Expander — Zcmp 压缩堆栈指令 -> 微操作流（时钟 FSM，Ibex 路线）
 // -----------------------------------------------------------------------------
@@ -66,38 +68,39 @@ module Zcmp_Expander (
   logic            tail_armed_q;
 
   // ---------------- 组合函数 ----------------
+  // 注意：Yosys 不支持函数内 return 语句，一律用「函数名赋值」风格（三端通用）
   function automatic logic [6:0] zcmp_stack_adj_base(input logic [3:0] rlist);
     unique case (rlist)
-      4'd4, 4'd5, 4'd6, 4'd7:   return 7'd16;
-      4'd8, 4'd9, 4'd10, 4'd11: return 7'd32;
-      4'd12, 4'd13, 4'd14:      return 7'd48;
-      4'd15:                    return 7'd64;
-      default:                  return 7'd0;
+      4'd4, 4'd5, 4'd6, 4'd7:   zcmp_stack_adj_base = 7'd16;
+      4'd8, 4'd9, 4'd10, 4'd11: zcmp_stack_adj_base = 7'd32;
+      4'd12, 4'd13, 4'd14:      zcmp_stack_adj_base = 7'd48;
+      4'd15:                    zcmp_stack_adj_base = 7'd64;
+      default:                  zcmp_stack_adj_base = 7'd0;
     endcase
   endfunction
 
   function automatic logic [6:0] zcmp_stack_adj(input logic [3:0] rlist,
                                                 input logic [1:0] spimm);
-    return zcmp_stack_adj_base(rlist) + (spimm * 16);
+    zcmp_stack_adj = zcmp_stack_adj_base(rlist) + (spimm * 16);
   endfunction
 
   // rlist -> 当前要存取的最高寄存器（内部 rlist 4..16，16 表示 rlist=15 的 s11）
   function automatic logic [4:0] zcmp_top_reg(input logic [4:0] rlist);
     unique case (rlist)
       5'd16, 5'd15, 5'd14, 5'd13, 5'd12, 5'd11, 5'd10, 5'd9, 5'd8, 5'd7:
-        return 5'd11 + rlist;
-      5'd6, 5'd5: return 5'd3 + rlist;
-      5'd4:       return 5'd1;   // ra
-      default:    return 5'd0;
+        zcmp_top_reg = 5'd11 + rlist;
+      5'd6, 5'd5: zcmp_top_reg = 5'd3 + rlist;
+      5'd4:       zcmp_top_reg = 5'd1;   // ra
+      default:    zcmp_top_reg = 5'd0;
     endcase
   endfunction
 
   // sreg 编码（mvsa01/mva01s）：000=s0(x8),001=s1(x9),010=s2(x18)...111=s7(x23)
   function automatic logic [4:0] zcmp_sreg(input logic [2:0] s);
     unique case (s)
-      3'd0: return 5'd8;
-      3'd1: return 5'd9;
-      default: return {2'b10, s};
+      3'd0: zcmp_sreg = 5'd8;
+      3'd1: zcmp_sreg = 5'd9;
+      default: zcmp_sreg = {2'b10, s};
     endcase
   endfunction
 
@@ -106,13 +109,13 @@ module Zcmp_Expander (
                                                   input logic [4:0] offset);
     logic [11:0] neg_off;
     neg_off = -{5'd0, offset, 2'b00};
-    return {neg_off[11:5], zcmp_top_reg(rlist), 5'd2, 3'b010, neg_off[4:0], 7'b0100011};
+    zcmp_push_store = {neg_off[11:5], zcmp_top_reg(rlist), 5'd2, 3'b010, neg_off[4:0], 7'b0100011};
   endfunction
 
   // cm.pop 第 offset 拍：lw reg, 4*offset(sp)
   function automatic logic [31:0] zcmp_pop_load(input logic [4:0] rlist,
                                                 input logic [4:0] offset);
-    return {5'b0, offset, 2'b00, 5'd2, 3'b010, zcmp_top_reg(rlist), 7'b0000011};
+    zcmp_pop_load = {5'b0, offset, 2'b00, 5'd2, 3'b010, zcmp_top_reg(rlist), 7'b0000011};
   endfunction
 
   // addi sp, sp, ±adj
@@ -122,33 +125,33 @@ module Zcmp_Expander (
     logic [11:0] adj, imm;
     adj  = zcmp_stack_adj(rlist, spimm);
     imm  = decr ? -adj : adj;
-    return {imm, 5'd2, 3'b000, 5'd2, 7'b0010011};
+    zcmp_sp_addi = {imm, 5'd2, 3'b000, 5'd2, 7'b0010011};
   endfunction
 
   // addi rd, rs, 0
   function automatic logic [31:0] zcmp_addi(input logic [4:0] rd, input logic [4:0] rs);
-    return {12'b0, rs, 3'b000, rd, 7'b0010011};
+    zcmp_addi = {12'b0, rs, 3'b000, rd, 7'b0010011};
   endfunction
 
   // jalr x0, x1, 0（ret）
   function automatic logic [31:0] zcmp_ret();
-    return {12'b0, 5'd1, 3'b000, 5'd0, 7'b1100111};
+    zcmp_ret = {12'b0, 5'd1, 3'b000, 5'd0, 7'b1100111};
   endfunction
 
   // [12:8]+[6:5] -> 指令类型
   function automatic logic [2:0] zcmp_type(input logic [15:0] inst);
     unique case (inst[12:8])
-      5'b11000: return T_PUSH;
-      5'b11010: return T_POP;
-      5'b11100: return T_POPRETZ;
-      5'b11110: return T_POPRET;
-      default:  return (inst[6:5] == 2'b01) ? T_MVSA01 : T_MVA01S;
+      5'b11000: zcmp_type = T_PUSH;
+      5'b11010: zcmp_type = T_POP;
+      5'b11100: zcmp_type = T_POPRETZ;
+      5'b11110: zcmp_type = T_POPRET;
+      default:  zcmp_type = (inst[6:5] == 2'b01) ? T_MVSA01 : T_MVA01S;
     endcase
   endfunction
 
   // rlist 初始化：指令 rlist 15 -> 内部 16（{ra,s0-s11} 先存 s11）
   function automatic logic [4:0] zcmp_rlist_init(input logic [3:0] rlist);
-    return (rlist == 4'd15) ? 5'd16 : {1'b0, rlist};
+    zcmp_rlist_init = (rlist == 4'd15) ? 5'd16 : {1'b0, rlist};
   endfunction
 
   logic accept;   // 本拍微操作被流水线接受（不停顿）
@@ -167,6 +170,7 @@ module Zcmp_Expander (
     rs2_d    = rs2_q;
     inst_rlist_d = inst_rlist_q;
     spimm_d  = spimm_q;
+    stack_adj_w = '0;   // 默认值：仅在 pop 家族分支赋值（路径不全会被 Yosys 判锁存）
 
     if (abort_i) begin
       state_d = S_IDLE;
@@ -335,10 +339,13 @@ module Zcmp_Expander (
 // SVA: Zcmp busy 语义守护（背靠背展开竞态场景）
 // busy 期间若无 abort 且尾部退休条件未满足，busy 必须保持——
 // 防止上一条残留标签提前清 busy 截断新展开（tail_armed 门控语义）
+// Yosys SVA 子集写法：时钟取自外层 always、|=> 改 $past 守卫（ModelSim 同样接受）
 // ===========================================================================
-a_zcmp_busy_hold: assert property (
-    @(posedge clk) disable iff (!rst_n)
-    (busy_q && !abort_i && !retire_ok_o) |=> busy_q);
+always @(posedge clk) begin
+    if (rst_n && $past(busy_q && !abort_i && !retire_ok_o)) begin
+        a_zcmp_busy_hold: assert property (busy_q);
+    end
+end
 `endif
 
 endmodule
