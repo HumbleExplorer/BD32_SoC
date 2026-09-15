@@ -76,7 +76,7 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
   python run_all_custom_asm.py               # custom_asm 全回归（49 项）
   python run_all_riscv_tests.py              # riscv-tests 回归（51 项）
   ```
-  判定约定：x26=1 完成、x27=1 通过、x3(gp) 记录失败子测试编号。riscv-tests 中 `rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过。
+  判定约定：x26=1 完成、x27=1 通过、x3(gp) 记录失败子测试编号。riscv-tests 中 `rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过。**SVA 判据（2026-09-14 起生效）**：回归脚本对 `** Error: [SVA]` 优先判 FAIL（先于功能 PASS 判据）——PASS 现在隐含"0 断言触发"。
 
 - **SoC 级（tb_soc_top）**：一键 `run_soc_test.bat`（输出 `logs/soc_test_out.txt`），或手动：
   
@@ -338,6 +338,22 @@ python tools/uart_cmd.py "hi" --idle-timeout 3
 | RT-Thread demo | `uart_send.py` 下载 + 串口监听 | lts-v3.1.x / v5.1.0 × ch32 / unified 四组合（lts-v3.1.x + picolibc 已上板验证），banner + t1/t2 持续轮转、无 SERR |
 | uart_echo 全流程 | `uart_send.py` 下载 + 收发校验 | 下载 → banner → 发送回显一致 → 回车打印 Done! |
 
+### 板上 soak 长稳（2026-09-14 新增）
+
+RT-Thread 固件烧入后无人值守长跑，UART 监听器全程抓取并以 SERR marker 判失败：
+
+```bat
+script\soc_test\soak_start.bat        :: 启动后台监听（参数=小时数）
+script\soc_test\soak_report.bat       :: 8 点报告（t1/t2 计数、SERR 次数、结论）
+script\soc_test\check_soak_proc.ps1   :: 监听器存活检查
+script\soc_test\kill_listener.ps1     :: 释放 COM 口（重新下载前必跑）
+```
+
+- 判据：`logs/soak_uart.log` 中 t1/t2 持续交替、`SERR` 出现 0 次、`soak_SERR_FOUND.marker` 不存在；报告写入 `logs/soak_report_8am.txt`。
+- 基线：12 小时 110 万行 t1/t2 交替、0 SERR（2026-09-14，62.5MHz 比特流）。
+
+> ⚠️ **CH340 DTR 双向约束**：板载 CH340 的 DTR/RTS 接复位/下载电路。**裸 `serial.Serial(port).open()` 的 DTR 脉冲会把板子复位进 BootROM 下载等待**（全程静默假死）；而 `dtr=False` 的"安全打开"对该板同样无数据——板子对 DTR 电平敏感。串口工具一律用**默认电平直接 open**（uart_send/uart_recv/soak 监听器均已按此实现）；下载卡死时先 `kill_listener.ps1` 释放 COM 口再重来。
+
 ## CoreMark 基准
 
 CoreMark 源码位于 `SDK/demos/newlib/coremark/`，以 -O2 / -O3 编译（产物含优化等级后缀，避免相互覆盖）。`test_data/soc/c/` 中同时保留两套 .mem 文件，通过 `SoC_Config.sv` 的 `ITCM_FILE`/`DTCM_FILE` 切换。
@@ -401,16 +417,53 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 4. 关联：将 divergence 对应的 PC 映射回反汇编，确认是哪条指令拿到错误值
 ```
 
+## SVA 断言体系（L1/L2/L3）
+
+按"局部不变式内联、跨模块哨兵 bind、分层宏使能"组织的仿真断言体系（2026-09-14 落地 P0–P2）。
+
+**分层与使能宏**：
+
+| 层 | 使能方式 | 内容 |
+|----|----------|------|
+| L1 核心合同 | 常驻（仅 `ifndef SYNTHESIS` 守卫，回归默认开启） | 各模块局部不变式，`a_` 前缀标签写在模块尾部断言区 |
+| L2 模块级深化 | `+define+ASSERT_MODULE` | 按需深跑（目前大部分仅规划，未铺满） |
+| L3 系统级哨兵 | `+define+ASSERT_SYS` | `rtl/assert/bind_core.sv` bind 到 RISC_V_Core：中断接受双提交哨兵（mepc 记录 vs pc_wb）、退休唯一性 |
+
+**文件组织**：局部不变式内联在各模块尾部统一断言区；跨模块/带状态哨兵放
+`rtl/assert/bind_core.sv`（L3）与 `rtl/assert/bind_apb.sv`（bind 到 CLINT/PLIC/UART/
+TIMER/GPIO 五个从机的 APB 协议检查——SETUP→ACCESS 时序、等待期稳定、有界完成，
+L1 常驻；头部契约：只许加入编译全部从机的环境，核级 filelist 因此显式列 bind_core
+而非 glob）。断言失败统一 `$error("[SVA][模块名]")` 前缀。
+
+**覆盖清单**（内联断言分布约 12 个模块）：Pipeline_Ctrl（中断接受三契约）、
+CSR_Reg_Access（陷阱码哨兵 + 中断 mcause 编码）、Mem_Access（rvalid 端口稳定/仲裁
+互斥/拆分 FSM 4096 拍无卡死）、RegFile（x0 恒 0）、ID_EX/EX_MEM/MEM_WB（flush 清/
+stall 保持）、IFU_Buffer（16 位对齐/重定向清窗）、OITF、Zcmp_Expander（busy 语义）、
+DTCM（WRITE_FIRST 读回）、CLINT、AXI_Lite_Master（握手稳定性）。排除：BootROM（静态
+ROM）、RVC_Expander（riscv-tests 覆盖）、clk_wiz（Xilinx IP）。
+
+**回归判据**：run_all_custom_asm / run_all_riscv_tests 对 `** Error: [SVA]` 优先判
+FAIL（先于功能 PASS 判据），PASS 隐含 0 断言触发。
+
+**专项入口**：断言压力注入 `script/core_test/sva_verify.do`（memstress + timer_int）；
+系统级哨兵 `script/soc_test/rtthread_sim_sys.do`（+define+ASSERT_SYS）。
+
+**写法约定**：新增断言请用 Yosys SVA 子集兼容写法（时钟取外层 always、`if` 守卫替代
+disable iff/蕴含、`$past` 替代 `|=>`），ModelSim 同样接受——约束清单见
+[property_plan_oitf.md](property_plan_oitf.md) "Yosys SVA/RTL 子集备忘"。
+
 ## 形式验证（SymbiYosys）
 
-SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。首个对象 OITF 已全绿
-（BMC depth30、abc-pdr 无界证明、cover 3/3），属性计划与落地记录见
-[property_plan_oitf.md](property_plan_oitf.md)。
+SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。**已覆盖四模块全绿**
+（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer，各 bmc depth30 + abc-pdr 无界证明 +
+cover 全命中；IFU_Buffer 借此定位并修复 Zcmp 恢复路径窗口污染真 bug），属性计划与落地
+记录见 [property_plan_oitf.md](property_plan_oitf.md)。
 
 ```bat
 call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat
 cd /d Working\rtl\assert\formal
-sby -f oitf_formal.sby           :: 三任务全跑；指定单任务：sby -f oitf_formal.sby prove
+run_all_formal.bat                 :: 四模块 bmc/prove/cover 一键全跑
+sby -f oitf_formal.sby             :: 或单模块；指定单任务：sby -f oitf_formal.sby prove
 ```
 
 要点（Windows 环境坑与 Yosys SVA 子集约束详见属性计划文档"落地结果"一节）：

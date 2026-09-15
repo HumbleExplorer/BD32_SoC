@@ -18,7 +18,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IMC) 流水线处理器 SoC，采�
 - 外设：CLINT、PLIC 中断控制器、UART（含程序、数据下载功能）、APB Timer（含输入捕获和输出比较功能）、GPIO
 - 中断在指令边界接受：边界指令（含 EX 级在途结果）整体冲刷并以 mepc 单次重执行，EX_MEM/MEM_WB 在途旧指令正常提交；中断与 mret 重叠、EX 级分支未决、流水线停顿等窗口均延后响应
 - CoreMark 验证通过，跑分达2.8CoreMark/MHz
-- FPGA 原型验证：Artix-7 (xc7z020) @ 62.5MHz 时序全收敛（WNS +0.171），RT-Thread 上板长时间稳定运行
+- FPGA 原型验证：ZYNQ-7020（xc7z020clg400-2）@ 62.5MHz 时序全收敛（WNS +0.015），RT-Thread 上板长时间稳定运行（12h soak 0 SERR）
 - 支持自修改代码和非对齐访存
 - RT-Thread 移植：v5.1.0 与 lts-v3.1.x（v3.1.5）双版本，`--rtthread` 一键构建（默认 lts-v3.1.x，`--rtthread-version 51` 切 v5.1.0），双线程 demo 已仿真与上板验证，详见 [SDK 构建工具与协议](doc/sdk.md)「RT-Thread 应用开发」
 - RISC-V Debug Module（halt-in-place + 直接端口访问架构）：JTAG 在线调试，支持 halt/resume、单步、reset halt、GPR/CSR 抽象访问、SBA 内存读写（含 8/16/32-bit 写）、硬件断点 Trigger Module（mcontrol type=2）4 路地址匹配（tselect 选择）、ebreak 进调试模式（dcsr.ebreakm）、数据观察点
@@ -168,7 +168,7 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器
 - [ ] **AXI-Lite 总线完整性整改**：互连当前为单 master 地址译码（CPU 独占），XIP/DMA 接入前需补多 master 仲裁；BUS_TIMEOUT 强拆（DECERR）后从机侧半事务回收；随机 ready 延时从机模型（LFSR 驱动）纳入回归
-- [ ] **SV 工程化与形式验证**：package、interface、SVA 断言体系，并基于断言对 OITF / Zcmp_Expander / AXI master 做单元级 BMC 形式验证（覆盖退休语义竞态、握手协议等仿真难穷尽的场景）
+- [x] **SV 工程化与形式验证（主体完成）**：L1/L2/L3 分层 SVA 断言体系（17 个 RTL 文件内联断言 + bind_apb 5 从机协议检查 + bind_core 系统级双提交哨兵，回归对 `** Error: [SVA]` 优先判 FAIL）；SymbiYosys 形式验证四模块全绿（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer，PDR 无界证明 + BMC + cover，入口 `rtl/assert/formal/run_all_formal.bat`），并借此定位修复 IFU_Buffer Zcmp 恢复路径窗口污染 bug。待细化：L2 模块级深化（UART 帧/FIFO 溢出、PLIC claim/complete 配对、SoC_top mip 映射）、Zcmp 原子性、package/interface 化
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……
 - [ ] **详细PDF设计文档**：正在写……

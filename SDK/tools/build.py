@@ -6,7 +6,7 @@ BD32 SDK 构建脚本
   python tools/build.py demos/empty    # 自动找 demos/empty/src/main.c
   python tools/build.py demos/blink    # 同上
 """
-import subprocess, sys, os, struct, argparse, glob
+import subprocess, sys, os, re, struct, argparse, glob
 
 SDK_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BSP_DIR  = os.path.join(SDK_ROOT, "bsp")
@@ -253,8 +253,19 @@ def compile(src_dir, out, usenewlib=False, useclang=False, usertt=False, rtt_ver
         return os.path.join(build_dir, name)
 
     def obj_name(src_path):
-        """源文件路径 → .o 文件名，去掉扩展名，路径斜杠变下划线"""
-        name = src_path.replace('/', '_').replace('\\', '_')
+        """源文件路径 → 可读 .o 名。相对 SDK/third_party 归一化后打平，
+        rt-thread 版本号缩写（rt-thread-3.1.5 → rtt315），保证一眼能看出归属：
+          bsp/rtthread/cpuport.c            → bsp_rtthread_cpuport.o
+          third_party/rt-thread-3.1.5/src/clock.c → third_party_rtt315_src_clock.o
+        相对短路径（BSP/demo 源）与既有命名完全一致。"""
+        p = src_path.replace("\\", "/")
+        for root_prefix in (SDK_ROOT.replace("\\", "/") + "/",
+                            os.path.dirname(SDK_ROOT).replace("\\", "/") + "/"):
+            if p.startswith(root_prefix):
+                p = p[len(root_prefix):]
+                break
+        p = re.sub(r"rt-thread-(\d+)\.(\d+)\.\d+", lambda m: f"rtt{m.group(1)}{m.group(2)}", p)
+        name = p.replace("/", "_")
         return os.path.splitext(name)[0] + '.o'
 
     objs = []
@@ -498,6 +509,18 @@ def main():
         sys.exit(0)
 
     src = os.path.abspath(args.source)
+    # 路径前置校验：demo 必须存在于仓库内（SDK/demos），否则立刻报错——
+    # 防止路径解析塌缩后把 build 产物静默撒到 CWD（曾在 Working 根下生成
+    # 全路径名 .o 的 build_Os/）
+    _work_root = os.path.dirname(SDK_ROOT)
+    if not os.path.exists(src):
+        print(f"ERROR: 源路径不存在: {args.source}")
+        print(f"（demo 位于 SDK/demos/ 下；从仓库根调用应写 SDK/demos/<demo>，"
+              f"从 SDK/ 目录调用写 demos/<demo>）")
+        sys.exit(1)
+    if not (src + os.sep).startswith(_work_root + os.sep):
+        print(f"ERROR: 源路径必须位于仓库内（{_work_root}）：{args.source}")
+        sys.exit(1)
     if os.path.isdir(src):
         # Auto: demos/hello → demos/hello/src/  (compile all .c files)
         src_dir = os.path.join(src, "src")
