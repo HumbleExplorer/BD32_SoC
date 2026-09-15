@@ -97,4 +97,4 @@ commit_msg.txt
 BD32_SoC/BD32_SoC.srcs/constrs_1/new/BD32_floorplan.xdc
 **/Memory_Log/*
 # --- SymbiYosys 运行产物 ---
-rtl/assert/formal/*_formal/
+rtl/assert/formal/*_formal*/
