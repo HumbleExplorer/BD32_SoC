@@ -1370,7 +1370,7 @@ initial begin
     // 汇总
     // ----------------------------------------------------------
     // Test 22: SBA 读 BootROM（0x0000_0000 区）——GDB/OpenOCD 在线调试 stop 判定路径
-    //   0x0000_0000 应为 mrom.dat[0] = 0x00100293 (addi x5,x0,1)
+    //   0x0000_0000 应为 mrom.dat[0] = 0xc0102373 (csrr t1, 0xC01)——2026-09-17 BootROM 移除 csrw 0x306 后首指令变更
     //   BootROM 只读：SBA 写 0x0 应报 sberror=010 且 ROM 内容不变
     // ----------------------------------------------------------
     $display("--- Test 22: SBA read BootROM ---");
@@ -1380,7 +1380,7 @@ initial begin
     dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);  // 触发 SBA read @0x0
     #(CLK_PERIOD * 10);
     dmi_read(ADDR_SBDATA0, rd_data);
-    check("SBA BootROM readback @0x0", rd_data, 32'h0010_0293);
+    check("SBA BootROM readback @0x0", rd_data, 32'hc010_2373);
     // 写保护：SBA 写 0x0 应报错
     dmi_write(ADDR_SBCS, 32'h0004_0000);   // sbaccess=2, 写模式
     dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);
@@ -1397,7 +1397,7 @@ initial begin
     dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);  // 再次读 @0x0
     #(CLK_PERIOD * 10);
     dmi_read(ADDR_SBDATA0, rd_data);
-    check("SBA BootROM unchanged after write", rd_data, 32'h0010_0293);
+    check("SBA BootROM unchanged after write", rd_data, 32'hc010_2373);
 
     // ----------------------------------------------------------
     // Test 23: reset halt（CPU 停在 BootROM 0x0）后 2 字节 SBA 读 0x0
@@ -1418,7 +1418,7 @@ initial begin
     dmi_write(ADDR_SBADDRESS0, 32'h0000_0000);
     jtag_idle(4);
     dmi_read(ADDR_SBDATA0, rd_data);
-    check("reset-halt subword: SBA read @0x0 data", rd_data, 32'h0010_0293);
+    check("reset-halt subword: SBA read @0x0 data", rd_data, 32'hc010_2373);
     dmi_read(ADDR_SBCS, rd_data);
     check("reset-halt subword: no sberror", rd_data[14:12], 3'b0);
     // 清 sberror + 读回 sbaddress0 确认自增（0x0 + 2 = 0x2）

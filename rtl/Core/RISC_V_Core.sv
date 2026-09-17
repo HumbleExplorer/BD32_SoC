@@ -1139,6 +1139,7 @@ CSR_Reg_Access #(
     .hpm_inst_type      (hpm_inst_type      ),
     .hpm_mispredict     (hpm_mispredict),
     .hpm_count_ok       (hpm_count_ok       ),
+    .hpm_oitf_retire    (oitf_retire_valid  ),
     .hpm_ext            (hpm_ext            ),
     .hpm_stall_load_use (load_use_flag      ),
     .hpm_stall_oitf     (oitf_stall         ),

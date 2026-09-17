@@ -45,6 +45,7 @@ module csr_formal_top #(
     logic [3:0]            f_hpm_inst_type;
     logic                    f_hpm_mispredict;
     logic                    f_hpm_count_ok;
+    logic                    f_hpm_oitf_retire;
     logic [1:0]            f_hpm_ext;
     logic                    f_zcmp_busy;
 
@@ -150,6 +151,7 @@ module csr_formal_top #(
         .hpm_inst_type       (f_hpm_inst_type),
         .hpm_mispredict      (f_hpm_mispredict),
         .hpm_count_ok        (f_hpm_count_ok),
+        .hpm_oitf_retire     (f_hpm_oitf_retire),
         .hpm_ext             (f_hpm_ext),
         .zcmp_busy           (f_zcmp_busy)
     );

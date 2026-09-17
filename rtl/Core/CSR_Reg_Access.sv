@@ -55,6 +55,7 @@ module CSR_Reg_Access #(
     input   logic   [3:0]                   hpm_inst_type,
     input   logic                           hpm_mispredict,
     input   logic                           hpm_count_ok,   // WB 架构指令有效（Zcmp 微操作排除）
+    input   logic                           hpm_oitf_retire, // OITF 退休拍（MUL/DIV 架构提交点，每条恰一次）
     input   logic   [1:0]                   hpm_ext,        // 扩展标签：0基础/1Zcb/2B/3Zcmp
     // 停顿原因周期计数（周期型：与 hpm_valid 无关，仅受 mcountinhibit 门控）
     input   logic                           hpm_stall_load_use, // load-use 冒险停顿拍
@@ -97,12 +98,15 @@ end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)
-        minstret <= #1 'h0; 
-    else if(mcounterclr[2]) 
+        minstret <= #1 'h0;
+    else if(mcounterclr[2])
         minstret <= #1 'h0;
     else if(mcountinhibit[2])
         minstret <= #1 minstret;
-    else if (hpm_valid && hpm_count_ok)
+    else if ((hpm_valid && hpm_count_ok && hpm_inst_type != 4'd6) || hpm_oitf_retire)
+        // 2026-09-18 修正：MUL/DIV 的架构提交点在 OITF 退休（port2 写回），
+        // 主流水线 WB 影子会被 RAW 停顿重派发冲掉（实测 20 条 mul 仅 6 条影子
+        // 到达 WB）——影子(MULDIV 类)不再计数，改由 hpm_oitf_retire 恰好计一次
         minstret <= #1 minstret + 'h1;
 end
 
@@ -127,7 +131,7 @@ logic   [2*DATA_WIDTH-1:0]  mhpmcounter[15];  // [0-11] 指令类计数 + [12-14
 
 generate
     genvar i;
-    for (i = 0; i < 6; i = i + 1) begin
+    for (i = 0; i < 5; i = i + 1) begin
         always_ff @(posedge clk or negedge rst_n) begin
             if(!rst_n) begin
                 mhpmcounter[i] <= #1 'h0;
@@ -144,6 +148,17 @@ generate
         end
     end
 endgenerate
+
+// MULDIV 计数（mhpmcounter8 = 0xB08，mcountinhibit/clr 位 8）
+// 2026-09-18 修正：改在 OITF 退休拍计数（每条 MUL/DIV 恰好一次）。
+// 旧实现挂在主流水线 WB 影子上——影子会被 OITF RAW 停顿的 id_ex_flush
+// 重派发冲掉，实测 20 条依赖 mul 只剩 6 条影子 → 漏计 70%（板上 muldiv=29 悬案根因）。
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                              mhpmcounter[5] <= #1 'h0;
+    else if(mcounterclr[8])                 mhpmcounter[5] <= #1 'h0;
+    else if(mcountinhibit[8])               mhpmcounter[5] <= #1 mhpmcounter[5];
+    else if(hpm_oitf_retire)                mhpmcounter[5] <= #1 mhpmcounter[5] + 'h1;
+end
 
 
 // 分支预测失败计数器（mhpmcounter9 = 0xB09，mcountinhibit/clr 位 9）
@@ -333,7 +348,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         mcause              <= #1 'h0;
         mtval               <= #1 'h0;
         mcountinhibit       <= #1 'h0;
-        mcounterclr         <= #1 'h0;
+        // mcounterclr 复位/写入已移至下方独立单拍脉冲块（避免多驱动）
         mip                 <= #1 'h0;
         mscratch            <= #1 'h0;
     end else begin//优先级：异常>外部中断>软件中断>定时器中断
@@ -364,9 +379,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 // 12'h343  : mtval            <= #1 csr_wdata;
                 // 12'h344  : mip              <= #1 csr_wdata;
                 //自定义寄存器
-                12'hbc0  : begin
-                    mcounterclr <= #1 csr_wdata;
-                end
+                // 0xBC0 mcounterclr 已改为下方独立的单拍脉冲寄存器（写 1 清零语义）
                 default  : ;
             endcase
         end else if (dbg_csr_we) begin
@@ -378,11 +391,21 @@ always_ff @(posedge clk or negedge rst_n) begin
                 12'h320  : mcountinhibit    <= #1 dbg_csr_wdata & 32'h0003_FFFD;
                 12'h341  : mepc             <= #1 dbg_csr_wdata;
                 12'h340  : mscratch         <= #1 dbg_csr_wdata;
-                12'hbc0  : mcounterclr      <= #1 dbg_csr_wdata;
                 default  : ;
             endcase
         end
     end
+end
+
+// mcounterclr（0xBC0 写 1 清零）＝单拍脉冲：写后仅保持一拍供各计数器块采样，
+// 其余拍自动归零。旧实现把 wdata 锁存成常值，清零位反而把对应计数器永久钉在 0
+// （2026-09-18 stall_test 仿真实锤：load-use 链期间计数恒 0）。
+logic                   mcounterclr_wr;
+assign  mcounterclr_wr = (csr_en && csr_addr == 12'hbc0)       ? csr_wdata :
+                         (dbg_csr_we && dbg_csr_addr == 12'hbc0) ? dbg_csr_wdata : 'h0;
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n) mcounterclr <= #1 'h0;
+    else       mcounterclr <= #1 mcounterclr_wr;
 end
 
 always_comb begin
@@ -436,6 +459,8 @@ always_comb begin
         12'hb8f  : csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hb90  : csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hb91  : csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
+            // mcounterclr（0xBC0 按位清零，自定义）：可读回防写操作被误判非法
+            12'hbc0  : csr_rdata = mcounterclr;
             // time / timeh — 只读影子寄存器（mtime_shadow 来自 CLINT）
             12'hc01  : csr_rdata = mtime_shadow[DATA_WIDTH-1:0];          // time (低32位)
             12'hc81  : csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH]; // timeh (高32位)
@@ -494,6 +519,7 @@ always_comb begin
         12'hb8f  : dbg_csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hb90  : dbg_csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hb91  : dbg_csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hbc0  : dbg_csr_rdata = mcounterclr;
         12'hc01  : dbg_csr_rdata = mtime_shadow[DATA_WIDTH-1:0];
         12'hc81  : dbg_csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH];
         default : dbg_csr_rdata = 'h0;
