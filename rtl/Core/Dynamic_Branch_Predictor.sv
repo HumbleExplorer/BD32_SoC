@@ -78,6 +78,8 @@ module Dynamic_Branch_Predictor #(
     // From IF
     input logic [ADDR_WIDTH-1:0] inst_addr,  // IF阶段的PC
     input logic                   is_compressed_if, // 当前 IF 指令是否压缩（RAS 推测写 +1/+2）
+    input logic                   spec_upd_i,  // 本拍 IF 确实发射了指令（spec 状态门控，
+                                              // 防 pc 停驻（Zcmp 展开冻结）导致 spec RAS 反复漂移）
 
     // From EX
     input   logic   [ADDR_WIDTH-1:0]    branch_pc,          // 分支指令PC
@@ -227,8 +229,8 @@ always_comb begin
     if (!stall && branch_req && !branch_predict_success && branch_inst_type == BRANCH_INST_TYPE_B) begin
         // EX阶段发现预测错误，用真实结果覆盖推测结果
         spec_global_history_next = real_global_history_next;
-    end else if (!stall && predict_btb_hit && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) begin
-        // IF阶段正常推测更新
+    end else if (spec_upd_i && predict_btb_hit && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) begin
+        // IF阶段正常推测更新（仅在实际发射指令的拍）
         spec_global_history_next = {spec_global_history[GHR_WIDTH-2:0], predict_pht_taken};
     end else begin
         spec_global_history_next = spec_global_history;
@@ -240,8 +242,8 @@ always_comb begin
     if (!stall && branch_req && !branch_predict_success) begin
         // EX阶段发现预测错误，用真实结果覆盖推测结果
         spec_ras_ptr_next = real_ras_ptr_next;
-    end else if (!stall && predict_btb_hit) begin
-        // IF阶段正常推测更新
+    end else if (spec_upd_i && predict_btb_hit) begin
+        // IF阶段正常推测更新（仅在实际发射指令的拍）
         case ({btb_push_ras_array[predict_btb_idx], btb_pop_ras_array[predict_btb_idx]})
             2'b10:   spec_ras_ptr_next = (spec_ras_ptr == RAS_DEPTH - 1) ? 0 : spec_ras_ptr + 1;
             2'b01:   spec_ras_ptr_next = (spec_ras_ptr == 0) ? RAS_DEPTH -1 : spec_ras_ptr - 1;
@@ -346,8 +348,8 @@ always_ff @(posedge clk or negedge rst_n) begin
         if (!stall && push_ras) begin
             // 直接用 EX 级算好的链接地址（32 位指令 +2 半字 / 16 位指令 +1 半字）
             ras_stack[real_ras_ptr] <= #1 branch_inst_plus_len[RAS_DATA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
-        end else if (!stall && predict_btb_hit && btb_push_ras_array[predict_btb_idx]) begin
-            // 如果没有 EX 阶段的写，则进行 IF 阶段的推测写
+        end else if (spec_upd_i && predict_btb_hit && btb_push_ras_array[predict_btb_idx]) begin
+            // 如果没有 EX 阶段的写，则进行 IF 阶段的推测写（仅在实际发射指令的拍）
             ras_stack[spec_ras_ptr] <= #1 inst_addr[RAS_DATA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH]
                                        + (is_compressed_if ? 15'd1 : 15'd2);
         end

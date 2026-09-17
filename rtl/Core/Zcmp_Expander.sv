@@ -34,6 +34,7 @@ module Zcmp_Expander (
     output logic [31:0] micro_inst_o,  // 本拍展开的微操作
     output logic        micro_valid_o, // 本拍有有效微操作输出
     output logic        micro_last_o,  // 本拍输出的是最后一个微操作
+    output logic        micro_ret_o,   // 本拍输出的是 ret(jalr x0,x1) 微操作（供 IF 恢复预测）
     output logic        busy_o,        // 展开进行中（capture 起到 last 退休止）
     output logic        retire_ok_o    // 本拍退休的是"当前展开自身的最后微操作"
 );
@@ -333,6 +334,8 @@ module Zcmp_Expander (
 
     assign busy_o = busy_q;
     assign retire_ok_o = last_retired_i && tail_armed_q;
+    // ret 微操作唯一发自 S_POP_RET 态（cm.popret/popretz 尾部 jalr x0,x1）
+    assign micro_ret_o = micro_valid_o & (state_q == S_POP_RET);
 
 `ifndef SYNTHESIS
 // ===========================================================================
@@ -346,6 +349,45 @@ always @(posedge clk) begin
         a_zcmp_busy_hold: assert property (busy_q);
     end
 end
+
+// ===========================================================================
+// SVA: L2 原子性不变式（+define+ASSERT_MODULE 使能，ModelSim 专项）
+// 依据微码展开表：一条指令的微操作总数固定（push=寄存器数+1、pop/popretz/
+// popret=寄存器数+2、mv=2），"微操作计数与编码一致"即下面这些不变式：
+`ifdef ASSERT_MODULE
+// ① 微操作仅在展开进行中有效；IDLE 态无输出
+always @(posedge clk) begin
+    if (rst_n) begin
+        a_zcmp_valid_guarded: assert property
+            ((state_q == S_IDLE && !capture_i && !abort_i) ? !micro_valid_o : 1'b1);
+    end
+end
+// ② last 标记唯一：只有各家族末态拍可置位（编码与状态机一致）
+always @(posedge clk) begin
+    if (rst_n) begin
+        a_zcmp_last_state: assert property
+            (micro_last_o ? ((state_q == S_PUSH_ADDI) || (state_q == S_POP_ADDI)
+                              || (state_q == S_POP_RET) || (state_q == S_MV_SECOND)) : 1'b1);
+    end
+end
+// ③ accept 门控：busy 期间 abort/capture/retire 互斥（capture 只在 IDLE）
+always @(posedge clk) begin
+    if (rst_n) begin
+        a_zcmp_cap_idle: assert property (capture_i ? (state_q == S_IDLE) : 1'b1);
+        a_zcmp_mutual:   assert property (!(abort_i && capture_i));
+        a_zcmp_mutual2:  assert property (!(abort_i && last_retired_i));
+    end
+end
+// ④ tail_armed 仅在 last 微操作被接受后 1 拍置位，retire 消费
+always @(posedge clk) begin
+    if (rst_n && $past(micro_last_o && accept)) begin
+        a_zcmp_tail_armed: assert property (tail_armed_q);
+    end
+    if (rst_n && $past(retire_ok_o)) begin
+        a_zcmp_busy_release: assert property (!busy_q);
+    end
+end
+`endif
 `endif
 
 endmodule

@@ -49,6 +49,7 @@ module IFU_Buffer #(
     output  logic                       illegal_inst_o, // 保留压缩编码
     output  logic                       zcmp_micro_last_o, // 微操作 last 标志（跟 inst 同步）
     output  logic                       zcmp_micro_any_o,  // 本拍输出是否为 Zcmp 微操作
+    output  logic                       predict_spec_upd_o,// 本拍发射了 BTB 可见指令（供预测器 spec 门控）
     output  logic                       zcb_tag_o,         // 本拍指令是否为 Zcb（HPM 计数）
     output  logic                       zcmp_busy_o,       // Zcmp 展开进行中（中断/调试屏蔽用）
     output  logic                       predict_taken_o,   // 门控后的预测（Zcmp 微操作不预测）
@@ -79,6 +80,7 @@ module IFU_Buffer #(
   // ---------------- 组合装配 ----------------
   logic [15:0] head;
   logic        is32, unaligned32, cur_eff_valid, refill_now, next_ready, can_issue;
+  logic        pred_issue;                   // 展开期=微操作有效，常态=can_issue
   logic [2:0]  inst_len;                       // 2 / 4 字节
   logic        crossing;
   logic [DATA_WIDTH-1:0] cur_eff;              // 有效当前字（have_cur ? cur_w : w_new）
@@ -86,7 +88,7 @@ module IFU_Buffer #(
   logic [DATA_WIDTH-1:0] inst_exp;             // 展开结果
   logic        exp_illegal, exp_zcmp, exp_zcb;
   logic [31:0] zcmp_micro_inst;
-  logic        zcmp_micro_valid, zcmp_micro_last, zcmp_busy;
+  logic        zcmp_micro_valid, zcmp_micro_last, zcmp_busy, zcmp_micro_ret;
   logic        zcmp_retire_ok;   // 当前展开自身的最后微操作退休（门控后）
   logic        zcmp_capture, zcmp_active, zcmp_abort;
   // 展开期间 w_new/fetch_served 会被 ITCM 访存覆盖，capture 拍把"消费 cm.push
@@ -98,6 +100,10 @@ module IFU_Buffer #(
   logic [ADDR_WIDTH-1:0] zcmp_restore_req_addr;
   logic                  zcmp_restore_have_cur, zcmp_restore_served_d;
   logic                  zcmp_redirected_q;  // 展开期间发生重定向（popret 的 ret）
+  // ret 微操作恢复预测后，预测命中时 EX 不再发 redirect（branch_predict_success
+  // 抑制），consume 拍不能恢复 capture 时的旧窗口（pc_asm 已在预测目标上），
+  // 用此标记与 redirected_q 同语义跳过 restore。
+  logic                  zcmp_ret_pred_q;
 
   // 显式 mux 取 pc_asm 所在半字。原写法 cur_eff[(pc_asm[1] ? 31 : 15) -: 16]
   // 是变量基址 part-select，会被 Yosys 降为 $shift，techmap 展开时越界 padding
@@ -116,13 +122,17 @@ module IFU_Buffer #(
   assign can_issue = cur_eff_valid & ~stall & ~redirect & (~unaligned32 | next_ready);
   assign crossing  = can_issue & (is32 | pc_asm[1]);   // 出指令后 pc_asm 进入下一字
   // predict_redirect 仅在可出指令（非 stall 且字就绪）时组合生效：stall 期间 pc 必须
-  // 保持 req_addr 重发被抢占/在途字，否则请求地址与状态寄存器错位，
+  // 保持 req_addr（正在返回的那个字），否则存储器超前读到下一个字，
   // OITF 停顿（mul/div 密集段）恢复后取指流会错。
   // Zcmp 微操作共享 cm.popret 的 PC：ret 微操作（jalr）训练 BTB 后，同 PC 的
   // lw/addi 微操作也会被预测为 taken return → 误预测 flush → 展开被 abort。
-  // capture/展开期间强制不预测（ret 在 EX 仍会正确重定向，仅少一次预测命中）。
-  assign predict_taken_o   = predict_taken & ~(zcmp_capture | zcmp_active);
-  assign predict_redirect = predict_taken_o & ~redirect & ~stall & can_issue;
+  // 因此展开期预测默认屏蔽，仅 ret 微操作（micro_ret）恢复——RAS/BTB 在该 PC 上
+  // 训练的正是本条返回的目标，预测命中可省掉 EX 重定向 + 冲刷（~3-4 拍/次）。
+  assign predict_taken_o   = predict_taken & ~zcmp_capture
+                             & (~zcmp_active | zcmp_micro_ret);
+  // 展开期发射门用微操作流（can_issue 描述的是冻结窗口，语义不匹配）
+  assign pred_issue        = zcmp_active ? zcmp_micro_valid : can_issue;
+  assign predict_redirect = predict_taken_o & ~redirect & ~stall & pred_issue;
 
   // 跨字 32 位指令（pc_asm[1]=1）：指令低 16 位在 cur_eff 高半字（内存低地址），
   // 高 16 位在下一字 w_new 低半字（内存高地址）。小端 32 位值必须
@@ -163,6 +173,7 @@ module IFU_Buffer #(
       .micro_inst_o   (zcmp_micro_inst),
       .micro_valid_o  (zcmp_micro_valid),
       .micro_last_o   (zcmp_micro_last),
+      .micro_ret_o    (zcmp_micro_ret),
       .busy_o         (zcmp_busy),
       .retire_ok_o    (zcmp_retire_ok)
   );
@@ -185,16 +196,26 @@ module IFU_Buffer #(
   assign zcmp_micro_any_o  = (zcmp_capture | zcmp_active);
   assign zcb_tag_o         = (zcmp_capture | zcmp_active) ? 1'b0 : (can_issue & ~is32 & exp_zcb);
   assign zcmp_busy_o       = zcmp_busy;
+  // spec 预测状态门控：本拍确实发射了一条指令且其 BTB 语义适用（展开期仅
+  // ret 微操作适用）。防止展开期间 pc 冻结在 popret PC 上导致预测器 spec
+  // RAS 指针每拍漂移（真实 RAS 只弹一次）。
+  assign predict_spec_upd_o = inst_valid_o & ~redirect
+                              & ~zcmp_capture & (~zcmp_active | zcmp_micro_ret);
 
   // 取指请求地址（给 ROM/RAM）：
   //  - 重定向拍组合输出目标字（与 PC_counter 的 jump 覆盖一致）
   //  - stall 期间保持 req_addr（正在返回的那个字），避免存储器超前读到下一个字
+  //  - ret 预测后的展开冻结期同理保持 req_addr（=预测目标字）：consume 后
+  //    refill_now 靠"req_addr==pc_asm 字"配对 w_new，若改请求 fetch_addr
+  //    （目标+4），w_new 会带着错位字冒充目标字，目标首指令被跳过
+  //    （zcmp_popret_ra 回归定位，2026-09-17）
   //  - have_cur 时 cur_w 可能含 2 条 16 位指令（2 拍消费），本拍只请求 cur_w 的
   //    下一字（重复请求无害），避免 16 位指令流把下一字提前冲掉；
   //  - 否则输出 fetch_addr（refill 首字 / 预取地址）
   assign pc = redirect ? {redirect_target[ADDR_WIDTH-1:2], 2'b00} :
               predict_redirect ? {predict_target[ADDR_WIDTH-1:2], 2'b00} :
               stall    ? req_addr :
+              (zcmp_active && zcmp_ret_pred_q) ? req_addr :
               have_cur ? (cur_w_addr + 4) :
               fetch_addr;
   assign inst_addr_o = pc_asm;   // 当前指令地址（16 位对齐），给流水线/预测器/触发器
@@ -224,12 +245,18 @@ module IFU_Buffer #(
       served_d   <= 1'b0;
       reset_d    <= 1'b1;
       zcmp_redirected_q <= 1'b0;
+      zcmp_ret_pred_q   <= 1'b0;
     end else begin
       reset_d <= 1'b0;
       if (redirect && zcmp_active)
         zcmp_redirected_q <= 1'b1;
       else if (!zcmp_active)
         zcmp_redirected_q <= 1'b0;
+      // ret 微操作预测发射：EX 命中后不再发 redirect，consume 拍须跳过 restore
+      if (predict_redirect && zcmp_active)
+        zcmp_ret_pred_q <= 1'b1;
+      else if (zcmp_consume || !zcmp_busy)
+        zcmp_ret_pred_q <= 1'b0;
       if (redirect) begin
         pc_asm     <= {redirect_target[ADDR_WIDTH-1:1], 1'b0};
         // 本拍 pc 已组合输出目标字，fetch_addr 应指向目标+4（下一拍请求），
@@ -238,9 +265,10 @@ module IFU_Buffer #(
         req_addr   <= {redirect_target[ADDR_WIDTH-1:2], 2'b00};
         served_d   <= fetch_served;
         have_cur   <= 1'b0;
-      end else if (predict_redirect && can_issue) begin
-        // IF 预测命中：当前指令本拍正常输出（can_issue），
-        // 下一拍起从预测目标取指/装配（JAL/JALR 由流水线完成写回与 RAS）。
+      end else if (predict_redirect && (can_issue || zcmp_active)) begin
+        // IF 预测命中：当前指令本拍正常输出（can_issue；展开期仅 ret 微操作
+        // 会走到此分支），下一拍起从预测目标取指/装配
+        // （JAL/JALR 由流水线完成写回与 RAS；展开期窗口已随重定向作废）。
         pc_asm     <= {predict_target[ADDR_WIDTH-1:1], 1'b0};
         fetch_addr <= {predict_target[ADDR_WIDTH-1:2], 2'b00} + 4;
         req_addr   <= {predict_target[ADDR_WIDTH-1:2], 2'b00};
@@ -272,8 +300,9 @@ module IFU_Buffer #(
         // 装配/装填
         if (zcmp_active) begin
           if (zcmp_consume) begin
-            if (!zcmp_redirected_q) begin
+            if (!zcmp_redirected_q && !zcmp_ret_pred_q) begin
               // 展开完成：恢复 capture 拍锁存的"消费 cm.push 后"窗口状态
+              // （ret 预测命中/EX 重定向两种情形 pc_asm 已在正确位置，跳过恢复）
               pc_asm      <= zcmp_restore_pc;
               cur_w       <= zcmp_restore_cur_w;
               cur_w_addr  <= zcmp_restore_cur_w_addr;
@@ -398,11 +427,18 @@ always @(posedge clk) begin
         if (have_cur && !stall && !redirect && !predict_redirect && !zcmp_active && !zcmp_capture) begin
             fml_a_req_next_word: assert property (pc == cur_w_addr + 4);
         end
-        // 展开冻结期指针保持（capture/restore 恢复语义的前提）
-        if (zcmp_active && !$past(zcmp_consume) && !$past(redirect)) begin
+        // 展开冻结期指针保持（capture/restore 恢复语义的前提）；
+        // ret 微操作恢复预测后，预测发射拍合法改写窗口，需从冻结断言中排除
+        if (zcmp_active && !$past(zcmp_consume) && !$past(redirect)
+            && !$past(predict_redirect && zcmp_active)) begin
             fml_a_zcmp_freeze: assert property
                 ((pc_asm == $past(pc_asm)) && (fetch_addr == $past(fetch_addr)) &&
                  (req_addr == $past(req_addr)));
+        end
+        // ret 预测后的冻结期：取指请求必须服务窗口 refill（req_addr=目标字），
+        // 防止 w_new 带目标+4 的字冒充目标字导致首指令被跳过
+        if (zcmp_active && zcmp_ret_pred_q && !stall && !redirect && !predict_redirect) begin
+            fml_a_ret_pred_req_window: assert property (pc == req_addr);
         end
         // cover：跨字 32 位指令出窗 / refill 装填 / 重定向 / Zcmp 捕获
         fml_c_crossing:  cover property (can_issue && unaligned32);

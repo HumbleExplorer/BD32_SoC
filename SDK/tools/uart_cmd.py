@@ -22,6 +22,17 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+
+def safe_log_path(user_path, root):
+    """--log 路径安全校验：规范化后必须落在 root 子树内，拒绝 ../ 逃逸"""
+    root = os.path.realpath(root)
+    target = os.path.realpath(user_path)
+    if target == root or target.startswith(root + os.sep):
+        return target
+    print(f"[ERROR] 日志路径越出允许目录 {root}：{user_path}")
+    sys.exit(1)
+
+
 def find_port():
     """自动检测 CH340 USB-UART 串口"""
     candidates = []
@@ -48,8 +59,14 @@ def main():
     parser.add_argument("--idle-timeout", type=float, default=None, help="开启监听：连续 N 秒无数据即停止（默认 3s）")
     parser.add_argument("--timeout", type=float, default=None, help="监听总时长上限（默认 30s）")
     parser.add_argument("--until", default=None, help="可选精确结束标记：命中后截断到标记末尾并停止")
-    parser.add_argument("--log", default=None, help="监听输出写入的日志文件路径（默认 logs/uart_cmd_<时间戳>.log）")
+    parser.add_argument("--log", default=None,
+                        help="监听输出写入的日志文件路径（默认 logs/uart_cmd_<时间戳>.log，须在仓库目录内）")
     args = parser.parse_args()
+
+    if args.log is not None:
+        args.log = safe_log_path(
+            args.log,
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
     # 自动检测串口
     if args.port is None:
@@ -95,9 +112,9 @@ def main():
         else:
             ts = time.strftime("%Y%m%d_%H%M%S")
             log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
-            os.makedirs(log_dir, exist_ok=True)
             log_path = os.path.join(log_dir, "uart_cmd_%s.log" % ts)
         print(f"  log → {os.path.abspath(log_path)}")
+        os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
         buf = b""
         last_data = time.time()
         start = time.time()

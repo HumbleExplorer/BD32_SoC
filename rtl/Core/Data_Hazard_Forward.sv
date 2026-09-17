@@ -158,6 +158,39 @@ a_fwd_a_no_x: assert property (
 a_fwd_b_no_x: assert property (
     @(posedge clk)
     (!$isunknown(forward_B))) else $error("[SVA][FWD] forward_B 含 X: %b", forward_B);
+
+// ===== SVA：前递 one-hot 补全（L2，+define+ASSERT_MODULE 使能）=====
+// 命中位与写侧信号的对应性反查（每条前递源命中必然伴随同名写使能
+// 且写地址匹配，防优先级 mux 因 X/错位裁决）：
+`ifdef ASSERT_MODULE
+always @(posedge clk) begin
+    // ① OITF 退休命中：lp_retire_valid 与地址匹配自洽
+    a_fwd_a_oitf_self: assert property
+        (forward_A[0] ? (lp_retire_valid && (lp_retire_waddr == reg_rs1_raddr_ex)
+                         && (reg_rs1_raddr_ex != 0)) : 1'b1);
+    a_fwd_b_oitf_self: assert property
+        (forward_B[0] ? (lp_retire_valid && (lp_retire_waddr == reg_rs2_raddr_ex)
+                         && (reg_rs2_raddr_ex != 0)) : 1'b1);
+    // ② MEM/WB 命中：写使能与写地址匹配自洽
+    a_fwd_a_mem_self: assert property
+        (forward_A[2] ? (reg_rd_wen_mem && (reg_rd_waddr_mem == reg_rs1_raddr_ex))
+                      : 1'b1);
+    a_fwd_a_wb_self: assert property
+        (forward_A[1] ? (reg_rd_wen_wb && (reg_rd_waddr_wb == reg_rs1_raddr_ex))
+                      : 1'b1);
+    a_fwd_b_mem_self: assert property
+        (forward_B[2] ? (reg_rd_wen_mem && (reg_rd_waddr_mem == reg_rs2_raddr_ex))
+                      : 1'b1);
+    a_fwd_b_wb_self: assert property
+        (forward_B[1] ? (reg_rd_wen_wb && (reg_rd_waddr_wb == reg_rs2_raddr_ex))
+                      : 1'b1);
+    // ③ 无 A/B 前递命中且（无 C 使能或 C 未命中）时 alu_op 必等于寄存器堆默认值
+    a_fwd_default_path: assert property
+        ((!fwd_a_hit && !fwd_b_hit)
+         ? ((alu_op1_o == alu_op1_from_id_ex) && (alu_op2_o == alu_op2_from_id_ex))
+         : 1'b1);
+end
+`endif
 `endif
 
 endmodule

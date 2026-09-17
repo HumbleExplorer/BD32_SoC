@@ -140,4 +140,34 @@ module plic_target #(
         endcase
     end
 
+`ifndef SYNTHESIS
+// ===== SVA：PLIC target 协议不变式（L2，+define+ASSERT_MODULE 使能）=====
+// Yosys SVA 子集写法：时钟取外层 always、蕴含改 if 守卫（ModelSim 同样接受）
+`ifdef ASSERT_MODULE
+    always @(posedge clk) begin
+        if (rst_n) begin
+            // ① state 恒合法
+            a_plic_state_legal: assert property ((state == ST_IDLE) || (state == ST_CLAIMED));
+            // ② claim_vec/complete_vec 单热互斥且 one-hot 合法（每拍至多一位脉冲）
+            a_plic_claim_onehot: assert property (!(claim_vec & complete_vec));
+            a_plic_vec_single:   assert property (($countones(claim_vec) <= 1) && ($countones(complete_vec) <= 1));
+            // ③ 脉冲合法性：claim 脉冲仅在 IDLE→CLAIMED 跃迁或嵌套 claim 拍出现
+            a_plic_claim_legal: assert property
+                ((claim_vec != '0)
+                 ? ((state == ST_IDLE && irq_valid) || (state == ST_CLAIMED && irq_valid)) : 1'b1);
+            // ④ complete 脉冲仅在 CLAIMED 态且 id 匹配时出现，次拍回 IDLE
+            a_plic_complete_legal: assert property
+                ((complete_vec != '0)
+                 ? (state == ST_CLAIMED && (complete_id == in_service_id)) : 1'b1);
+            if (complete_vec != '0) begin
+                a_plic_complete_to_idle: assert property (state_next == ST_IDLE);
+            end
+            // ⑤ claimed_id 有值当且仅当该拍发出 claim 脉冲
+            a_plic_claimed_match: assert property
+                ((claimed_id != '0) == (claim_vec != '0));
+        end
+    end
+`endif
+`endif
+
 endmodule

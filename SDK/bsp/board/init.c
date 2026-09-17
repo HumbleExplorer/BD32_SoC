@@ -48,10 +48,10 @@ void _init(void) {
 
     board_init();
 
-    /* 使能 mcycle + minstret + HPM counters */
-    __asm__ volatile("li a0, %0\n"
-                     "csrrs x0, mcounteren, a0\n"
-                     : : "i"((1 << 0) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) |
-                             (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9)));
+    /* HPM 计数器门控说明（2026-09-17 规范化）：
+     * 计数门控 = mcountinhibit(0x320)，复位全 0 即全计数，无需固件使能；
+     * 软件按需写 0x320 按位停表、写 0xBC0 按位清零。
+     * （旧 mcounteren 使能流程已废弃：该寄存器仅规范语义为 S/U 态访问许可，
+     *   BD32 未实现 S/U，已移除。） */
 
 }

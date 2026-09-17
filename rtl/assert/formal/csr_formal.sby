@@ -1,0 +1,36 @@
+[tasks]
+bmc
+prove
+
+[options]
+bmc: mode bmc
+bmc: depth 30
+prove: mode prove
+prove: depth 25
+# 可达性（fml_c_* 覆盖点）交给仿真兜底（memstress 中断用例 + rtthread 长稳 24h），
+# 形式侧只跑 prove/bmc；cover 点保留在 RTL 内供 ModelSim 仿真检查
+
+[engines]
+bmc: smtbmc
+prove: abc pdr
+
+[script]
+read -formal -sv csr_formal_top.sv
+read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl \
+    D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv \
+    D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/RV32_Inst_Define.sv \
+    D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/CSR_Reg_Access.sv
+prep -top csr_formal_top
+# abc pdr 的 AIGER 后端不接受 x 位（自由输入弃位 opt 成 x-connect 污染 AIGER）：
+# 与 ifu_buffer_formal_prove 同配方——prep 阶段 setundef -zero -init，
+# prove 任务再 setundef -anyseq 把弃位 x 转 $anyseq 自由位
+setundef -zero -init
+bmc: setundef -zero -init
+prove: setundef -anyseq
+prove: memory_map
+
+[files]
+csr_formal_top.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/RV32_Inst_Define.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/CSR_Reg_Access.sv

@@ -334,4 +334,33 @@ assign tx_start = tx_fifo_rd_en;
 assign PREADY  = 1'b1;
 assign PSLVERR  = 1'b0;
 
+`ifndef SYNTHESIS
+// ===== SVA：UART 协议不变式（L2，+define+ASSERT_MODULE 使能）=====
+`ifdef ASSERT_MODULE
+    always @(posedge PCLK) begin
+        if (PRESETn) begin
+            // ① LSR[5] THRE / LSR[6] TEMT 语义：写 FIFO 恒空（16 深 sync_fifo 无读指针暴露，
+            //    故只用 ~full/full 近似；temt=0 当且仅当写满）
+            a_uart_lsr_thre:  assert property (lsr[5] == tx_fifo_rd_empty);
+            a_uart_lsr_empt:  assert property (lsr[6] == (tx_fifo_rd_empty && ~tx_busy));
+            // ② iir 值域：只允许 16550 手册定义的 6 个编码
+            a_uart_iir_legal: assert property
+                ((iir == IIR_NO_INT) || (iir == IIR_RLS_INT) || (iir == IIR_RDA_INT)
+                 || (iir == IIR_TOUT_INT) || (iir == IIR_THRE_INT) || (iir == IIR_MSR_INT));
+            // ③ irq 拉高必须对应一个非无中断的 iir
+            a_uart_irq_iir:   assert property (irq_o ? (iir != IIR_NO_INT) : 1'b1);
+            // ④ RX FIFO 计数单调契约：写多读少不越界（cnt 域 0..16）
+            a_uart_rx_cnt:    assert property (rx_fifo_cnt <= 6'd16);
+            // ⑤ RDA/超时 中断触发条件：rx_fifo_cnt 必须达到 trigger 水位
+            a_uart_rda_level: assert property
+                ((iir == IIR_RDA_INT || iir == IIR_TOUT_INT)
+                 ? (rx_fifo_cnt >= get_trigger()) : 1'b1);
+            // ⑥ 下载使能时，下载口不应被 FIFO 空阻断（read 使能即有数据）
+            a_uart_dl_rx_valid: assert property
+                ((download_en && rx_fifo_rd_en) ? (rx_fifo_cnt > 6'd0) : 1'b1);
+        end
+    end
+`endif
+`endif
+
 endmodule

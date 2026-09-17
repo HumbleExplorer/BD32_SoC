@@ -21,6 +21,16 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+def safe_output_path(user_path, root):
+    """--output 路径安全校验：规范化后必须落在 root 子树内，拒绝 ../ 逃逸"""
+    root = os.path.realpath(root)
+    target = os.path.realpath(user_path)
+    if target == root or target.startswith(root + os.sep):
+        return target
+    print(f"[ERROR] 输出路径越出允许目录 {root}：{user_path}")
+    sys.exit(1)
+
+
 def find_port():
     """自动检测 CH340 USB-UART 串口"""
     candidates = []
@@ -42,10 +52,17 @@ def main():
     parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default: 115200)")
     parser.add_argument("--timeout", type=float, default=30, help="Listen duration in seconds (default: 30)")
     parser.add_argument("--until", default=None, help="Stop when output contains this string")
-    parser.add_argument("--output", default=None, help="同时写入文件（默认只打印到终端）")
+    parser.add_argument("--output", default=None,
+                        help="同时写入文件（默认只打印到终端；路径须在仓库目录内）")
     parser.add_argument("--append", action="store_true", help="追加写入（默认覆盖）")
     parser.add_argument("--quiet", action="store_true", help="只写文件，不打印到终端")
     args = parser.parse_args()
+
+    if args.output is not None:
+        args.output = safe_output_path(
+            args.output,
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+        os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
     # 自动检测串口
     if args.port is None:

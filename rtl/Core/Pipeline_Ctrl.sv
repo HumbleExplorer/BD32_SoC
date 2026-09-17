@@ -1,7 +1,9 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 // =============================================================================
 // Pipeline_Ctrl - 流水线控制
 // =============================================================================
@@ -335,6 +337,7 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 `ifndef SYNTHESIS
+`ifndef FORMAL
 // ===========================================================================
 // SVA: trap 重定向寄存器不变式
 // ===========================================================================
@@ -352,6 +355,71 @@ a_trap_fires: assert property (
 a_trap_addr_stable: assert property (
     @(posedge clk) disable iff (!rst_n)
     (r_trap_redirect && !trap_jump) |=> (r_trap_addr == $past(r_trap_addr)));
+`endif
+`endif
+
+`ifdef FORMAL
+// ===========================================================================
+// FORMAL：中断接受冲刷契约 + 异常优先级表不变式（SymbiYosys 无界证明）
+// 时钟取外层 always、无 disable-iff（复位时序假设由 harness 提供）
+//
+// 遮蔽谓词：accept 分支被更高优先级分支（debug halt / step 状态机 /
+// r_trap_redirect 挂起重定向）吃掉时不检查——契约只约束"真的走到
+// accept 分支"的拍，与 L1 仿真断言（disable-iff + |->）语义等价。
+// ===========================================================================
+wire fml_accept_unshadowed = !(dbg_halt_eff || step_halt || trigger_eff
+                               || ebreak_halt || dbg_resume_pulse || resume_hold
+                               || step_run_active || step_drain_active
+                               || r_trap_redirect);
+
+always @(posedge clk) begin
+    // ---- 中断接受拍冲刷契约（2026-09-12 SERR 根因防线）----
+    // ① 接受拍必须冲 IF_ID（边界指令死在 ID_EX，mepc 已锁存其 PC）
+    fml_a_accept_ifid: assert property
+        ((int_accept_kill && fml_accept_unshadowed) ? if_id_flush : 1'b1);
+    // ② 纯中断接受拍（无异常重叠）必须连 ID_EX+EX_MEM 一并冲
+    //    （否则边界指令泄漏 EX_MEM 写回 + mret 重执行 = 双重提交）
+    fml_a_accept_flush: assert property
+        ((int_accept_kill && !trap_jump_exc && fml_accept_unshadowed)
+         ? (id_ex_flush && ex_mem_flush) : 1'b1);
+    // ③ 异常冲刷级映射（sel_stage=2 冲 EX_MEM；sel_stage=1 时 EX_MEM 保持）
+    fml_a_exc_s2: assert property
+        (trap_jump_exc && fml_accept_unshadowed && (sel_stage == 2'd2)
+         ? ex_mem_flush : 1'b1);
+    fml_a_exc_s1_keep: assert property
+        (trap_jump_exc && fml_accept_unshadowed && (sel_stage == 2'd1)
+         ? !ex_mem_flush : 1'b1);
+
+    // ---- 异常优先级表不变式（get_priority 缺项 = mcause 全 1 哨兵病根）----
+    // ④ 异常触发时，所选阶段码必须非哨兵（哨兵 {W-1{1'b1}} 表示"无异常"，
+    //    若陷阱拍 mux 输出全 1 即 2026-09-12 修复过的 mcause=0x7FFFFFFF 病根）
+    fml_a_no_sentinel: assert property
+        (exception_trap ? !(exception_code[DATA_WIDTH-2]) : 1'b1);
+    // ⑤ exception_trap 当且仅当至少一阶段码非哨兵（NAND 语义）
+    fml_a_trap_consistent: assert property
+        (exception_trap
+         == (!exception_code_if_m[DATA_WIDTH-2]
+          | !exception_code_id_m[DATA_WIDTH-2]
+          | !exception_code_ex_m[DATA_WIDTH-2]));
+    // ⑥ oitf_flush 必须等于 exception_trap（无条件透传）
+    fml_a_oitf_flush: assert property (oitf_flush == exception_trap);
+
+    // ---- 单步 drain 状态机不变式 ----
+    // ⑦ step_state 合法态
+    fml_a_step_legal: assert property
+        ((step_state == STEP_IDLE) || (step_state == STEP_RUN)
+         || (step_state == STEP_DRAIN) || (step_state == STEP_HALT));
+    // ⑧ drain 计数有界
+    fml_a_drain_bounded: assert property (step_drain_cnt <= 3'd7);
+end
+
+// ---- 覆盖点 ----
+always @(posedge clk) begin
+    fml_c_accept_kill:  cover property (int_accept_kill && !trap_jump_exc);
+    fml_c_trap_exc:     cover property (trap_jump_exc && (sel_stage >= 2'd2));
+    fml_c_branch_jump:  cover property (ctrl_jump_en && branch_jump_en);
+    fml_c_drain_halt:   cover property (step_state == STEP_HALT);
+end
 `endif
 
 // =========================================================================
@@ -494,6 +562,7 @@ end
 assign dbg_halted = (dbg_halt_eff || step_halt || trigger_eff || ebreak_halt) && !oitf_stall && (bus_ready || sba_bus_active);
 
 `ifndef SYNTHESIS
+`ifndef FORMAL
 // ===========================================================================
 // SVA: 中断接受拍冲刷契约（2026-09 中断边界语义修复的防线）
 // 契约：接受拍冲 IF_ID+ID_EX（边界指令死在 ID_EX，mepc 已锁存其 PC），
@@ -509,6 +578,7 @@ a_accept_kill_flush: assert property (
     @(posedge clk) disable iff (!rst_n)
     ((int_accept_kill && !trap_jump_exc) |->
      (id_ex_flush && ex_mem_flush)));
+`endif
 `endif
 
 endmodule

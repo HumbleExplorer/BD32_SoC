@@ -667,6 +667,26 @@ PLIC #(
 
 assign external_int = plic_irq[0];
 
+`ifndef SYNTHESIS
+// ===== SVA：SoC 顶层中断映射不变式（L2，+define+ASSERT_MODULE 使能）=====
+// PLIC irq_i 固定映射：[3]=timer_irq(CLINT), [2]=gpio_irq, [1]=uart_irq,
+// [0]=1'b0(source 0 保留)，其余 12 位未用 = 0。
+`ifdef ASSERT_MODULE
+    // 时钟/复位：SoC 顶层用 clk_soc / rst_n_sync（已板级同步释放）
+    always @(posedge clk_soc) begin
+        if (rst_n_sync) begin
+            // ① 保留源 0 恒静默
+            a_soc_plic_src0_silent: assert property (!u_PLIC.irq_i[0]);
+            // ② 未用源 4~15 恒 0（irq_i 16 位，{12'b0, timer_irq, gpio_irq, uart_irq, 1'b0}）
+            a_soc_plic_unused_zero: assert property (u_PLIC.irq_i[15:4] == '0);
+            // ③ CPU 看到的 external_int 与 PLIC irq_o[0] 一致（irq_o[0] 已打一拍）
+            a_soc_extint_eq_eip: assert property
+                (external_int == u_PLIC.irq_o[0]);
+        end
+    end
+`endif
+`endif
+
 // --- PSEL[2]: GPIO ---
 apb_gpio #(
     .ADDR_WIDTH  (ADDR_WIDTH  ),

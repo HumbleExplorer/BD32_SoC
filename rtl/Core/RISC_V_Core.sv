@@ -173,7 +173,8 @@ logic                       fetch_wait_if; // IFU 取指字未就绪（非 stall
 logic                       is_compressed_if;
 logic                       fetch_served;   // 本拍取指请求地址确实被存储器服务
 logic                       predict_taken_if;
-logic                       predict_taken_gated;  // IFU 门控后的预测（Zcmp 微操作不预测）
+logic                       predict_taken_gated;  // IFU 门控后的预测（Zcmp 展开期仅 ret 微操作预测）
+logic                       predict_spec_upd_if;  // IFU 实际发射门控（预测器 spec 更新用）
 logic   [ADDR_WIDTH-1:0]    predict_target_if;
 
 
@@ -595,6 +596,7 @@ Dynamic_Branch_Predictor #(
     .stall           (pc_stall          ),
     .inst_addr       (inst_addr_if      ),
     .is_compressed_if(is_compressed_if  ),
+    .spec_upd_i      (predict_spec_upd_if), // 仅在实际发射指令的拍更新 spec 状态
     .is_fence_i      (is_fence_i_ex     ),
     .branch_pc       (inst_addr_ex      ),  // 从 EX_MEM 寄存器输出来（与 branch_taken 对齐）
     .branch_inst_plus_len(inst_addr_plus_len_ex),
@@ -633,6 +635,7 @@ IFU_Buffer #(
     .illegal_inst_o (illegal_inst_if),
     .zcmp_micro_last_o (zcmp_micro_last_if),
     .zcmp_micro_any_o  (zcmp_micro_any_if),
+    .predict_spec_upd_o(predict_spec_upd_if),
     .zcb_tag_o         (zcb_tag_if),
     .zcmp_busy_o       (zcmp_busy),
     .predict_taken_o   (predict_taken_gated),
@@ -1137,6 +1140,9 @@ CSR_Reg_Access #(
     .hpm_mispredict     (hpm_mispredict),
     .hpm_count_ok       (hpm_count_ok       ),
     .hpm_ext            (hpm_ext            ),
+    .hpm_stall_load_use (load_use_flag      ),
+    .hpm_stall_oitf     (oitf_stall         ),
+    .hpm_stall_fetch    (fetch_wait_if      ),
     .zcmp_busy          (zcmp_busy          ),
     // Debug CSR（Abstract 通用 CSR 读写）
     .dbg_csr_we         (dbg_csr_we         ),

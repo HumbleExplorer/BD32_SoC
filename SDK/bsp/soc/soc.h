@@ -25,7 +25,6 @@
  * =================================================================== */
 #define CSR_MCYCLE        0xB00     /* mcycle    低 32 位 */
 #define CSR_MCYCLEH       0xB80     /* mcycle    高 32 位 */
-#define CSR_MCOUNTEREN    0x306     /* mcounteren       */
 #define CSR_TIME          0xC01     /* time (mtime 低32位，只读影子) */
 #define CSR_TIMEH         0xC81     /* timeh (mtime 高32位，只读影子) */
 
@@ -119,8 +118,8 @@ static inline uint32_t measure_cpu_freq(uint32_t n)
  * =================================================================== */
 static inline void soc_init(void)
 {
-    /* 使能 mcycle 计数器 */
-    csr_write(CSR_MCOUNTEREN, 1);
+    /* mcycle 恒计数（2026-09-17 规范化：门控只看 mcountinhibit，复位即计数），
+     * 无需任何使能写；旧 CSR_MCOUNTEREN 使能已随 mcounteren 移除而废弃 */
     /* 预热一次（去掉第一次 tick 的不稳定边界） */
     measure_cpu_freq(1);
     /* 标准测量 10000 ticks (10ms)，±10% 合理性检查，失败回退到编译期常量 */

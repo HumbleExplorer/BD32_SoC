@@ -1,7 +1,9 @@
 `include "./../SoC_Config.sv"
 `include "./../RV32_inst_Define.sv"
+`ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
+`endif
 module CSR_Reg_Access #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -54,6 +56,10 @@ module CSR_Reg_Access #(
     input   logic                           hpm_mispredict,
     input   logic                           hpm_count_ok,   // WB 架构指令有效（Zcmp 微操作排除）
     input   logic   [1:0]                   hpm_ext,        // 扩展标签：0基础/1Zcb/2B/3Zcmp
+    // 停顿原因周期计数（周期型：与 hpm_valid 无关，仅受 mcountinhibit 门控）
+    input   logic                           hpm_stall_load_use, // load-use 冒险停顿拍
+    input   logic                           hpm_stall_oitf,     // OITF 乘除等待拍
+    input   logic                           hpm_stall_fetch,    // 取指未就绪气泡拍
     input   logic                           zcmp_busy       // Zcmp 展开中（屏蔽中断）
 // to CLINT
 );
@@ -75,7 +81,6 @@ logic   [DATA_WIDTH-1:0]    mscratch;//机器模式 trap 暂存（0x340，RT-Thr
 //机器计数器/计时器
 logic   [2*DATA_WIDTH-1:0]  mcycle;
 logic   [2*DATA_WIDTH-1:0]  minstret;
-logic   [DATA_WIDTH-1:0]    mcounteren;
 logic   [DATA_WIDTH-1:0]    mcountinhibit;
 logic   [DATA_WIDTH-1:0]    mcounterclr;
 
@@ -86,7 +91,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         mcycle <= #1 'h0;
     else if(mcountinhibit[0])
         mcycle <= #1 mcycle;
-    else if (mcounteren[0])
+    else
         mcycle <= #1 mcycle + 'h1;
 end
 
@@ -97,12 +102,13 @@ always_ff @(posedge clk or negedge rst_n) begin
         minstret <= #1 'h0;
     else if(mcountinhibit[2])
         minstret <= #1 minstret;
-    else if (hpm_valid && hpm_count_ok && mcounteren[2])
+    else if (hpm_valid && hpm_count_ok)
         minstret <= #1 minstret + 'h1;
 end
 
-// HPM 计数器（64位，0xBC3-0xBC9/0xC43-0xC49）
-// 各计数器受 mcounteren / mcountinhibit / mcounterclr 对应位控制
+// HPM 计数器（64位，标准地址 mhpmcounter3-17 = 0xB03-0xB11，高半 0xB83-0xB91）
+// 计数门控 = mcountinhibit（对齐规范/Ibex/CVA6：复位全 0 即计数，软件按需停）；
+// 清零 = mcounterclr（0xBC0 按位写 1）。计数器地址 = 标准 mhpmcounter3-17（0xB03-0xB11）
 //   mhp_counter3 (ALU)      0
 //   mhp_counter4 (LOAD)     1
 //   mhp_counter5 (STORE)    2
@@ -117,7 +123,7 @@ end
 //   mhp_counter14 (SYSTEM)   11
 // WB 级指令类型: 0:OTHER 1:ALU 2:LOAD 3:STORE 4:BRANCH 5:JUMP 6:MULDIV
 //               7:CSR 8:SYSTEM(ecall/ebreak/mret/wfi/fence)
-logic   [2*DATA_WIDTH-1:0]  mhpmcounter[12];
+logic   [2*DATA_WIDTH-1:0]  mhpmcounter[15];  // [0-11] 指令类计数 + [12-14] 停顿周期计数
 
 generate
     genvar i;
@@ -132,7 +138,7 @@ generate
             else if(mcountinhibit[i+3]) begin
                 mhpmcounter[i] <= #1 mhpmcounter[i];
             end
-            else if (hpm_valid && hpm_count_ok && mcounteren[i+3] && hpm_inst_type == i+1) begin
+            else if (hpm_valid && hpm_count_ok && hpm_inst_type == i+1) begin
                 mhpmcounter[i] <= #1 mhpmcounter[i] + 'h1;
             end
         end
@@ -140,48 +146,72 @@ generate
 endgenerate
 
 
-// 预测成功计数器（mhp_counter9, bit 9）
+// 分支预测失败计数器（mhpmcounter9 = 0xB09，mcountinhibit/clr 位 9）
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)                              mhpmcounter[6] <= #1 'h0;
     else if(mcounterclr[9])                 mhpmcounter[6] <= #1 'h0;
     else if(mcountinhibit[9])               mhpmcounter[6] <= #1 mhpmcounter[6];
-    else if(hpm_valid && hpm_count_ok && mcounteren[9] && (hpm_inst_type == 3'd4 || hpm_inst_type == 3'd5) && hpm_mispredict)
+    else if(hpm_valid && hpm_count_ok && (hpm_inst_type == 3'd4 || hpm_inst_type == 3'd5) && hpm_mispredict)
                                             mhpmcounter[6] <= #1 mhpmcounter[6] + 'h1;
 end
 
 
-// CSR 指令计数（mhp_counter13，CSR 0xBCD，控制位 13）
+// CSR 指令计数（mhpmcounter13 = 0xB0D，mcountinhibit/clr 位 13）
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)                              mhpmcounter[10] <= #1 'h0;
     else if(mcounterclr[13])                mhpmcounter[10] <= #1 'h0;
     else if(mcountinhibit[13])              mhpmcounter[10] <= #1 mhpmcounter[10];
-    else if(hpm_valid && hpm_count_ok && mcounteren[13] && hpm_inst_type == 4'd7)
+    else if(hpm_valid && hpm_count_ok && hpm_inst_type == 4'd7)
                                             mhpmcounter[10] <= #1 mhpmcounter[10] + 'h1;
 end
 
-// 系统指令计数（mhp_counter14，CSR 0xBCE，控制位 14：ecall/ebreak/mret/wfi/fence）
+// 系统指令计数（mhpmcounter14 = 0xB0E，mcountinhibit/clr 位 14：ecall/ebreak/mret/wfi/fence）
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)                              mhpmcounter[11] <= #1 'h0;
     else if(mcounterclr[14])                mhpmcounter[11] <= #1 'h0;
     else if(mcountinhibit[14])              mhpmcounter[11] <= #1 mhpmcounter[11];
-    else if(hpm_valid && hpm_count_ok && mcounteren[14] && hpm_inst_type == 4'd8)
+    else if(hpm_valid && hpm_count_ok && hpm_inst_type == 4'd8)
                                             mhpmcounter[11] <= #1 mhpmcounter[11] + 'h1;
 end
 
 
-// 每类扩展指令独立计数（mhp_counter10/11/12，受 mcounteren/inhibit/clr 位 10/11/12 控制）
+// 每类扩展指令独立计数（mhpmcounter10/11/12 = 0xB0A/0xB0B/0xB0C，mcountinhibit/clr 位 10/11/12）
 generate
     genvar e;
     for (e = 0; e < 3; e = e + 1) begin : gen_hpm_ext
         always_ff @(posedge clk or negedge rst_n) begin
             if(!rst_n)                              mhpmcounter[7+e] <= #1 'h0;
-            else if(mcounterclr[10+e])              mhpmcounter[7+e] <= #1 'h0;
+            else if(mcounterclr[10+e])              mhpmcounter[7+e] <= #1 mhpmcounter[7+e];
             else if(mcountinhibit[10+e])            mhpmcounter[7+e] <= #1 mhpmcounter[7+e];
-            else if(hpm_valid && hpm_count_ok && mcounteren[10+e] && hpm_ext == e+1)
+            else if(hpm_valid && hpm_count_ok && hpm_ext == e+1)
                                                     mhpmcounter[7+e] <= #1 mhpmcounter[7+e] + 'h1;
         end
     end
 endgenerate
+
+// 停顿原因周期计数（mhpmcounter15/16/17 = 0xB0F/0xB10/0xB11，mcountinhibit/clr 位 15/16/17）
+// 周期型计数：不与 hpm_valid 挂钩（停顿拍本就无退休），仅受 mcountinhibit 门控；
+// 三者机理不同允许少量重叠，账目用 "ticks = instret + Σstall + 误预测×罚期" 核算
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                              mhpmcounter[12] <= #1 'h0;
+    else if(mcounterclr[15])                mhpmcounter[12] <= #1 'h0;
+    else if(mcountinhibit[15])              mhpmcounter[12] <= #1 mhpmcounter[12];
+    else if(hpm_stall_load_use)             mhpmcounter[12] <= #1 mhpmcounter[12] + 'h1;
+end
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                              mhpmcounter[13] <= #1 'h0;
+    else if(mcounterclr[16])                mhpmcounter[13] <= #1 'h0;
+    else if(mcountinhibit[16])              mhpmcounter[13] <= #1 mhpmcounter[13];
+    else if(hpm_stall_oitf)                 mhpmcounter[13] <= #1 mhpmcounter[13] + 'h1;
+end
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if(!rst_n)                              mhpmcounter[14] <= #1 'h0;
+    else if(mcounterclr[17])                mhpmcounter[14] <= #1 'h0;
+    else if(mcountinhibit[17])              mhpmcounter[14] <= #1 mhpmcounter[14];
+    else if(hpm_stall_fetch)                mhpmcounter[14] <= #1 mhpmcounter[14] + 'h1;
+end
 
 
 logic   int_trap;
@@ -302,7 +332,6 @@ always_ff @(posedge clk or negedge rst_n) begin
         mepc                <= #1 'h0;
         mcause              <= #1 'h0;
         mtval               <= #1 'h0;
-        mcounteren          <= #1 'h0;
         mcountinhibit       <= #1 'h0;
         mcounterclr         <= #1 'h0;
         mip                 <= #1 'h0;
@@ -328,8 +357,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 12'h300  : mstatus          <= #1 {mstatus[31:8],csr_wdata[7],mstatus[6:4],csr_wdata[3],mstatus[2:0]};//特权模式保持M模式，写MIE和MPIE
                 12'h304  : mie              <= #1 {mie[31:12],csr_wdata[11],mie[10:8],csr_wdata[7],mie[6:4],csr_wdata[3],mie[2:0]};
                 12'h305  : mtvec            <= #1 csr_wdata;
-                12'h306  : mcounteren       <= #1 csr_wdata;
-                12'h320  : mcountinhibit    <= #1 csr_wdata;
+                12'h320  : mcountinhibit    <= #1 csr_wdata & 32'h0003_FFFD; // WARL：仅实现位 0/2/3-17
                 12'h341  : mepc             <= #1 csr_wdata;
                 12'h340  : mscratch         <= #1 csr_wdata;
                 // 12'h342  : mcause           <= #1 csr_wdata;
@@ -347,8 +375,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 12'h300  : mstatus          <= #1 {mstatus[31:8],dbg_csr_wdata[7],mstatus[6:4],dbg_csr_wdata[3],mstatus[2:0]};
                 12'h304  : mie              <= #1 {mie[31:12],dbg_csr_wdata[11],mie[10:8],dbg_csr_wdata[7],mie[6:4],dbg_csr_wdata[3],mie[2:0]};
                 12'h305  : mtvec            <= #1 dbg_csr_wdata;
-                12'h306  : mcounteren       <= #1 dbg_csr_wdata;
-                12'h320  : mcountinhibit    <= #1 dbg_csr_wdata;
+                12'h320  : mcountinhibit    <= #1 dbg_csr_wdata & 32'h0003_FFFD;
                 12'h341  : mepc             <= #1 dbg_csr_wdata;
                 12'h340  : mscratch         <= #1 dbg_csr_wdata;
                 12'hbc0  : mcounterclr      <= #1 dbg_csr_wdata;
@@ -367,7 +394,6 @@ always_comb begin
             12'h301  : csr_rdata = 32'h4000_1106; // misa: RV32(MXL=01) + I(bit8) + M(bit12) + C(bit2) + B(bit1)
             12'h304  : csr_rdata = mie;
             12'h305  : csr_rdata = mtvec;
-            12'h306  : csr_rdata = mcounteren;
             12'h320  : csr_rdata = mcountinhibit;
             12'h341  : csr_rdata = mepc;
             12'h342  : csr_rdata = mcause;
@@ -378,32 +404,38 @@ always_comb begin
             12'hb80  : csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
             12'hb02  : csr_rdata = minstret[DATA_WIDTH-1:0];
             12'hb82  : csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
-            // hpm_counter3-9 / 3h-9h (CSR 0xBC3-0xBC9 / 0xC43-0xC49)
-            12'hbc3  : csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
-            12'hbc4  : csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
-            12'hbc5  : csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];  // STORE
-            12'hbc6  : csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
-            12'hbc7  : csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
-            12'hbc8  : csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
-        12'hbc9  : csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];  // 预测成功
-        12'hbca  : csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];  // Zcb 指令
-        12'hbcb  : csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];  // B 扩展指令
-        12'hbcc  : csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];  // Zcmp 指令
-        12'hbcd  : csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0]; // CSR 指令
-        12'hbce  : csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0]; // 系统指令
-            // hpm_counter3h-9h (高32位)
-            12'hc43  : csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc44  : csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc45  : csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc46  : csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc47  : csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hc48  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc49  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4a  : csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4b  : csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4c  : csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4d  : csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4e  : csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
+            // mhpmcounter3-9 / 3h-9h (CSR 0xB03-0xB09 / 0xB83-0xB89)
+            12'hb03  : csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
+            12'hb04  : csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
+            12'hb05  : csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];  // STORE
+            12'hb06  : csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
+            12'hb07  : csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
+            12'hb08  : csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
+        12'hb09  : csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];  // 分支预测失败
+        12'hb0a  : csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];  // Zcb 指令
+        12'hb0b  : csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];  // B 扩展指令
+        12'hb0c  : csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];  // Zcmp 指令
+        12'hb0d  : csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0]; // CSR 指令
+        12'hb0e  : csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0]; // 系统指令
+        12'hb0f  : csr_rdata = mhpmcounter[12][DATA_WIDTH-1:0]; // load-use 停顿周期
+        12'hb10  : csr_rdata = mhpmcounter[13][DATA_WIDTH-1:0]; // OITF 等待周期
+        12'hb11  : csr_rdata = mhpmcounter[14][DATA_WIDTH-1:0]; // 取指等待周期
+            // mhpmcounter3h-9h (高32位)
+            12'hb83  : csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hb84  : csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hb85  : csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hb86  : csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hb87  : csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
+            12'hb88  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb89  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8a  : csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8b  : csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8c  : csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8d  : csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8e  : csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8f  : csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb90  : csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb91  : csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
             // time / timeh — 只读影子寄存器（mtime_shadow 来自 CLINT）
             12'hc01  : csr_rdata = mtime_shadow[DATA_WIDTH-1:0];          // time (低32位)
             12'hc81  : csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH]; // timeh (高32位)
@@ -422,7 +454,6 @@ always_comb begin
         12'h301  : dbg_csr_rdata = 32'h4000_1106; // misa
         12'h304  : dbg_csr_rdata = mie;
         12'h305  : dbg_csr_rdata = mtvec;
-        12'h306  : dbg_csr_rdata = mcounteren;
         12'h320  : dbg_csr_rdata = mcountinhibit;
         12'h341  : dbg_csr_rdata = mepc;
         12'h342  : dbg_csr_rdata = mcause;
@@ -433,30 +464,36 @@ always_comb begin
         12'hb80  : dbg_csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
         12'hb02  : dbg_csr_rdata = minstret[DATA_WIDTH-1:0];
         12'hb82  : dbg_csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hbc3  : dbg_csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];
-        12'hbc4  : dbg_csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];
-        12'hbc5  : dbg_csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];
-        12'hbc6  : dbg_csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];
-        12'hbc7  : dbg_csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];
-        12'hbc8  : dbg_csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];
-        12'hbc9  : dbg_csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];
-        12'hbca  : dbg_csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];
-        12'hbcb  : dbg_csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];
-        12'hbcc  : dbg_csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];
-        12'hbcd  : dbg_csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0];
-        12'hbce  : dbg_csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0];
-        12'hc43  : dbg_csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc44  : dbg_csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc45  : dbg_csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc46  : dbg_csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc47  : dbg_csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc48  : dbg_csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc49  : dbg_csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4a  : dbg_csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4b  : dbg_csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4c  : dbg_csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4d  : dbg_csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hc4e  : dbg_csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb03  : dbg_csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];
+        12'hb04  : dbg_csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];
+        12'hb05  : dbg_csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];
+        12'hb06  : dbg_csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];
+        12'hb07  : dbg_csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];
+        12'hb08  : dbg_csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];
+        12'hb09  : dbg_csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0]; // 分支预测失败
+        12'hb0a  : dbg_csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];
+        12'hb0b  : dbg_csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];
+        12'hb0c  : dbg_csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];
+        12'hb0d  : dbg_csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0];
+        12'hb0e  : dbg_csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0];
+        12'hb0f  : dbg_csr_rdata = mhpmcounter[12][DATA_WIDTH-1:0];
+        12'hb10  : dbg_csr_rdata = mhpmcounter[13][DATA_WIDTH-1:0];
+        12'hb11  : dbg_csr_rdata = mhpmcounter[14][DATA_WIDTH-1:0];
+        12'hb83  : dbg_csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb84  : dbg_csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb85  : dbg_csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb86  : dbg_csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb87  : dbg_csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb88  : dbg_csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb89  : dbg_csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8a  : dbg_csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8b  : dbg_csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8c  : dbg_csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8d  : dbg_csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8e  : dbg_csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb8f  : dbg_csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb90  : dbg_csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
+        12'hb91  : dbg_csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
         12'hc01  : dbg_csr_rdata = mtime_shadow[DATA_WIDTH-1:0];
         12'hc81  : dbg_csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH];
         default : dbg_csr_rdata = 'h0;
@@ -464,46 +501,103 @@ always_comb begin
 end
 
 `ifndef SYNTHESIS
-// ===========================================================================
+// ==========================================================================
 // SVA: 中断接受门控不变式（2026-09 中断边界语义修复的防线）
 // 门控链一旦被改动破坏（如 EX_MEM 重定向拍门控被删），以下断言立即触发
-// ===========================================================================
+// ==========================================================================
+`ifndef FORMAL
 // 1) EX_MEM 分支重定向拍禁止接受中断（branch_en_ex[1] 门控）
 a_redirect_no_accept: assert property (
     @(posedge clk) disable iff (!rst_n)
     (branch_en_ex[1] |-> !int_trap_jump_n));
+`else
+// FORMAL 版：同契约 yosys 子集写法（时钟取外层 always、蕴含改 if 守卫）
+fml_a_redirect_no_accept: assert property
+    (branch_en_ex[1] ? !int_trap_jump_n : 1'b1);
+`endif
 // 2) Zcmp 多拍展开中禁止接受中断（int_come 门控含 ~zcmp_busy，此处防线冗余）
+`ifdef FORMAL
+fml_a_zcmp_no_accept: assert property
+    (zcmp_busy ? !int_trap_jump_n : 1'b1);
+`else
 a_zcmp_no_accept: assert property (
     @(posedge clk) disable iff (!rst_n)
     (zcmp_busy |-> !int_trap_jump_n));
+`endif
 // 3) mret 屏蔽窗口内禁止接受中断（mret_gap_cnt + mret_req/done 门控）
+`ifdef FORMAL
+fml_a_mret_gap_no_accept: assert property
+    ((mret_gap_cnt > 3'd0) ? !int_trap_jump_n : 1'b1);
+`else
 a_mret_gap_no_accept: assert property (
     @(posedge clk) disable iff (!rst_n)
     ((mret_gap_cnt > 3'd0) |-> !int_trap_jump_n));
+`endif
 // 4) 中断接受拍的 mepc 锁存源必须是合法指令地址（RVC 最低半字对齐）
+`ifdef FORMAL
+fml_a_accept_pc_aligned: assert property
+    (int_trap_jump_n ? (id_ex_inst_addr[0] == 1'b0) : 1'b1);
+`else
 a_accept_pc_aligned: assert property (
     @(posedge clk) disable iff (!rst_n)
     (int_trap_jump_n |-> (id_ex_inst_addr[0] == 1'b0)));
+`endif
 // 5) 重定向拍 trap_jump 必须包含 int_trap_jump（防汇总式改动丢失中断分支）
+`ifdef FORMAL
+fml_a_int_trap_fire: assert property
+    (int_trap_jump ? trap_jump : 1'b1);
+`else
 a_int_trap_fire: assert property (
     @(posedge clk) disable iff (!rst_n)
     (int_trap_jump |-> trap_jump));
-// 6) 陷阱码哨兵：exception_trap 时选中的异常码不得携带全 1 哨兵（bit30=1）——
+`endif
+// 6) 陷阱码哨兵：异常陷阱拍锁存的 mcause 不得携带全 1 哨兵（bit30=1）——
 //    get_priority 优先级表缺项时 sel_stage 落 default，异常码 mux 输出全 1 且
 //    mepc=0（2026-09-12 修复，mcause=0x7FFFFFFF 即此家族）
+//    mret 拍 mcause_n 走默认 0 分支（无 trap 码语义），哨兵检查只针对
+//    异常陷阱拍（exception_jump=1，mcause_n = {1'b0,exception_code}）
+`ifdef FORMAL
+// 哨兵契约（2026-09-12 mcause=0x7FFFFFFF 病根防线）：
+// 异常触发拍（exception_trap=1）时，Pipeline_Ctrl 选中的阶段码
+// exception_code 必为非哨兵（全 1 bit30=1 仅表示"无异常"）。
+// 若 get_priority 优先级表缺项导致 sel_stage 落 default，
+// 码 mux 输出全 1 哨兵 + mepc=0，mcause 锁存 0x7FFFFFFF。
+// 直接引用输入端口（防 abc opt 消除内部 wire 后 witness 校验失败）
+fml_a_exc_code_valid: assert property
+    (exception_trap ? (exception_code != {DATA_WIDTH-2{1'b1}}) : 1'b1);
+`else
 property p_exc_code_valid;
     @(posedge clk) disable iff (!rst_n)
-    (exception_trap |-> !mcause_n[30]);
+    (exception_trap |-> (exception_code != {DATA_WIDTH-2{1'b1}}));
 endproperty
 a_exc_code_valid: assert property (p_exc_code_valid)
-    else $error("[SVA][CSR] exception_trap 携带哨兵码 mcause_n=%h（核对 get_priority）", mcause_n);
+    else $error("[SVA][CSR] 异常陷阱携带全1哨兵 exception_code=%h（核对 get_priority）", exception_code);
+`endif
 // 7) 中断原因编码合法：软件 3 / 定时 7 / 外部 11，且中断位（bit31）必须置位
+`ifdef FORMAL
+fml_a_int_code_legal: assert property
+    (int_trap_jump_n
+     ? (mcause_n[31] && (mcause_n[3:0] == 4'd3 || mcause_n[3:0] == 4'd7
+                          || mcause_n[3:0] == 4'd11)) : 1'b1);
+`else
 property p_int_code_legal;
     @(posedge clk) disable iff (!rst_n)
     (int_trap_jump_n |-> (mcause_n[31] && (mcause_n[3:0] inside {4'd3, 4'd7, 4'd11})));
 endproperty
 a_int_code_legal: assert property (p_int_code_legal)
     else $error("[SVA][CSR] 中断原因码非法 mcause_n=%h", mcause_n);
+`endif
+// ===== FORMAL 覆盖点（SymbiYosys cover 任务）=====
+// 注：cover 深度受限于中断接受门控链的时序约束——int_accept_kill 要求
+// bus_ready=1 && oitf_stall=0 && 中断 pending 且使能（mstatus.MIE=1 需先
+// 经 CSR 写入），30 步内路径过长；这些覆盖点由仿真（memstress 中断用例）
+// 保证可达性，形式任务只证契约（prove）
+`ifdef FORMAL
+always @(posedge clk) begin
+    fml_c_mret_gap_end:    cover property (mret_gap_cnt == 3'd0 && $past(mret_req));
+    fml_c_zcmp_block_int:  cover property (zcmp_busy && int_trap);
+end
+`endif
 `endif
 
 endmodule

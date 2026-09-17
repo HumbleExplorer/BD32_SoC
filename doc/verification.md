@@ -393,7 +393,7 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 参数说明：`-m` 指定内存区域（ITCM+DTCM 192KB，UART MMIO 4KB），`--log-commits` 输出每条指令的寄存器写回。
 
 注意事项：
-- 自定义 CSR（如 0xbc6 性能计数器）会导致 Spike 触发 illegal instruction trap，trap 之前的 trace 仍然有效；
+- 自定义 CSR（如 0xb06 性能计数器）会导致 Spike 触发 illegal instruction trap，trap 之前的 trace 仍然有效；
 - 若固件含 UART polling 循环（等待 TX ready），Spike 会死循环，可用 ELF patch 将 polling 分支替换为 NOP（`0x00000013`）；
 - WSL 输出为 UTF-16LE 编码，处理时需 `iconv -f UTF-16LE -t UTF-8`。
 

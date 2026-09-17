@@ -12,7 +12,7 @@ BD32 是一款自定义的 32 位 RISC-V (RV32IMC) 流水线处理器 SoC，采�
 - OITF（Out-of-order Instruction Termination Facility）：深度 4 的 FIFO，允许多周期乘除法指令乱序执行
 - 流水线型 Booth-4 乘法器
 - 32 周期迭代恢复余数除法器
-- HPM 性能计数器（mhpmcounter）：ALU/Load/Store/Branch/Jump/MulDiv/误预测/CSR/系统指令分类计数，Zcb/B/Zcmp 扩展独立计数
+- HPM 性能计数器（标准地址 mhpmcounter3-17 = 0xB03-0xB11）：ALU/Load/Store/Branch/Jump/MulDiv/误预测/CSR/系统指令分类计数，Zcb/B/Zcmp 扩展独立计数，load-use/OITF/取指停顿周期计数；计数门控 = mcountinhibit（复位全计数，软件按需停）
 - 基于Gshare的动态分支预测器：GHR+BTB+RAS
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：CLINT、PLIC 中断控制器、UART（含程序、数据下载功能）、APB Timer（含输入捕获和输出比较功能）、GPIO

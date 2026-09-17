@@ -29,6 +29,22 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import subprocess
 
+
+def safe_log_path(user_path, root):
+    """--log 路径安全校验：规范化后必须落在 root 子树内，拒绝 ../ 逃逸"""
+    root = os.path.realpath(root)
+    target = os.path.realpath(user_path)
+    if target == root or target.startswith(root + os.sep):
+        return target
+    print(f"[ERROR] 日志路径越出允许目录 {root}：{user_path}")
+    sys.exit(1)
+
+
+def repo_root():
+    # SDK/tools/uart_send.py → Working/
+    return os.path.realpath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+
 def find_port():
     """自动检测 CH340 USB-UART 串口"""
     candidates = []
@@ -63,11 +79,11 @@ def interactive_terminal(ser, log_path=None, echo=True):
 
     echo=True 时键盘输入同时本地回显（默认），远端设备自身回显时用
     --no-echo 避免双字符；回显仅在标准输出为终端时使用颜色区分。
+    log_path 须为调用方已按仓库子树校验过的绝对路径。
     """
     decoder = make_decoder()
     logf = None
     if log_path:
-        os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
         logf = open(log_path, "wb")
     use_color = echo and sys.stdout.isatty()
     print(f"[TERM] Interactive terminal on {ser.port} @ {ser.baudrate}: "
@@ -156,12 +172,16 @@ def main():
     parser.add_argument("--until", default=None,
                         help="可选精确结束标记：命中后截断到标记末尾并停止")
     parser.add_argument("--log", default=None,
-                        help="监听/交互输出写入的日志文件路径（监听默认 logs/uart_send_<程序>_<时间戳>.log）")
+                        help="监听/交互输出写入的日志文件路径（监听默认 logs/uart_send_<程序>_<时间戳>.log，须在仓库目录内）")
     parser.add_argument("--interactive", action="store_true",
                         help="交互终端模式：实时回显 + 键盘转发，Ctrl+C 退出（无需 file）")
     parser.add_argument("--no-echo", action="store_true",
                         help="交互终端关闭本地回显（远端设备自身回显时用，避免双字符）")
     args = parser.parse_args()
+
+    # 日志路径校验：--log 必须落在仓库目录内（防路径穿越写到任意位置）
+    if args.log is not None:
+        args.log = safe_log_path(args.log, repo_root())
 
     # 自动检测串口
     if args.port is None:
@@ -186,9 +206,10 @@ def main():
         sys.exit(1)
 
     if not os.path.exists(args.file):
-        alt = os.path.normpath(os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "..", "..", "test_data", "soc", "c", args.file))
+        # 固定搜索位置（test_data/soc/c）：取 basename 防止 <file> 参数中的路径成分
+        # 使拼接目标逃逸出该目录
+        alt = os.path.join(repo_root(), "test_data", "soc", "c",
+                           os.path.basename(args.file))
         if os.path.exists(alt):
             print(f"[INFO] 在 test_data/soc/c 下找到: {alt}")
             args.file = alt
@@ -241,7 +262,7 @@ def main():
         else:
             stem = os.path.splitext(os.path.basename(args.file))[0]
             ts = time.strftime("%Y%m%d_%H%M%S")
-            log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
+            log_dir = os.path.join(repo_root(), "logs")
             os.makedirs(log_dir, exist_ok=True)
             log_path = os.path.join(log_dir, "uart_send_%s_%s.log" % (stem, ts))
         print(f"  log → {os.path.abspath(log_path)}")

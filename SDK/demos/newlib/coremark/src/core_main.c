@@ -316,8 +316,8 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 	}
     /* HPM：分支预测率 */
     {
-        uint32_t br_cnt  = read_csr(0xBC6);   // mhp_counter6: 条件分支总数
-        uint32_t br_mis  = read_csr(0xBC9);   // mhp_counter9: 预测失败次数
+        uint32_t br_cnt  = read_csr(0xB06);   // mhpmcounter6: 条件分支总数
+        uint32_t br_mis  = read_csr(0xB09);   // mhpmcounter9: 预测失败次数
         uint32_t br_ok   = br_cnt - br_mis;
         printf("Total branches  : %u\n", br_cnt);
         printf("Predict miss    : %u\n", br_mis);
@@ -327,6 +327,17 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
             printf("%%\n");
         }
     }
+    /* minstret：退休指令数（500 轮 < 2^32，读低半即可），用于 CPI 分解 */
+    printf("Total inst      : %u\n", read_csr(0xB02));
+    /* 全 HPM 分类：定位 CPI 差异来源（ALU/LOAD/STORE/BRANCH/JUMP/MULDIV） */
+    printf("HPM alu=%u load=%u store=%u br=%u jump=%u muldiv=%u\n",
+           read_csr(0xB03), read_csr(0xB04), read_csr(0xB05),
+           read_csr(0xB06), read_csr(0xB07), read_csr(0xB08));
+    printf("HPM2 zcb=%u bext=%u zcmp=%u\n",
+           read_csr(0xB0A), read_csr(0xB0B), read_csr(0xB0C));
+    /* 停顿原因周期计数（隐藏 CPI 归因） */
+    printf("HPM3 stall loaduse=%u oitf=%u fetch=%u\n",
+           read_csr(0xB0F), read_csr(0xB10), read_csr(0xB11));
 #endif
   // Remove error report if execution time low.
   // On Ibex a few loops suffices to get an accurate result. With this check in
