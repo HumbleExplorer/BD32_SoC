@@ -215,6 +215,23 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 	}
 	/* perform actual benchmark */
 	start_time();
+	/* HPM 窗口基准快照（2026-09-17 修正口径）：报告时取差值而非复位以来
+	 * 绝对值——否则 BootROM 下载等待轮询的指令/分支全被计入，CPI 分解与
+	 * 分支预测率都失真 */
+	uint32_t hpm0_inst  = read_csr(0xB02);
+	uint32_t hpm0_alu   = read_csr(0xB03);
+	uint32_t hpm0_load  = read_csr(0xB04);
+	uint32_t hpm0_store = read_csr(0xB05);
+	uint32_t hpm0_br    = read_csr(0xB06);
+	uint32_t hpm0_jump  = read_csr(0xB07);
+	uint32_t hpm0_mul   = read_csr(0xB08);
+	uint32_t hpm0_mis   = read_csr(0xB09);
+	uint32_t hpm0_zcb   = read_csr(0xB0A);
+	uint32_t hpm0_bext  = read_csr(0xB0B);
+	uint32_t hpm0_zcmp  = read_csr(0xB0C);
+	uint32_t hpm0_slu   = read_csr(0xB0F);
+	uint32_t hpm0_oitf  = read_csr(0xB10);
+	uint32_t hpm0_fetch = read_csr(0xB11);
 #if (MULTITHREAD>1)
 	if (default_num_contexts>MULTITHREAD) {
 		default_num_contexts=MULTITHREAD;
@@ -314,10 +331,10 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 	        printf("CoreMark/MHz     : N/A\n");
 	    }
 	}
-    /* HPM：分支预测率 */
+    /* HPM：分支预测率（基准窗口差值口径） */
     {
-        uint32_t br_cnt  = read_csr(0xB06);   // mhpmcounter6: 条件分支总数
-        uint32_t br_mis  = read_csr(0xB09);   // mhpmcounter9: 预测失败次数
+        uint32_t br_cnt  = read_csr(0xB06) - hpm0_br;   // mhpmcounter6: 条件分支总数
+        uint32_t br_mis  = read_csr(0xB09) - hpm0_mis;  // mhpmcounter9: 预测失败次数
         uint32_t br_ok   = br_cnt - br_mis;
         printf("Total branches  : %u\n", br_cnt);
         printf("Predict miss    : %u\n", br_mis);
@@ -328,16 +345,19 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
         }
     }
     /* minstret：退休指令数（500 轮 < 2^32，读低半即可），用于 CPI 分解 */
-    printf("Total inst      : %u\n", read_csr(0xB02));
+    printf("Total inst      : %u\n", read_csr(0xB02) - hpm0_inst);
     /* 全 HPM 分类：定位 CPI 差异来源（ALU/LOAD/STORE/BRANCH/JUMP/MULDIV） */
     printf("HPM alu=%u load=%u store=%u br=%u jump=%u muldiv=%u\n",
-           read_csr(0xB03), read_csr(0xB04), read_csr(0xB05),
-           read_csr(0xB06), read_csr(0xB07), read_csr(0xB08));
+           read_csr(0xB03) - hpm0_alu, read_csr(0xB04) - hpm0_load,
+           read_csr(0xB05) - hpm0_store, read_csr(0xB06) - hpm0_br,
+           read_csr(0xB07) - hpm0_jump, read_csr(0xB08) - hpm0_mul);
     printf("HPM2 zcb=%u bext=%u zcmp=%u\n",
-           read_csr(0xB0A), read_csr(0xB0B), read_csr(0xB0C));
+           read_csr(0xB0A) - hpm0_zcb, read_csr(0xB0B) - hpm0_bext,
+           read_csr(0xB0C) - hpm0_zcmp);
     /* 停顿原因周期计数（隐藏 CPI 归因） */
     printf("HPM3 stall loaduse=%u oitf=%u fetch=%u\n",
-           read_csr(0xB0F), read_csr(0xB10), read_csr(0xB11));
+           read_csr(0xB0F) - hpm0_slu, read_csr(0xB10) - hpm0_oitf,
+           read_csr(0xB11) - hpm0_fetch);
 #endif
   // Remove error report if execution time low.
   // On Ibex a few loops suffices to get an accurate result. With this check in
