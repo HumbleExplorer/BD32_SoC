@@ -102,3 +102,4 @@ rtl/assert/formal/*_formal*/
 rtl/assert/formal/pc_formal_front_end.bat
 rtl/assert/formal/pc_csr_formal_front_end.bat
 test_data/soc/mrom_build/
+.obsidian/

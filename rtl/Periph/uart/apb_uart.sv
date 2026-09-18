@@ -337,12 +337,16 @@ assign PSLVERR  = 1'b0;
 `ifndef SYNTHESIS
 // ===== SVA：UART 协议不变式（L2，+define+ASSERT_MODULE 使能）=====
 `ifdef ASSERT_MODULE
+    // ① LSR[5] THRE / LSR[6] TEMT 语义：写 FIFO 恒空（16 深 sync_fifo 无读指针暴露，
+    //    故只用 ~full/full 近似；temt=0 当且仅当写满）
+    // lsr[5]/[6] 是 NBA 寄存器（下拍锁存组合态），必须 $past 对齐一拍，
+    // 否则每次 THRE/TEMT 翻转必假失败一拍（2026-09-16 审计缺陷②，改并发断言）
+    a_uart_lsr_thre:  assert property (@(posedge PCLK) disable iff (!PRESETn)
+                          lsr[5] == $past(tx_fifo_rd_empty));
+    a_uart_lsr_empt:  assert property (@(posedge PCLK) disable iff (!PRESETn)
+                          lsr[6] == $past(tx_fifo_rd_empty && ~tx_busy));
     always @(posedge PCLK) begin
         if (PRESETn) begin
-            // ① LSR[5] THRE / LSR[6] TEMT 语义：写 FIFO 恒空（16 深 sync_fifo 无读指针暴露，
-            //    故只用 ~full/full 近似；temt=0 当且仅当写满）
-            a_uart_lsr_thre:  assert property (lsr[5] == tx_fifo_rd_empty);
-            a_uart_lsr_empt:  assert property (lsr[6] == (tx_fifo_rd_empty && ~tx_busy));
             // ② iir 值域：只允许 16550 手册定义的 6 个编码
             a_uart_iir_legal: assert property
                 ((iir == IIR_NO_INT) || (iir == IIR_RLS_INT) || (iir == IIR_RDA_INT)

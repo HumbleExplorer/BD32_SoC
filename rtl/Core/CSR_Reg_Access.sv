@@ -592,12 +592,15 @@ a_int_trap_fire: assert property (
 // 若 get_priority 优先级表缺项导致 sel_stage 落 default，
 // 码 mux 输出全 1 哨兵 + mepc=0，mcause 锁存 0x7FFFFFFF。
 // 直接引用输入端口（防 abc opt 消除内部 wire 后 witness 校验失败）
-fml_a_exc_code_valid: assert property
-    (exception_trap ? (exception_code != {DATA_WIDTH-2{1'b1}}) : 1'b1);
+// 2026-09-18：哨兵契约已由 harness assume（生产者=Pipeline_Ctrl 的
+// fml_a_no_sentinel 负责），此处升级为有意义的组成检查：
+// 异常陷阱拍 mcause_n 必为 {1'b0, 阶段异常码}（优先级最高项，防 mux 病变）
+fml_a_exc_mcause_composition: assert property
+    (exception_trap ? (mcause_n == {1'b0, exception_code}) : 1'b1);
 `else
 property p_exc_code_valid;
     @(posedge clk) disable iff (!rst_n)
-    (exception_trap |-> (exception_code != {DATA_WIDTH-2{1'b1}}));
+    (exception_trap |-> (exception_code != {DATA_WIDTH-1{1'b1}}));
 endproperty
 a_exc_code_valid: assert property (p_exc_code_valid)
     else $error("[SVA][CSR] 异常陷阱携带全1哨兵 exception_code=%h（核对 get_priority）", exception_code);

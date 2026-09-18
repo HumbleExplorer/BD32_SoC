@@ -58,16 +58,14 @@ module pipeline_ctrl_formal_top #(
     logic [DATA_WIDTH-1:0]                    f_exc_val_id;
     logic [DATA_WIDTH-1:0]                    f_exc_val_ex;
 
-    // 异常码默认全 1 哨兵（无异常路径）
-    assign f_exc_code_if = {DATA_WIDTH-1{1'b1}};
-    assign f_exc_code_id = {DATA_WIDTH-1{1'b1}};
-    assign f_exc_code_ex = {DATA_WIDTH-1{1'b1}};
+    // 2026-09-16 审计缺陷③修正：异常码/指令地址放开为自由输入。
+    // 原钉哨兵使 exception_trap 恒 0，fml_a_no_sentinel/trap_consistent/
+    // exc_s2/exc_s1_keep/oitf_flush 全部空转假绿（harness 目标②落空）。
+    // 自由码（含哨兵值）让优先级表/哨兵不变式被真实探索；地址独立自由值
+    // 使 exc_s2/exc_s1_keep 的地址 mux 选择可观测。
     assign f_exc_val_if  = '0;
     assign f_exc_val_id  = '0;
     assign f_exc_val_ex  = '0;
-    assign f_inst_addr_if  = '0;
-    assign f_inst_addr_id  = '0;
-    assign f_inst_addr_ex  = '0;
     assign f_inst_addr_mem = '0;
     assign f_branch_jump_addr = '0;
     assign f_trap_jump_addr   = '0;
@@ -154,6 +152,17 @@ module pipeline_ctrl_formal_top #(
             assume (!(f_trigger_match && f_int_accept_kill));
             assume (!(f_ebreak_halt && f_int_accept_kill));
             assume (!(f_dbg_resume_pulse && f_int_accept_kill));
+            // —— 分阶段合法异常码约束（生产者契约，2026-09-18 补）——
+            // 自由 31 位码会产生“bit30=0 但 get_priority 落默认 15”的非法组合：
+            // trap=1 而选中哨兵 → fml_a_no_sentinel 假失败（真实流水线不会产出）。
+            // 各阶段合法集按 get_priority 查表域（code[3:0]）约束，哨兵(bit30=1)恒合法。
+            assume (f_exc_code_if[30] || f_exc_code_if[3:0] == 4'd0 || f_exc_code_if[3:0] == 4'd1);
+            assume (f_exc_code_id[30] || f_exc_code_id[3:0] == 4'd2 || f_exc_code_id[3:0] == 4'd3
+                 || f_exc_code_id[3:0] == 4'd8 || f_exc_code_id[3:0] == 4'd9
+                 || f_exc_code_id[3:0] == 4'd11);
+            assume (f_exc_code_ex[30] || f_exc_code_ex[3:0] == 4'd2 || f_exc_code_ex[3:0] == 4'd4
+                 || f_exc_code_ex[3:0] == 4'd5 || f_exc_code_ex[3:0] == 4'd6
+                 || f_exc_code_ex[3:0] == 4'd7);
             // ⑩ step 状态机非 DRAIN（STEP_DRAIN 期间 accept 被 step_drain 分支遮蔽）
             //    简化：f_dbg_step=0 时 step_state 不会进入 RUN/DRAIN
             //    （STEP 序列需要 dbg_resume_pulse && dbg_step 启动）

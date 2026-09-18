@@ -370,7 +370,12 @@ a_trap_addr_stable: assert property (
 wire fml_accept_unshadowed = !(dbg_halt_eff || step_halt || trigger_eff
                                || ebreak_halt || dbg_resume_pulse || resume_hold
                                || step_run_active || step_drain_active
-                               || r_trap_redirect);
+                               || r_trap_redirect
+                               // WFI 分支（优先级高于 trap 接受）冻结流水线并把
+                               // 异常接受推迟一拍（异常唤醒语义）——推迟拍不检查
+                               // 立即冲刷契约（2026-09-16 审计缺陷③放开异常码后
+                               // 暴露的遮蔽缺口，formal 反例实锤）
+                               || (waiting_int && ~ex_access_en));
 
 always @(posedge clk) begin
     // ---- 中断接受拍冲刷契约（2026-09-12 SERR 根因防线）----
@@ -393,8 +398,10 @@ always @(posedge clk) begin
     // ---- 异常优先级表不变式（get_priority 缺项 = mcause 全 1 哨兵病根）----
     // ④ 异常触发时，所选阶段码必须非哨兵（哨兵 {W-1{1'b1}} 表示"无异常"，
     //    若陷阱拍 mux 输出全 1 即 2026-09-12 修复过的 mcause=0x7FFFFFFF 病根）
+    // rst_n 门控：复位拍异常码输入自由（assume 按惯例仅在 rst_n 生效），
+    // 组合 mux 可瞬时呈现 trap=1+哨兵输出的无意义组合——只在正常工作态检查
     fml_a_no_sentinel: assert property
-        (exception_trap ? !(exception_code[DATA_WIDTH-2]) : 1'b1);
+        ((rst_n && exception_trap) ? !(exception_code[DATA_WIDTH-2]) : 1'b1);
     // ⑤ exception_trap 当且仅当至少一阶段码非哨兵（NAND 语义）
     fml_a_trap_consistent: assert property
         (exception_trap
