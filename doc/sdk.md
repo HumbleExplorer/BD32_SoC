@@ -31,6 +31,25 @@
 
 编译流程：AS start.S → CC board/init.c → CC drivers → CC trap → CC main.c → LD → OBJDUMP → 生成 .mem/.uartbin
 
+## update_mrom.py — BootROM 一键更新（改 mrom.s 后必用）
+
+改 `test_data/soc/mrom.s` 后**禁止只跑裸 as**——`call` 的 auipc+jalr 重定位需要
+链接器解析，跳过 ld 会留下 delta=0 自跳转死循环（2026-09-17 上板实锤）。三步：
+
+```bash
+cd SDK
+tools\update_mrom_build.bat              # 1) gcc 完整链接 → mrom.elf + objdump 跳转检查
+python tools/update_mrom.py             # 2) 解析 ELF → 校验（0x306 引用必须为 0）→ 生成 mrom.dat + mrom.coe
+tools\update_mrom_synth.bat             # 3) mrom IP 重读 COE + 综合 + 比特流（约 40 分钟）
+```
+
+要点：
+- **mrom BRAM IP 吃的是 `test_data/soc/mrom.coe` 不是 mrom.dat**，且 Vivado
+  感知不到 COE 内容变化——第 3 步的 tcl 固化了 reset_target + generate_target
+  + 显式重跑 `mrom_synth_1`，缺一不可。
+- 校验失败（访问已移除 CSR / 切进 ELF 头 / 未解析跳转）会直接报错退出，
+  不会带病产出。
+
 ## build_run.py — 一键构建 + 上板运行
 
 一条命令完成 **构建 → 复位 FPGA → UART 下载 → 监听运行输出**（板子需已连接，SDK/ 目录下执行）：

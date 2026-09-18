@@ -10,7 +10,7 @@
 ```bash
 cd test_data/custom_asm
 python build_asm.py <test_name>    # 单个测试
-python build_asm.py all            # 全部 49 个测试
+python build_asm.py all            # 全部 51 个测试
 ```
 
 编译参数：`-march=rv32im -mabi=ilp32 -O0 -mno-relax -nostdlib -static`；产物 `.elf` / `.dump` / `.dat`（readmemh 字流）。
@@ -56,7 +56,7 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 
 | 套件 | 顶层 | 运行 | 判定 |
 |---|---|---|---|
-| custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 49/49 全过（memstress 由脚本注入 timer 中断激励） |
+| custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 51/51 全过（memstress 由脚本注入 timer 中断激励；+stall_test 停顿计数器/MULDIV、hpm_audit_test 供 TB 审计对账） |
 | riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 51/51 全过（含 fence_i / ma_data / rvc） |
 | Debug 模块 | tb_debug | `script/debug_test/run_msim_debug.bat` | 94 PASS / 0 FAIL |
 | 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过（PLIC 52 项） |
@@ -73,7 +73,8 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
   ```bash
   cd script
   python run_one.py <test_name>              # 单个 custom_asm 测试
-  python run_all_custom_asm.py               # custom_asm 全回归（49 项）
+  python run_all_custom_asm.py               # custom_asm 全回归（51 项）
+  python run_hpm_audit.py                    # HPM 审计：参考模型逐项对账（HPM AUDIT: ALL PASS）
   python run_all_riscv_tests.py              # riscv-tests 回归（51 项）
   ```
   判定约定：x26=1 完成、x27=1 通过、x3(gp) 记录失败子测试编号。riscv-tests 中 `rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过。**SVA 判据（2026-09-14 起生效）**：回归脚本对 `** Error: [SVA]` 优先判 FAIL（先于功能 PASS 判据）——PASS 现在隐含"0 断言触发"。
