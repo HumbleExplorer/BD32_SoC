@@ -168,7 +168,7 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器
 - [ ] **AXI-Lite 总线完整性整改**：互连当前为单 master 地址译码（CPU 独占），XIP/DMA 接入前需补多 master 仲裁；BUS_TIMEOUT 强拆（DECERR）后从机侧半事务回收；随机 ready 延时从机模型（LFSR 驱动）纳入回归
-- [x] **SV 工程化与形式验证（主体完成）**：L1/L2/L3 分层 SVA 断言体系（17 个 RTL 文件内联断言 + bind_apb 5 从机协议检查 + bind_core 系统级双提交哨兵，回归对 `** Error: [SVA]` 优先判 FAIL）；SymbiYosys 形式验证四模块全绿（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer，PDR 无界证明 + BMC + cover，入口 `rtl/assert/formal/run_all_formal.bat`），并借此定位修复 IFU_Buffer Zcmp 恢复路径窗口污染 bug。待细化：L2 模块级深化（UART 帧/FIFO 溢出、PLIC claim/complete 配对、SoC_top mip 映射）、Zcmp 原子性、package/interface 化
+- [x] **SV 工程化与形式验证（主体完成）**：L1/L2/L3 分层 SVA 断言体系（17 个 RTL 文件内联断言 + bind_apb 5 从机协议检查 + bind_core 系统级双提交哨兵，回归对 `** Error: [SVA]` 优先判 FAIL）；SymbiYosys 形式验证六模块全绿（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer / Pipeline_Ctrl / CSR_Reg_Access，PDR 无界证明 + BMC + cover，入口 `rtl/assert/formal/run_all_formal.bat`），并借此定位修复 IFU_Buffer Zcmp 恢复路径窗口污染 bug；L2 模块级深化已落地（apb_uart / plic_target / SoC_top / Zcmp_Expander / Data_Hazard_Forward 前递自洽）。待细化：package/interface 化
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……
 - [ ] **详细PDF设计文档**：正在写……

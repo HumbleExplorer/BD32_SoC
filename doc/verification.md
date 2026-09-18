@@ -75,6 +75,8 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
   python run_one.py <test_name>              # 单个 custom_asm 测试
   python run_all_custom_asm.py               # custom_asm 全回归（51 项）
   python run_hpm_audit.py                    # HPM 审计：参考模型逐项对账（HPM AUDIT: ALL PASS）
+  cd script/soc_test && vsim -batch -do uart_lsr_verify.do   # UART TX 流量下 L2 断言专项（0 SVA Error）
+  cd script/soc_test && vsim -batch -do rtthread_sim_sys.do  # RT-Thread + ASSERT_SYS 系统级哨兵
   python run_all_riscv_tests.py              # riscv-tests 回归（51 项）
   ```
   判定约定：x26=1 完成、x27=1 通过、x3(gp) 记录失败子测试编号。riscv-tests 中 `rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过。**SVA 判据（2026-09-14 起生效）**：回归脚本对 `** Error: [SVA]` 优先判 FAIL（先于功能 PASS 判据）——PASS 现在隐含"0 断言触发"。
@@ -455,15 +457,16 @@ disable iff/蕴含、`$past` 替代 `|=>`），ModelSim 同样接受——约束
 
 ## 形式验证（SymbiYosys）
 
-SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。**已覆盖四模块全绿**
-（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer，各 bmc depth30 + abc-pdr 无界证明 +
-cover 全命中；IFU_Buffer 借此定位并修复 Zcmp 恢复路径窗口污染真 bug），属性计划与落地
-记录见 [property_plan_oitf.md](property_plan_oitf.md)。
+SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。**已覆盖六模块全绿**
+（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer + Pipeline_Ctrl / CSR_Reg_Access，各
+bmc depth30-40 + abc-pdr 无界证明 + cover 全命中；IFU_Buffer 借此定位并修复 Zcmp 恢复
+路径窗口污染真 bug；2026-09-18 异常码输入放开后异常优先级表/哨兵/冲刷级映射不变式
+为无界真实证明，非空转），属性计划与落地记录见 [property_plan_oitf.md](property_plan_oitf.md)。
 
 ```bat
 call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat
 cd /d Working\rtl\assert\formal
-run_all_formal.bat                 :: 四模块 bmc/prove/cover 一键全跑
+run_all_formal.bat                 :: 六模块 bmc/prove/cover 一键全跑
 sby -f oitf_formal.sby             :: 或单模块；指定单任务：sby -f oitf_formal.sby prove
 ```
 

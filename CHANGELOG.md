@@ -6,6 +6,10 @@
 
 ### 修复
 
+- **SVA 2026-09-16 审计三缺陷（2620562）**：CSR 哨兵断言常量位宽错（30 位零扩展对真哨兵 31'h7FFFFFFF 永真漏报）；apb_uart LSR 断言 NBA 寄存器与当拍组合态直比（THRE/TEMT 翻转必假失败，改 $past 并发断言）；两个 formal harness 异常码钉哨兵使异常路径断言空转假绿（放开为自由输入 + 分阶段合法码约束 + WFI 遮蔽谓词补全，异常优先级表/哨兵/冲刷级映射升为无界真实证明）。
+- **HPM 计数语义三 bug（5170922）**：MULDIV/minstret 漏计 OITF 退休（乘除走 port2 写回、主 WB 影子被 RAW 停顿重派发冲掉，漏计 ~70%，改 OITF 退休拍计数）；mcounterclr 写后锁存把计数器永久钉 0（改单拍脉冲）；csrw 0xBC0 因读译码缺项误判非法指令（补读回条目）。minstret 同拍双退休双增量。
+- **Zcmp ret 预测/RAS 漂移（0c6420c）**：popret 退休拍 pc mux 配对修正（formal 补冻结期属性）；预测器 spec 更新挂 spec_upd 门控。板上预测率 +1.7~3.5pp（口径修正后复测与基线一致）。
+
 - **中断接受拍边界指令双重提交（tidle SERR）**：中断接受拍冲刷集原为 IF_ID+ID_EX（EX_MEM 不冲），边界指令的 EX 结果泄漏进 EX_MEM 完成第一次写回，mret 后又按 mepc 重执行（第二次提交）——非幂等指令（`addi s0,s0,1768`）状态双重累加，RT-Thread tidle 周期性 SERR。现中断接受拍补冲 EX_MEM（更老指令提交不受影响），边界指令单次重执行。
 - **异常优先级表缺项**：`get_priority` EX 级未登记未对齐访存码（4/6），导致未对齐陷阱携带全 1 哨兵码（`mcause=0x7FFFFFFF, mepc=0`）且 `mtval` 丢失；已补登记并按 `[3:0]` 切片比较。
 - **CLINT SVA 编译坏点**：断言引用不存在的 `clk/rst_n`，改为端口名 `PCLK/PRESETn`。
