@@ -80,3 +80,24 @@ UnicodeDecodeError 崩溃——已在 `oss-cad-suite\share\yosys\python3\sby_cor
 decode 加 `errors="replace"` 补丁（工具升级后需重打）；②yosys.exe 必须经
 `environment.bat` 启动（直接跑报 0xC0000139 DLL 入口错误）；③Git Bash 里 sby/yosys
 的参数转义不可靠，复杂命令写 .bat 或 .ys 脚本执行。
+
+## 追加教训（2026-09-18，pipeline_ctrl/csr formal + 三审计缺陷修复）
+
+- **harness 放开自由输入 = 推平一层遮蔽**：异常码从钉哨兵改为自由后，逐层
+  暴露缺口——①欠约束假失败（自由 31 位码产生“bit30=0 但 get_priority 落
+  默认 15”的非法组合，需按生产者契约补分阶段合法码 assume）→ ②复位拍假
+  反例（assume 按惯例 `if(rst_n)` 门控，复位拍无约束，组合输出断言必须补
+  rst_n 守卫）→ ③遮蔽谓词缺口（WFI 分支优先级高于 trap 接受，推迟一拍接受，
+  fml_accept_unshadowed 漏 `(waiting_int && ~ex_access_en)`）。每层反例都是
+  一次精确的设计语义提问，逐层修到绿。
+- **Yosys 不支持 `inside`**：约束集合要写成显式相等或链（与 0.68+195 备忘
+  同族）。
+- **无时钟 assert property 在 formal 下逐评估点检查**：Pipeline_Ctrl 的
+  fml_a_* 故意不带时钟（组合输出契约），复位拍一样被查——凡“工作态才
+  有意义”的组合契约一律加 rst_n 守卫。
+- **遮蔽谓词完整性论证法**：把 flush 大 always_comb 的分支优先级链完整列出，
+  逐分支对照遮蔽谓词——凡“先于被检分支、且改变 flush 输出”的分支都必须
+  在谓词里。漏分支 = 遮蔽拍假失败（本次 WFI）。
+- **leaf-module harness 的契约方向**：下游模块 formal 不重证生产者契约，
+  用 assume 承接（如 CSR 的 trap→码非哨兵由 pipeline_ctrl formal 负责），
+  断言升级为对自身逻辑有约束力的检查（如 mcause_n=={1'b0,码} 组成）。

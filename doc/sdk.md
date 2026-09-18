@@ -181,6 +181,56 @@ python tools/auto_coremark.py --compiler gcc --opt o2  # 只跑单个配置
 python tools/auto_coremark.py --xlsx <输出路径>      # 自定义 Excel 路径
 ```
 
+## HPM 性能计数器（固件视角，2026-09-18 规范化版）
+
+计数器走**标准 RISC-V 地址**，复位即全计数（零配置），软件只需在需要时停止/清零。
+
+### 地址表
+
+| CSR | 语义 | CSR | 语义 |
+|-----|------|-----|------|
+| 0xB00/0xB80 | mcycle（64 位低/高半） | 0xB02/0xB82 | minstret |
+| 0xB03 | ALU 指令数 | 0xB04 | LOAD 数 |
+| 0xB05 | STORE 数 | 0xB06 | 条件分支数 |
+| 0xB07 | JUMP 数 | 0xB08 | MUL/DIV 数（OITF 退休拍计数） |
+| 0xB09 | 分支预测失败数 | 0xB0A/0xB0B/0xB0C | Zcb / B / Zcmp 指令数 |
+| 0xB0F | load-use 停顿周期 | 0xB10 | OITF 等待周期 | 
+| 0xB11 | 取指等待周期 | 0xBC0 | mcounterclr（按位写 1 清零，单拍脉冲，可读回） |
+
+### 门控与清零语义
+
+- **计数门控 = mcountinhibit(0x320)**，位号 = 计数器号（0=mcycle、2=minstret、
+  3-17=mhpmcounter3-17）；复位全 0 即全计数，写 1 停对应计数器。
+  WARL：只有位 0/2/3-17 可写。mcounteren 不存在（未实现 S/U 态）。
+- **mcounterclr(0xBC0) 按位写 1 清零**，单拍脉冲语义：写后下一拍自动归零，
+  不会把计数器钉住。0xBC0 可读回。注意：低位是 0 的写不清对应计数器。
+- 停顿计数器（0xB0F-0xB11）为周期型：不依赖指令退休，仅受 mcountinhibit 门控。
+
+### 固件用法示例
+
+```c
+#include "soc.h"   // 提供 read_csr/write_csr
+#define CSR_MCYCLE      0xB00
+#define CSR_MINSTRET    0xB02
+#define CSR_MCOUNTINHIBIT 0x320
+#define CSR_MCOUNTERCLR   0xBC0
+
+write_csr(CSR_MCYCLE, 0);            // mcycle 清零（mcounterclr 位 0 亦可）
+uint32_t t0 = read_csr(CSR_MCYCLE);
+uint32_t i0 = read_csr(CSR_MINSTRET);
+/* ... 被测代码 ... */
+uint32_t cyc = read_csr(CSR_MCYCLE) - t0;
+uint32_t ins = read_csr(CSR_MINSTRET) - i0;
+// CPI = cyc / ins；停顿归因读 0xB0F/0xB10/0xB11（同窗口差值）
+```
+
+要点（踩过的坑，详见 CHANGELOG/文档）：
+- **读差值口径**：做窗口测量时起止都要读，别拿复位以来绝对值当窗口值
+  （否则 BootROM/启动代码全被计入）。
+- **读 CSR 自身会 +1**：窗口内每次 `csrr` 也退休、也被计数，精确对账按 K+1。
+- CoreMark 移植层（`core_main.c`）已有完整示例：窗口差值 + 全类计数 +
+  停顿归因 + 类和==minstret 自检；对账若失配说明计数语义回归了。
+
 ## MROM 构建
 
 ```bash
