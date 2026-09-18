@@ -106,8 +106,11 @@ always_ff @(posedge clk or negedge rst_n) begin
     else if ((hpm_valid && hpm_count_ok && hpm_inst_type != 4'd6) || hpm_oitf_retire)
         // 2026-09-18 修正：MUL/DIV 的架构提交点在 OITF 退休（port2 写回），
         // 主流水线 WB 影子会被 RAW 停顿重派发冲掉（实测 20 条 mul 仅 6 条影子
-        // 到达 WB）——影子(MULDIV 类)不再计数，改由 hpm_oitf_retire 恰好计一次
-        minstret <= #1 minstret + 'h1;
+        // 到达 WB）——影子(MULDIV 类)不再计数，改由 hpm_oitf_retire 恰好计一次。
+        // 双增量：主流水线退休与 OITF 退休同拍时各计一条（minstret 每拍可 +2）
+        minstret <= #1 minstret
+                  + ((hpm_valid && hpm_count_ok && hpm_inst_type != 4'd6) ? 'h1 : 'h0)
+                  + (hpm_oitf_retire ? 'h1 : 'h0);
 end
 
 // HPM 计数器（64位，标准地址 mhpmcounter3-17 = 0xB03-0xB11，高半 0xB83-0xB91）

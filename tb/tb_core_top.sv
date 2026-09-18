@@ -100,6 +100,157 @@ assign  x3= tb_core_top.u_RISC_V_Core.u_RegFile.regs[3];
 assign x26= tb_core_top.u_RISC_V_Core.u_RegFile.regs[26];
 assign x27= tb_core_top.u_RISC_V_Core.u_RegFile.regs[27];
 
+`ifdef HPM_AUDIT
+// ============================================================================
+// HPM 审计参考模型（2026-09-18）：独立译码 + 退休计账，与 DUT mhpmcounter 对账
+// 独立性：类别从 inst_wb 位域独立解码，不复用 RTL 的 wb_inst_cat/递增逻辑；
+// MUL/DIV 影子（OP+funct7=0000001）不计主 WB 退休，改计 OITF 退休拍。
+// ============================================================================
+integer ref_cycles;
+integer ref_instret;
+integer ref_main_cnt;
+integer ref_shadow;
+integer ref_oitf;
+integer ref_overlap;
+integer ref_cnt  [0:8];          // 0 OTHER 1 ALU 2 LOAD 3 STORE 4 BR 5 JMP 6 MULDIV 7 CSR 8 SYS
+logic   audit_started;
+integer latch_at;
+logic   audit_latched;
+integer snap_cycles, snap_instret, snap_cnt[0:8], snap_overlap;
+integer dut_mcycle, dut_instret, dut_cnt[0:14];
+integer dut_cls[1:8];
+
+function automatic integer ref_class(input logic [31:0] inst);
+    begin
+        case (inst[6:0])
+            7'b0110011: ref_class = (inst[31:25] == 7'b0000001) ? 6 : 1; // OP: MULDIV 影子 / ALU
+            7'b0000011: ref_class = 2;                                   // LOAD
+            7'b0100011: ref_class = 3;                                   // STORE
+            7'b1100011: ref_class = 4;                                   // BRANCH
+            7'b1101111,
+            7'b1100111: ref_class = 5;                                   // JAL/JALR
+            7'b1110011: ref_class = (inst[14:12] == 3'b000) ? 8 : 7;     // SYSTEM/CSR
+            7'b0001111: ref_class = 8;                                   // fence
+            7'b0110111,
+            7'b0010111,
+            7'b0010011: ref_class = 1;                                   // LUI/AUIPC/OP-IMM = ALU 类
+            default:    ref_class = 0;
+        endcase
+    end
+endfunction
+
+always @(posedge clk) begin
+    if (rst_n === 1'b1) begin
+        // —— 同沿双快照：在最前面用"本沿累加前"的值锁存，与 DUT 的 NBA 前值对齐 ——
+        if (!audit_started) begin
+            if (x26 === 1'b1) begin
+                audit_started <= 1'b1;
+                latch_at      <= ref_cycles + 80;   // 触发沿也是累加前值
+            end
+        end else if (!audit_latched && ref_cycles == latch_at) begin
+            audit_latched <= 1'b1;
+            snap_cycles   <= ref_cycles;            // 以下右侧全是累加前值
+            snap_instret  <= ref_instret;
+            snap_overlap  <= ref_overlap;
+            for (integer k = 0; k < 9; k = k + 1) snap_cnt[k] <= ref_cnt[k];
+            dut_mcycle  <= u_RISC_V_Core.u_CSR_Reg_Access.mcycle[31:0];
+            dut_instret <= u_RISC_V_Core.u_CSR_Reg_Access.minstret[31:0];
+            for (integer k2 = 0; k2 < 15; k2 = k2 + 1)
+                dut_cnt[k2] <= u_RISC_V_Core.u_CSR_Reg_Access.mhpmcounter[k2][31:0];
+        end
+        ref_cycles = ref_cycles + 1;
+        if (u_RISC_V_Core.mem_wb_valid && !u_RISC_V_Core.mem_wb_stall) begin
+            if (ref_class(u_RISC_V_Core.inst_wb) == 6) begin
+                ref_shadow = ref_shadow + 1;          // 乘除影子：不计退休（OITF 拍计）
+            end else begin
+                ref_main_cnt = ref_main_cnt + 1;
+                ref_instret  = ref_instret + 1;
+                ref_cnt[ref_class(u_RISC_V_Core.inst_wb)] =
+                    ref_cnt[ref_class(u_RISC_V_Core.inst_wb)] + 1;
+                if (u_RISC_V_Core.oitf_retire_valid)
+                    ref_overlap = ref_overlap + 1;    // 主 WB 与 OITF 退休同拍
+            end
+        end
+        if (u_RISC_V_Core.oitf_retire_valid) begin
+            ref_oitf    = ref_oitf + 1;
+            ref_instret = ref_instret + 1;
+            ref_cnt[6]  = ref_cnt[6] + 1;
+        end
+`ifdef HPM_AUDIT_TRACE
+        if (u_RISC_V_Core.mem_wb_valid && !u_RISC_V_Core.mem_wb_stall
+            && ref_class(u_RISC_V_Core.inst_wb) == 5)
+            $display("[JMP_TRACE] %0t pc=%08x", $time, u_RISC_V_Core.inst_addr_wb);
+`endif
+    end
+end
+
+task automatic hpm_audit_report;
+    integer i;
+    integer rtl_l, ref_v;
+    integer fails;
+    integer sum_classes;
+    begin
+        // 等 x26 触发 → 80 拍后同沿快照
+        wait (audit_latched === 1'b1);
+        fails = 0;
+        sum_classes = 0;
+        $display("==== HPM AUDIT: DUT vs reference model (latched @cycle %0d) ====", snap_cycles);
+        // mcycle（±2 容差：复位释放沿归属）
+        if (dut_mcycle > snap_cycles + 2 || dut_mcycle < snap_cycles - 2) begin
+            $display("  [AUDIT FAIL] mcycle      dut=%0d ref=%0d", dut_mcycle, snap_cycles);
+            fails = fails + 1;
+        end else
+            $display("  [AUDIT PASS] mcycle      dut=%0d ref=%0d", dut_mcycle, snap_cycles);
+        // minstret（同拍重叠：RTL 每拍最多 +1，容差 = ref_overlap）
+        if (dut_instret != snap_instret) begin
+            $display("  [AUDIT FAIL] minstret    dut=%0d ref=%0d overlap=%0d",
+                     dut_instret, snap_instret, snap_overlap);
+            fails = fails + 1;
+        end else
+            $display("  [AUDIT PASS] minstret    dut=%0d ref=%0d overlap=%0d",
+                     dut_instret, snap_instret, snap_overlap);
+        // 各指令类（精确相等）
+        begin
+            string names [0:8];
+            integer dut_idx [0:8];
+            names[1]="ALU"; names[2]="LOAD"; names[3]="STORE"; names[4]="BRANCH";
+            names[5]="JUMP"; names[6]="MULDIV"; names[7]="CSR"; names[8]="SYS";
+            for (i = 1; i <= 8; i = i + 1) begin
+                // RTL 数组下标映射：1-5 → [0-4]，6 → [5]（OITF 退休计数），7 → [10]，8 → [11]
+                case (i)
+                    1,2,3,4,5: dut_idx[i] = i-1;
+                    6:         dut_idx[i] = 5;
+                    7:         dut_idx[i] = 10;
+                    8:         dut_idx[i] = 11;
+                endcase
+                dut_cls[i] = dut_cnt[dut_idx[i]];
+                rtl_l = dut_cls[i];
+                ref_v = snap_cnt[i];
+                if (rtl_l !== ref_v) begin
+                    $display("  [AUDIT FAIL] %-6s    dut=%0d ref=%0d", names[i], rtl_l, ref_v);
+                    fails = fails + 1;
+                end else
+                    $display("  [AUDIT PASS] %-6s    dut=%0d ref=%0d", names[i], rtl_l, ref_v);
+                sum_classes = sum_classes + rtl_l;
+            end
+        end
+        // DUT 侧不变式：类计数之和 == minstret（低 32 位）
+        if (sum_classes !== dut_instret) begin
+            $display("  [AUDIT FAIL] invariant  sum(class)=%0d != minstret=%0d",
+                     sum_classes, dut_instret);
+            fails = fails + 1;
+        end else
+            $display("  [AUDIT PASS] invariant  sum(class)=%0d == minstret", sum_classes);
+        $display("  [AUDIT INFO] shadow=%0d oitf=%0d overlap=%0d other=%0d",
+                 ref_shadow, ref_oitf, snap_overlap, snap_cnt[0]);
+        if (fails == 0)
+            $display("HPM AUDIT: ALL PASS");
+        else
+            $display("HPM AUDIT: %0d FAILURES", fails);
+    end
+endtask
+`endif
+
 always #(CLK_PERIOD/2)   clk = ~clk;
 initial begin
     clk     = 1'b0;
@@ -114,6 +265,14 @@ initial begin
     software_int = 1'b0;
     timer_int = 1'b0;
     mtime_shadow = 'h0;
+`ifdef HPM_AUDIT
+    ref_cycles = 0; ref_instret = 0; ref_main_cnt = 0;
+    ref_shadow = 0; ref_oitf = 0; ref_overlap = 0;
+    for (integer ai = 0; ai < 9; ai = ai + 1) ref_cnt[ai] = 0;
+    audit_started = 1'b0;
+    audit_latched = 1'b0;
+    latch_at = 0;
+`endif
 `ifndef BUS_LATENCY
     bus_ready       = 1'b1;
     bus_rdata       = 'h0;
@@ -171,6 +330,9 @@ initial  begin
         if(test != x3)
             $display("test[%d]",x3);
         else if(x26 == 32'h1) begin
+`ifdef HPM_AUDIT
+            hpm_audit_report;
+`endif
             repeat(10) @(posedge clk);
             if(x27 == 32'h1) begin
                 $display("\n");
