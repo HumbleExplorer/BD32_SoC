@@ -101,3 +101,24 @@ decode 加 `errors="replace"` 补丁（工具升级后需重打）；②yosys.ex
 - **leaf-module harness 的契约方向**：下游模块 formal 不重证生产者契约，
   用 assume 承接（如 CSR 的 trap→码非哨兵由 pipeline_ctrl formal 负责），
   断言升级为对自身逻辑有约束力的检查（如 mcause_n=={1'b0,码} 组成）。
+
+## 追加教训（2026-09-19，ifu_buffer prove 收口：yw-only 反例的解剖法）
+
+- **pdr 反例断言定位不能靠位序猜**：abc pdr 的 FAIL 只给 Output 序号，把
+  mitrer 输出位序映射回断言名极易猜错（本案 freeze 与 window_pair 混了
+  一轮）。yw 反例只有自由输入、无内部状态，且 Windows 下
+  `yosys-smtbmc --yw` 常因信号名不匹配崩掉。**标准解剖法**：按 sby 的
+  [script] 手动展开（补 `async2sync; dffunmap`），`write_smt2 -wires` 后
+  直接 `yosys-smtbmc -s yices -t N --dump-vcd`——smtbmc 自找的反例既报断
+  言名又带全部内部信号 VCD，逐帧实锤。
+- **断言豁免连加无效 = 语义错了，不是时序边角**：本案给 freeze 连加
+  req_fwd/$past/zcmp_consume 豁免都压不住，真因是另一个断言
+  （window_pair）在设计语义上被破坏——req_fwd 前推打破"窗口空时
+  fetch_addr 与活 req_addr 锁步"的隐含假设，Zcmp capture 收尾
+  `restore_req_addr <= fetch_addr` 恢复出落后 2 字的请求指针。修复按恢
+  复态分流（持有窗口字 → 窗口字+4；无窗口字 → 活 req_addr 基准），旧
+  锁步语义下行为等价。
+- **VCD 帧解剖的判读要点**：违约帧向前追 restore 寄存器的锁存拍
+  （capture），对拍"锁存值 vs 违约帧活值"即可区分"恢复数据本身错"与
+  "锁存基准已过时"——本案属后者（锁存后活指针继续前进，冻结只保住了
+  活指针、救不了陈旧锁存值）。

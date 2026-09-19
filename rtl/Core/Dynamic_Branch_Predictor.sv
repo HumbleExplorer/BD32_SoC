@@ -62,9 +62,11 @@ module Dynamic_Branch_Predictor #(
     localparam RAS_ADDR_WIDTH = $clog2(RAS_DEPTH),
     localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH,
     // BTB_TAG_WIDTH 减去 BTB_ADDR_WIDTH，避免 Tag 包含 Index
+    // 2026-09-19：RVC 下 PC/目标 16 位（半字）对齐，BTB 位域必须覆盖 bit1
+    localparam HALF_ALIGN_WIDTH = ALIGN_WIDTH - 1,  // 半字对齐宽度=1
     localparam BTB_TAG_WIDTH = BLOCK_SIZE_WIDTH - ALIGN_WIDTH - BTB_ADDR_WIDTH,
-    localparam BTB_BTA_WIDTH = BLOCK_SIZE_WIDTH - ALIGN_WIDTH,
-    localparam RAS_DATA_WIDTH = BLOCK_SIZE_WIDTH - ALIGN_WIDTH
+    localparam BTB_BTA_WIDTH = BLOCK_SIZE_WIDTH - HALF_ALIGN_WIDTH - 1, // 目标[16:1]
+    localparam RAS_DATA_WIDTH = BLOCK_SIZE_WIDTH - HALF_ALIGN_WIDTH - 1  // RA[16:1]
 
 )(
     // 时钟和复位
@@ -153,7 +155,7 @@ logic [PC_HASH_WIDTH-1:0]  update_pc_hash;
 // IF 阶段：预测逻辑
 // ========================================================
 
-assign predict_btb_idx = inst_addr[BTB_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+assign predict_btb_idx = inst_addr[BTB_ADDR_WIDTH+HALF_ALIGN_WIDTH-1:HALF_ALIGN_WIDTH];
 
 assign pc_hash = inst_addr[PC_HASH_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] ^
                  inst_addr[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH];
@@ -161,7 +163,7 @@ assign predict_pht_idx = pc_hash ^ spec_global_history;
 
 // BTB命中比对 (Tag跨过Index位)
 assign predict_btb_hit = btb_valid_array[predict_btb_idx] && 
-                        (btb_tag_array[predict_btb_idx] == inst_addr[BTB_TAG_WIDTH + BTB_ADDR_WIDTH + ALIGN_WIDTH - 1 : BTB_ADDR_WIDTH + ALIGN_WIDTH]);
+                        (btb_tag_array[predict_btb_idx] == inst_addr[BTB_TAG_WIDTH + BTB_ADDR_WIDTH + HALF_ALIGN_WIDTH - 1 : BTB_ADDR_WIDTH + HALF_ALIGN_WIDTH]);
 
 assign predict_2bit_cnt = pht_array[predict_pht_idx];
 assign predict_pht_taken = predict_2bit_cnt[1];
@@ -181,7 +183,7 @@ assign predict_ras_target = (predict_btb_hit && btb_pop_ras_array[predict_btb_id
 assign predict_btb_target = (predict_btb_hit &&
     ((predict_pht_taken && btb_inst_type_array[predict_btb_idx] == BRANCH_INST_TYPE_B) || 
     btb_inst_type_array[predict_btb_idx][1])) ?
-    {inst_addr[ADDR_WIDTH-1:ALIGN_WIDTH+BTB_BTA_WIDTH],btb_target_array[predict_btb_idx],{ALIGN_WIDTH{1'b0}}} : inst_addr + 4;
+    {inst_addr[ADDR_WIDTH-1:HALF_ALIGN_WIDTH+BTB_BTA_WIDTH],btb_target_array[predict_btb_idx],{HALF_ALIGN_WIDTH{1'b0}}} : inst_addr + 4;
 
 assign predict_target = btb_pop_ras_array[predict_btb_idx] ? predict_ras_target : predict_btb_target;
 
@@ -190,7 +192,7 @@ assign predict_target = btb_pop_ras_array[predict_btb_idx] ? predict_ras_target 
 // EX 阶段：更新索引计算
 // ========================================================
 
-assign update_btb_idx = branch_pc[BTB_ADDR_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+assign update_btb_idx = branch_pc[BTB_ADDR_WIDTH+HALF_ALIGN_WIDTH-1:HALF_ALIGN_WIDTH];
 assign update_pc_hash = branch_pc[PC_HASH_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH] ^
                         branch_pc[2*PC_HASH_WIDTH+ALIGN_WIDTH-1:PC_HASH_WIDTH+ALIGN_WIDTH];
 assign update_pht_idx = {update_pc_hash ^ real_global_history};
@@ -280,8 +282,8 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else if (!stall && branch_req && branch_taken) begin
         btb_valid_array[update_btb_idx]     <= #1 1'b1;
         // Tag 提取跨过 Index
-        btb_tag_array[update_btb_idx]       <= #1 branch_pc[BTB_TAG_WIDTH + BTB_ADDR_WIDTH + ALIGN_WIDTH - 1 : BTB_ADDR_WIDTH + ALIGN_WIDTH];
-        btb_target_array[update_btb_idx]    <= #1 branch_target[BTB_BTA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+        btb_tag_array[update_btb_idx]       <= #1 branch_pc[BTB_TAG_WIDTH + BTB_ADDR_WIDTH + HALF_ALIGN_WIDTH - 1 : BTB_ADDR_WIDTH + HALF_ALIGN_WIDTH];
+        btb_target_array[update_btb_idx]    <= #1 branch_target[BTB_BTA_WIDTH+HALF_ALIGN_WIDTH-1:HALF_ALIGN_WIDTH];
         btb_inst_type_array[update_btb_idx] <= #1 branch_inst_type;
         btb_pop_ras_array[update_btb_idx]   <= #1 pop_ras;
         btb_push_ras_array[update_btb_idx]  <= #1 push_ras;
@@ -347,10 +349,10 @@ always_ff @(posedge clk or negedge rst_n) begin
         // 优先处理 EX 阶段的真实写 (预测错误冲刷时也会写入)
         if (!stall && push_ras) begin
             // 直接用 EX 级算好的链接地址（32 位指令 +2 半字 / 16 位指令 +1 半字）
-            ras_stack[real_ras_ptr] <= #1 branch_inst_plus_len[RAS_DATA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH];
+            ras_stack[real_ras_ptr] <= #1 branch_inst_plus_len[RAS_DATA_WIDTH+HALF_ALIGN_WIDTH-1:HALF_ALIGN_WIDTH];
         end else if (spec_upd_i && predict_btb_hit && btb_push_ras_array[predict_btb_idx]) begin
             // 如果没有 EX 阶段的写，则进行 IF 阶段的推测写（仅在实际发射指令的拍）
-            ras_stack[spec_ras_ptr] <= #1 inst_addr[RAS_DATA_WIDTH+ALIGN_WIDTH-1:ALIGN_WIDTH]
+            ras_stack[spec_ras_ptr] <= #1 inst_addr[RAS_DATA_WIDTH+HALF_ALIGN_WIDTH-1:HALF_ALIGN_WIDTH]
                                        + (is_compressed_if ? 15'd1 : 15'd2);
         end
     end

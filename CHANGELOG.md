@@ -6,6 +6,8 @@
 
 ### 修复
 
+- **BTB 半字对齐索引混叠 + req_fwd 恢复指针陈旧（形式验证定位）**：① BTB index/tag 均弃 PC bit1，跨字 jal 的 PC 与对齐 PC 混叠同一条目致永久 miss、每次 EX 重定向罚 ~3 拍——index 扩为 pc[8:1]（含半字位），tag 保持 pc[15:9] 自然排除，target 数组随之 15 位；② IFU_Buffer Zcmp capture 收尾按"活 have_cur"而非恢复态选路，且以 fetch_addr 为恢复基准——req_fwd 前推使活 req_addr 领先 fetch_addr 后，consume 恢复出落后 2 字的请求指针（fml_a_window_pair 反例实锤），改为恢复态持有窗口字时取 `restore_req_addr = 窗口字+4`、无窗口字时以活 req_addr 为基准。修复后 formal 六模块 bmc/prove/cover 全 PASS。
+- **取指跨字 32 位指令结构性停顿（req_fwd 预取前推）**：refill_now 消费拍请求指针即时前推至消费字+4，消除"消费与请求争同一字"的 2 拍气泡；fml_a_zcmp_freeze 断言补 req_fwd 前推豁免。**2026-09-19 板级 6 配置 A/B 实测（62.5MHz，500 轮，重建固件 vs 09-18 基线）**：C 扩展配置 ticks -3.3%~-5.1%（gcc-O2 C -5.1%、gcc-O2 full -4.7%、llvm-Os C -3.3%、llvm-Os full -4.2%），fetch 停顿计数 -35%~-53%（full llvm-Os 18.7M→8.7M）；无扩展对照 +1.5%~1.7%（指令流 0.00% 差异，为重建二进制布局漂移噪声底，校准后 C 配置真实收益 ≈-5%~-7%）。性能损失口径更新：LLVM Os 全扩展净损失 -7% → 约 -2.5%。
 - **SVA 2026-09-16 审计三缺陷（2620562）**：CSR 哨兵断言常量位宽错（30 位零扩展对真哨兵 31'h7FFFFFFF 永真漏报）；apb_uart LSR 断言 NBA 寄存器与当拍组合态直比（THRE/TEMT 翻转必假失败，改 $past 并发断言）；两个 formal harness 异常码钉哨兵使异常路径断言空转假绿（放开为自由输入 + 分阶段合法码约束 + WFI 遮蔽谓词补全，异常优先级表/哨兵/冲刷级映射升为无界真实证明）。
 - **HPM 计数语义三 bug（5170922）**：MULDIV/minstret 漏计 OITF 退休（乘除走 port2 写回、主 WB 影子被 RAW 停顿重派发冲掉，漏计 ~70%，改 OITF 退休拍计数）；mcounterclr 写后锁存把计数器永久钉 0（改单拍脉冲）；csrw 0xBC0 因读译码缺项误判非法指令（补读回条目）。minstret 同拍双退休双增量。
 - **Zcmp ret 预测/RAS 漂移（0c6420c）**：popret 退休拍 pc mux 配对修正（formal 补冻结期属性）；预测器 spec 更新挂 spec_upd 门控。板上预测率 +1.7~3.5pp（口径修正后复测与基线一致）。
