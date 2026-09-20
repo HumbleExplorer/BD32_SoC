@@ -19,6 +19,7 @@
 
 ### 变更
 
+- **`.xpr` churn 收拢（A+B 双管齐下）**：① A：`BD32_SoC/BD32_SoC.xpr` 还原为干净历史形态 + 唯一实质改动 `impl_1 LaunchOptions -jobs 4`（原 109c1a4 混入的 130 行 Vivado 报告配置重序列化噪声全部剥除，`StratHandle/ReportStrategy` 回紧凑形态）；② B：新增 `SDK/tools/xpr_normalize.py`（幂等规范化器：剥 `<ReportConfig>` 块 + 空展开元素折叠为自闭合 + 多空白行折叠，`--check`/`--install-hook` 两模式，路径限定仓库子树）+ pre-commit 钩子自动规范化 staged `.xpr`——**约定：Vivado 保存过 `.xpr` 后提交前跑一次 `python SDK/tools/xpr_normalize.py`（装了钩子则自动），保持 `.xpr` diff 永远干净可读**。副作用说明：剥除报告自动配置后个别自动 .rpt 在下次 Vivado 打开保存前可能不生成，不影响综合/实现/比特流。
 - **CPU 频率 75MHz → 62.5MHz**：Zcmp 取指窗口重构后关键路径（EX 访存地址 → trigger → 中断冲刷 → ITCM 写口，约 15ns）决定 62.5MHz 为可签核最高频点；clk_wiz 及 SDK/testbench 频率常量同步。62.5MHz 下 WNS +0.171 全 MET。
 - 中断接受与 WFI/总线等待窗口的交互加固：WFI 冻结让位在途访存、DTCM 端口地址保持、rvalid 停顿释放拍放行提交。
 - 板级 `sys_clk` IBUF 隔离 + `IS_GLOBAL_CLOCK` 约束（修复 clk_wiz 端口非法连接）。
