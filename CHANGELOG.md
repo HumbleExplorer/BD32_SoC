@@ -22,6 +22,8 @@
 - **CPU 频率 75MHz → 62.5MHz**：Zcmp 取指窗口重构后关键路径（EX 访存地址 → trigger → 中断冲刷 → ITCM 写口，约 15ns）决定 62.5MHz 为可签核最高频点；clk_wiz 及 SDK/testbench 频率常量同步。62.5MHz 下 WNS +0.171 全 MET。
 - 中断接受与 WFI/总线等待窗口的交互加固：WFI 冻结让位在途访存、DTCM 端口地址保持、rvalid 停顿释放拍放行提交。
 - 板级 `sys_clk` IBUF 隔离 + `IS_GLOBAL_CLOCK` 约束（修复 clk_wiz 端口非法连接）。
+- **uart_send 0 字节"静默拒收"治理 + 日志路径穿越纵深防御**：`--early-warn`（默认 6s）——监听阶段持续 0 字节超阈值打印**一次**非致命诊断（区分"板子挂死→JTAG 重烧"与"固件↔比特流不匹配→重建 uartbin"，并给判别法），不再静默等满 `--timeout`；0 字节结束态改报明确诊断而非笼统 "sent successfully"。`log_path` 写入前统一走 `is_inside_repo` 子树校验（默认文件名 stem 做 `._-` 白名单净化），`args.log` 入口 `safe_log_path` 致命校验——杜绝日志写逃出仓库。
+  **旧 uartbin 静默拒收根因收口（关闭挂账）**：确诊为 **09-16 前固件的编译期 FCW 波特率常数**（老主频假设）vs 新比特流主频失配；`mrom.s`（运行时测主频 + NCO FCW 自适应 + 存 0x0002FFF0）与 bsp v2（`g_cpu_freq_hz` 运行时 + `soc_init` ±10% 合理性钳制）已在**两端**消除该失配——**当前构建的 uartbin 不会因频失配再被静默拒收**；当前唯一 0 字节来源=**板子挂死**（JTAG 重烧恢复，09-20 实证），已由上条 early-warn 明确分流。
 
 ### 新增
 

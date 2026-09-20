@@ -45,6 +45,17 @@ def repo_root():
     return os.path.realpath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
+def is_inside_repo(path, root=None):
+    """非致命子树判定：path 规范化后是否落在 root（默认仓库根）内。
+    供写文件前做纵深防御（args.log 已在入口经 safe_log_path 致命校验；
+    此处再兜底一次，防止未来重构让 log_path 逃出仓库时把日志写到任意位置）。"""
+    if root is None:
+        root = repo_root()
+    p = os.path.realpath(path)
+    r = os.path.realpath(root)
+    return p == r or p.startswith(r + os.sep)
+
+
 def find_port():
     """自动检测 CH340 USB-UART 串口"""
     candidates = []
@@ -84,7 +95,10 @@ def interactive_terminal(ser, log_path=None, echo=True):
     decoder = make_decoder()
     logf = None
     if log_path:
-        logf = open(log_path, "wb")
+        if is_inside_repo(log_path):
+            logf = open(log_path, "wb")
+        else:
+            print(f"[WARN] log path escaped repo, disabled logging: {log_path}", file=sys.stderr)
     use_color = echo and sys.stdout.isatty()
     print(f"[TERM] Interactive terminal on {ser.port} @ {ser.baudrate}: "
           "RX -> console, keyboard -> TX. "
@@ -171,6 +185,8 @@ def main():
                         help="监听总时长上限（默认 30s）")
     parser.add_argument("--until", default=None,
                         help="可选精确结束标记：命中后截断到标记末尾并停止")
+    parser.add_argument("--early-warn", type=float, default=6.0,
+                        help="下载后监听阶段：超过 N 秒仍 0 字节则打印一次'疑似不匹配/挂死'诊断（不中断，仅提示；设 0 关闭）")
     parser.add_argument("--log", default=None,
                         help="监听/交互输出写入的日志文件路径（监听默认 logs/uart_send_<程序>_<时间戳>.log，须在仓库目录内）")
     parser.add_argument("--interactive", action="store_true",
@@ -261,6 +277,8 @@ def main():
             log_path = args.log
         else:
             stem = os.path.splitext(os.path.basename(args.file))[0]
+            # 纵深防御：只保留安全文件名字符，杜绝 basename 里混入 / .. 之类成分
+            stem = "".join(ch for ch in stem if ch.isalnum() or ch in "._-") or "uartbin"
             ts = time.strftime("%Y%m%d_%H%M%S")
             log_dir = os.path.join(repo_root(), "logs")
             os.makedirs(log_dir, exist_ok=True)
@@ -270,6 +288,7 @@ def main():
         decoder = make_decoder()
         last_data = time.time()
         start = time.time()
+        warned = False
         try:
             while time.time() - start < timeout:
                 if ser.in_waiting > 0:
@@ -285,6 +304,20 @@ def main():
                             buf = buf[:idx + len(marker)]
                             break
                 else:
+                    # 早期存活检查：持续 0 字节超过 --early-warn 秒，提示一次
+                    # （非致命，不中断监听——长静默计算类应用属正常；只防"静默拒收"）
+                    if not warned and args.early_warn > 0 and len(buf) == 0 \
+                            and (time.time() - start) >= args.early_warn:
+                        warned = True
+                        print(
+                            f"\n[EARLY-WARN] {args.early_warn:g}s 内 0 字节。若最终仍 0 字节，"
+                            "两种根因（先排挂死再判不匹配）：\n"
+                            "  1) 板子挂死 → JTAG 重烧比特流（connect_hw_server→open_hw_target→"
+                            "set_property PROGRAM.FILE <bit> [current_hw_device]→program_hw_devices），"
+                            "重烧后本 uartbin 应立刻出数据；\n"
+                            "  2) 固件↔比特流不匹配 → 用当前 build.py 重建该 .uartbin。\n"
+                            "  判别法：先 JTAG 重烧再试一次——复活=挂死；仍 0 字节=不匹配(重建)。\n",
+                            flush=True)
                     if time.time() - last_data >= idle:
                         break
                     time.sleep(0.05)
@@ -294,9 +327,18 @@ def main():
         write_console(decoder.decode(b"", final=True))
         if buf:
             text = buf.decode("utf-8", errors="replace")
-            with open(log_path, "w", encoding="utf-8") as f:
-                f.write(text)
-        print(f"\n[LISTEN DONE] captured {len(buf)} bytes → {log_path}")
+            if is_inside_repo(log_path):
+                with open(log_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            else:
+                print(f"[WARN] log path escaped repo, skipped write: {log_path}", file=sys.stderr)
+        captured = len(buf)
+        if captured == 0:
+            # 0 字节 = 板子未产生任何输出：明确诊断（区分挂死/不匹配），不再笼统"sent successfully"
+            print(f"\n[LISTEN] 0 字节（板子无输出）。诊断：JTAG 重烧比特流判别——"
+                  "重烧后复活=板子挂死；仍 0 字节=固件↔比特流不匹配，用当前 build.py 重建 .uartbin。")
+        else:
+            print(f"\n[LISTEN DONE] captured {captured} bytes → {log_path}")
 
     ser.close()
     print(f"\n[DONE] {args.file} → {args.port} sent successfully.")
