@@ -116,7 +116,16 @@ module IFU_Buffer #(
   // 本拍 w_new 是 cur_eff 的下一字（跨字 32 位拼接需要）
   // 2026-09-19 预取前推：refill_now 消费拍请求前移到消费字+4（req_fwd），
   // 消除消费/请求争用同字的 2 拍气泡（板上 A/B：fetch -34.7%，ticks -6.1%）
-  assign req_fwd = refill_now | (can_issue & unaligned32 & next_ready & ~crossing);
+  // 2026-09-20 req_fwd v2：扩展到 crossing 换装拍（16 位 pc_asm[1]=1 出窗 /
+  // 对齐 32 位出窗 / 跨字 32 位发射）——换装拍活 req_addr 即将装入 cur_w，
+  // req_addr+4 恰为下一字，消除"crossing 16 位后紧跟跨字 32 位"模式的
+  // 1 拍缺字（fetch 停顿归因：流内跨字 32.7%，见 Memory_Log 2026-09-20 第八节）。
+  // 须门控 ~zcmp_capture/~zcmp_active：冻结期 pc_asm 停在跨字位置时本项会
+  // 组合为 1，把地址口顶到 +4，冻结结束后 w_new 就不是恢复态 req_addr
+  // 指望的字，展开后首条跨字指令拼脏数据；refill_now 项不门控（capture
+  // from refill 冻结期它保持"预取下字"的一致语义，现状行为）。
+  assign req_fwd = refill_now | ((~zcmp_capture & ~zcmp_active)
+                                 & can_issue & crossing & next_ready);
   assign next_ready = have_cur & served_d & (req_addr == (cur_w_addr + 4));
   // 未装填时本拍 w_new 恰好是 pc_asm 所在字（重定向后首字/补齐字）
   assign refill_now = ~have_cur & served_d &
@@ -440,9 +449,11 @@ always @(posedge clk) begin
             fml_a_window_pair: assert property
                 ((req_addr == cur_w_addr + 4) || (req_addr == cur_w_addr));
         end
-        // 非冻结消费路径：have_cur 时本拍请求 cur_w 下一字（16 位流两拍/字的簿记合同）
+        // 非冻结消费路径：have_cur 时本拍请求 cur_w 下一字（16 位流两拍/字的簿记合同）；
+        // req_fwd v2 拍合法跳到 req_addr+4（crossing 换装拍请求新窗口字的下一字）
         if (have_cur && !stall && !redirect && !predict_redirect && !zcmp_active && !zcmp_capture) begin
-            fml_a_req_next_word: assert property (pc == cur_w_addr + 4);
+            fml_a_req_next_word: assert property
+                ((pc == cur_w_addr + 4) || (req_fwd && (pc == req_addr + 4)));
         end
         // 展开冻结期指针保持（capture/restore 恢复语义的前提）；
         // ret 微操作恢复预测后，预测发射拍合法改写窗口，需从冻结断言中排除
