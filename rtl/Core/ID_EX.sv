@@ -195,4 +195,31 @@ a_stall_hold: assert property (
     (stall && !flush) |=> ($stable(inst_o) && $stable(inst_addr_o)));
 `endif
 
+`ifdef ASSERT_MODULE
+// ===== SVA L2：ID_EX 深化——stall 保持覆盖全部控制字段（L1 仅查 inst/addr）=====
+always @(posedge clk) begin
+    // stall 已持续一拍（次拍起）内容必须冻结——注意不能用"当拍 stall 比当前/上一拍"：
+    // 进入 stall 的第一拍，寄存器装载的是 stall 前最后一拍的新指令，合法变化
+    if (rst_n && $past(rst_n) && $past(stall && !flush && valid_o)
+        && stall && !flush && valid_o) begin
+        a_l2_idex_ctrl_hold: assert property (
+            reg_rs1_raddr_o == $past(reg_rs1_raddr_o) &&
+            reg_rs2_raddr_o == $past(reg_rs2_raddr_o) &&
+            reg_rs2_rdata_o == $past(reg_rs2_rdata_o) &&
+            inst_type_o     == $past(inst_type_o) &&
+            branch_req_o    == $past(branch_req_o) &&
+            branch_inst_type_o == $past(branch_inst_type_o) &&
+            access_en_o     == $past(access_en_o) &&
+            access_wr_o     == $past(access_wr_o) &&
+            csr_en_o        == $past(csr_en_o) &&
+            csr_addr_o      == $past(csr_addr_o) &&
+            jump_imm_o      == $past(jump_imm_o) &&
+            predict_taken_o == $past(predict_taken_o) &&
+            predict_target_o == $past(predict_target_o) &&
+            push_ras_o      == $past(push_ras_o) &&
+            pop_ras_o       == $past(pop_ras_o));
+    end
+end
+`endif
+
 endmodule

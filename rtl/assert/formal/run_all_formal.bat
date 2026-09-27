@@ -5,7 +5,7 @@ rem   OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer（bmc+prove+cover 三任�
 rem   Pipeline_Ctrl（bmc+prove+cover）/ CSR_Reg_Access（bmc+prove）
 rem 用法：双击或在任意 shell 调用；输出见各 *_formal_<task>\logfile.txt
 rem 注意：sby_core.py 已打 GBK decode 补丁（OSS CAD Suite 升级后需重打，
-rem       见 doc/property_plan_oitf.md "Windows 运行环境坑"）
+rem       见 doc/verification.md "Windows 运行环境坑"）
 rem ============================================================================
 call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat
 cd /d %~dp0

@@ -4,9 +4,10 @@
 #   vsim -batch -do run_msim_debug.do
 # Optional env overrides (file name relative to test_data/soc/c/):
 #   BD32_ITCM_FILE / BD32_DTCM_FILE, e.g. set BD32_ITCM_FILE=hello_itcm.mem
-if {[file exists "work"]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/run_msim_debug/work"]} {file delete -force "../../build/msim/run_msim_debug/work"}
+file mkdir ../../build/msim/run_msim_debug
+vlib ../../build/msim/run_msim_debug/work
+vmap work ../../build/msim/run_msim_debug/work
 set vlog_defs ""
 if {[info exists env(BD32_ITCM_FILE)] && $env(BD32_ITCM_FILE) ne ""} {
     append vlog_defs " +define+ITCM_FILE=\"$env(BD32_ITCM_FILE)\""

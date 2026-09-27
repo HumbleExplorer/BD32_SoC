@@ -6,9 +6,10 @@
 #   <ModelSim 安装目录>\win64\modelsim -do run_bus_timeout_test.do
 # ============================================================
 
-if {[file exists "work"]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/run_bus_timeout_test/work"]} {file delete -force "../../build/msim/run_bus_timeout_test/work"}
+file mkdir ../../build/msim/run_bus_timeout_test
+vlib ../../build/msim/run_bus_timeout_test/work
+vmap work ../../build/msim/run_bus_timeout_test/work
 
 # 编译时注入 BUS_TIMEOUT_TEST 宏
 vlog +define+BUS_TIMEOUT_TEST -f filelist.f

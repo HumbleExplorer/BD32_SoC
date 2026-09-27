@@ -290,8 +290,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         if (split_active)
             stall_flsuh_r <= #1 1'b0;
         // rvalid 提交门：影子门+释放拍放行。影子单独用会吞掉停顿恢复拍的
-        // load 提交（tidle SERR 家族）；当拍条件单独用会破坏 CSR 读提交。
-        // 完整推导见 Memory_Log/2026-09-12 条目。
+        // load 提交；当拍条件单独用会破坏 CSR 读提交。二者必须同时成立。
         if ((~stall_flsuh_r || (~ex_mem_stall && ~ex_mem_flush)) && ~split_active && ~split_misaligned) begin
             tcm_rvalid_q   <= #1 (~access_wr && (dtcm_sel || itcm_load_sel));
             // CORE_TEST 下 ITCM/DTCM 共享窗口（tag 相同）：load 数据取 DTCM（镜像），不取 ITCM 读口
@@ -427,7 +426,7 @@ always @(posedge clk) begin
             fml_a_p3_to_idle: assert property (split_next == 3'd0);
         end
         // 拆分期间锁存 rvalid 必为 0（rvalid 提交门：拆分拍强制清，
-        // 读数据只允许由 split_rvalid 在 P3 合并拍给出——rvalid×脏端口家族疫苗）
+        // 读数据只允许由 split_rvalid 在 P3 合并拍给出）
         if (split_active) begin
             fml_a_rvalid_gate: assert property (!tcm_rvalid_q);
             fml_a_stall_contract: assert property (split_stall);
@@ -437,6 +436,18 @@ always @(posedge clk) begin
         fml_c_bus_split_store: cover property (split_is_bus && split_is_wr && (split_state == 3'd3));
         fml_c_dtcm_split_load: cover property (!split_is_bus && !split_is_wr && (split_state == 3'd3));
         fml_c_dtcm_split_store: cover property (!split_is_bus && split_is_wr && (split_state == 3'd3));
+    end
+end
+`endif
+
+`ifdef ASSERT_MODULE
+// ===== SVA L2：Mem_Access 深化——访存返回数据质量 =====
+always @(posedge clk) begin
+    if (rst_n) begin
+        // TCM 返回数据无 X（BRAM 读出质量）
+        if (tcm_rvalid) a_l2_ma_tcm_nox: assert property (!$isunknown(tcm_rdata));
+        // 总线返回数据与响应无 X
+        if (bus_tran_done) a_l2_ma_bus_nox: assert property (!$isunknown(rd_bus_data));
     end
 end
 `endif

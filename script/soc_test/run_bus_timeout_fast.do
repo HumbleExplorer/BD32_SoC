@@ -3,9 +3,10 @@
 # 用法: <ModelSim 安装目录>\win64\vsim -c -do run_bus_timeout_fast.do
 # ============================================================
 
-if {[file exists "work"]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/run_bus_timeout_fast/work"]} {file delete -force "../../build/msim/run_bus_timeout_fast/work"}
+file mkdir ../../build/msim/run_bus_timeout_fast
+vlib ../../build/msim/run_bus_timeout_fast/work
+vmap work ../../build/msim/run_bus_timeout_fast/work
 
 vlog +define+BUS_TIMEOUT_TEST -f filelist.f
 

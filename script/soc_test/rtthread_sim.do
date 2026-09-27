@@ -1,7 +1,8 @@
 rem rtthread demo (lts-v3.1.x, default): DIRECT_LOAD rtthread_os_*.mem (built by build.py --rtthread)
-if {[file exists "work"]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/rtthread_sim/work"]} {file delete -force "../../build/msim/rtthread_sim/work"}
+file mkdir ../../build/msim/rtthread_sim
+vlib ../../build/msim/rtthread_sim/work
+vmap work ../../build/msim/rtthread_sim/work
 vlog -f filelist.f +define+DIRECT_LOAD \
     {+define+ITCM_FILE="rtthread_os_itcm.mem"} \
     {+define+DTCM_FILE="rtthread_os_dtcm.mem"}

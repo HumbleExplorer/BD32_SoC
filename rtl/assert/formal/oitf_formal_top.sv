@@ -2,7 +2,7 @@
 // oitf_formal_top.sv — OITF 形式验证 harness（SymbiYosys）
 // =============================================================================
 // 仅驱动输入 + 最小假设。断言在 OITF.sv 内部（`ifdef FORMAL 区），
-// 由 sby 的 read -formal 激活。属性计划见 doc/property_plan_oitf.md。
+// 由 sby 的 read -formal 激活。属性计划见 doc/verification.md 形式验证章节。
 // =============================================================================
 
 module oitf_formal_top #(

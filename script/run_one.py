@@ -15,11 +15,13 @@ def main():
     vsim = os.path.join(VSIM_PATH, "vsim.exe")
 
     # clean (tolerate locked files, e.g. ModelSim GUI holding the library)
-    work = os.path.join(CORE_TEST_DIR, "work")
+    # work 库已统一到 <repo>/build/msim/core_test/work（modelsim.ini 映射同步）
+    work = os.path.normpath(os.path.join(BASE_DIR, "..", "build", "msim", "core_test", "work"))
     if os.path.exists(work):
         shutil.rmtree(work, ignore_errors=True)
         if os.path.exists(work):
             print("  [warn] work dir partially locked, continuing anyway")
+    os.makedirs(work, exist_ok=True)  # vlib 不会建多级父目录
     for f in ["vsim.wlf", "transcript", "vish_stacktrace.vstf"]:
         fp = os.path.join(CORE_TEST_DIR, f)
         try:

@@ -2,9 +2,10 @@
 # 用法: cd script/soc_test && vsim -batch -do fetch_cause.do
 quit -sim
 
-if {[file exists work]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/fetch_cause/work"]} {file delete -force "../../build/msim/fetch_cause/work"}
+file mkdir ../../build/msim/fetch_cause
+vlib ../../build/msim/fetch_cause/work
+vmap work ../../build/msim/fetch_cause/work
 
 vlog -sv +define+DIRECT_LOAD \
     +define+ITCM_FILE=\"sim10_c_gcc_itcm.mem\" \

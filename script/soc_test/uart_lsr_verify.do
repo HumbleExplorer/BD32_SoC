@@ -5,9 +5,10 @@
 # 用法: cd script/soc_test && vsim -batch -do uart_lsr_verify.do
 quit -sim
 
-if {[file exists work]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/uart_lsr_verify/work"]} {file delete -force "../../build/msim/uart_lsr_verify/work"}
+file mkdir ../../build/msim/uart_lsr_verify
+vlib ../../build/msim/uart_lsr_verify/work
+vmap work ../../build/msim/uart_lsr_verify/work
 
 vlog -sv +define+DIRECT_LOAD+ASSERT_MODULE \
     +define+ITCM_FILE=\"hello_itcm.mem\" \

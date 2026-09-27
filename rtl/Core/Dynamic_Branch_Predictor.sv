@@ -62,7 +62,7 @@ module Dynamic_Branch_Predictor #(
     localparam RAS_ADDR_WIDTH = $clog2(RAS_DEPTH),
     localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH,
     // BTB_TAG_WIDTH 减去 BTB_ADDR_WIDTH，避免 Tag 包含 Index
-    // 2026-09-19：RVC 下 PC/目标 16 位（半字）对齐，BTB 位域必须覆盖 bit1
+    // RVC 下 PC/目标 16 位（半字）对齐，BTB 位域必须覆盖 bit1
     localparam HALF_ALIGN_WIDTH = ALIGN_WIDTH - 1,  // 半字对齐宽度=1
     localparam BTB_TAG_WIDTH = BLOCK_SIZE_WIDTH - ALIGN_WIDTH - BTB_ADDR_WIDTH,
     localparam BTB_BTA_WIDTH = BLOCK_SIZE_WIDTH - HALF_ALIGN_WIDTH - 1, // 目标[16:1]

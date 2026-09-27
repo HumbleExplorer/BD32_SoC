@@ -6,9 +6,10 @@
 #   <ModelSim 安装目录>\win64\modelsim -do run_reset_test.do
 # ============================================================
 
-if {[file exists "work"]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/run_reset_test/work"]} {file delete -force "../../build/msim/run_reset_test/work"}
+file mkdir ../../build/msim/run_reset_test
+vlib ../../build/msim/run_reset_test/work
+vmap work ../../build/msim/run_reset_test/work
 
 # 编译时注入 RESET_REDOWNLOAD_TEST 宏
 vlog +define+RESET_REDOWNLOAD_TEST -f filelist.f

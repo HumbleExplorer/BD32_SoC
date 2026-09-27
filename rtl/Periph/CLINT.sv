@@ -135,4 +135,15 @@ a_timer_int_level: assert property (
     (timer_int == (mtime >= mtimecmp)));
 `endif
 
+`ifdef ASSERT_MODULE
+// ===== SVA L2：CLINT 深化——mtime 计数质量 =====
+always @(posedge PCLK) begin
+    if (PRESETn && $past(PRESETn)) begin
+        // mtime 单调递增（1MHz tick；回绕周期 ~4295s 远超仿真窗口）
+        a_l2_clint_mtime_mono: assert property (mtime >= $past(mtime));
+        a_l2_clint_mtime_nox: assert property (!$isunknown(mtime));
+    end
+end
+`endif
+
 endmodule

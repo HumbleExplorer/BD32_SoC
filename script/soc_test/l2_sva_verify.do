@@ -6,9 +6,10 @@
 # 用法: cd script/soc_test && D:/modeltech64_2020.4/win64/vsim -c -do l2_sva_verify.do
 quit -sim
 
-if {[file exists work]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/l2_sva_verify/work"]} {file delete -force "../../build/msim/l2_sva_verify/work"}
+file mkdir ../../build/msim/l2_sva_verify
+vlib ../../build/msim/l2_sva_verify/work
+vmap work ../../build/msim/l2_sva_verify/work
 
 vlog -sv +define+DIRECT_LOAD+ASSERT_MODULE \
     +define+ITCM_FILE="plic_irq_itcm.mem" \

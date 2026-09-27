@@ -95,5 +95,17 @@ generate
     end
 endgenerate
 
+`ifdef ASSERT_MODULE
+// ===== SVA L2：DTCM 深化——读写数据质量 =====
+always @(posedge clk) begin
+    if (rst_n) begin
+        // 读出数据无 X（BRAM 读质量）
+        a_l2_dtcm_rd_nox: assert property (!$isunknown(rd_data));
+        // CPU 写路径数据/字节掩码无 X
+        if (wr_en) a_l2_dtcm_wr_nox: assert property (!$isunknown(wr_data) && !$isunknown(wr_mask));
+    end
+end
+`endif
+
 
 endmodule

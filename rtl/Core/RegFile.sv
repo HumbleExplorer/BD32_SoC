@@ -94,4 +94,17 @@ a_x0_read: assert property (
     ((reg_rs1_rdata == '0) && (reg_rs2_rdata == '0)));
 `endif
 
+`ifdef ASSERT_MODULE
+// ===== SVA L2：RegFile 深化——双写端口优先级与 x0 恒零 =====
+always @(posedge clk) begin
+    if (rst_n) begin
+        a_l2_rf_x0_const: assert property (regs[0] == 'h0);
+        // 同拍双写同地址（非 0）：Port2（OITF 退休，程序序更晚）必须胜出
+        if ($past(reg_rd_wen && reg_rd_wen2 &&
+                  (reg_rd_waddr == reg_rd_waddr2) && (reg_rd_waddr != 5'h0)))
+            a_l2_rf_p2_priority: assert property (regs[$past(reg_rd_waddr)] == $past(reg_rd_wdata2));
+    end
+end
+`endif
+
 endmodule

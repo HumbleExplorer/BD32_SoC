@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 8 点 soak 报告：SERR 计数 / marker / t1-t2 健康 / 时间跨度 → logs/soak_report_8am.txt
+# soak 报告：SERR 计数 / marker / t1-t2 健康 / 时间跨度 → logs/soak_report.txt
 # 全部路径由脚本自身位置推导并锚定在仓库内，无任何外部输入
 import re, time
 from pathlib import Path

@@ -36,9 +36,8 @@ wire [ALIGN_BYTES-1:0] ram_we   = itcm_download_en ? {ALIGN_BYTES{1'b1}} : itcm_
 wire [ADDR_WIDTH-1:0]  ram_addr = itcm_download_en ? itcm_download_addr : itcm_access_addr;
 wire [DATA_WIDTH-1:0]  ram_din  = itcm_download_en ? itcm_download_data : itcm_wr_data;
 
-// 【勿再尝试】对本 BRAM addra 单独打拍：会与组合的 wea 错拍（store 写错地址）
-// 且取指晚一拍破坏 IFU_Buffer 字流配对。XILINX-only 分支仿真回归覆盖不到，
-// 详见 Memory_Log/2026-09-11 条目。
+// 【勿再尝试】对本 BRAM addra 单独打拍：会与组合的 wea 错拍（store 写错地址），
+// 且取指晚一拍破坏 IFU_Buffer 字流配对。
 
 generate
     `ifdef XILINX

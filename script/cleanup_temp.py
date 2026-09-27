@@ -4,14 +4,20 @@ BD32 project temp-file cleaner.
 
 Removes generated / temporary artifacts that are safe to regenerate:
   - ModelSim work libraries:  any */work under the repo (rtl/**, tb/, script/*/, root)
-  - ModelSim run files:        transcript, vsim.wlf, vish_stacktrace.vstf,
-                               modelsim.ini, wlft*, *.log under script/ and tb/
-  - Python cache:              __pycache__ dirs and *.pyc (recursive)
-  - Test logs:                 logs/*  (keep the logs/ directory itself)
-  - Build dirs (optional):     build/, build_*/ under the repo (--remove-builds)
+  - ModelSim run files:       transcript, vsim.wlf, vish_stacktrace.vstf,
+                              modelsim.ini, wlft*, *.log under script/ and tb/
+  - Vivado scattered logs:    vivado*.jou / vivado*.log / vivado_*.backup.* at
+                              repo root, BD32_SoC/, script/**, logs/（正式运行
+                              日志在 BD32_SoC.runs/<run>/runme.log 不受影响）
+  - Vivado temp dirs:         .Xil/ anywhere; BD32_SoC/BD32_SoC.hw（hw_ila 会话）
+  - Vivado sim output:        BD32_SoC/BD32_SoC.sim（xsim 行为仿真，--with-sim，
+                              默认保留——重跑流程耗时长）
+  - Python cache:             __pycache__ dirs and *.pyc (recursive)
+  - Test logs:                logs/*  (keep the logs/ directory itself)
+  - Build dirs (optional):    build/, build_*/ under the repo (--remove-builds)
 
 Never touches tracked sources (rtl/, tb/*.sv, SDK/ source files, doc/, README.md ...);
-build/ 目录仅在本目录为构建产物时删除（--remove-builds，默认保留）。
+BD32_SoC.runs/（含当前比特流）与 BD32_SoC/incremental_file/（增量编译参考）永不触碰。
 
 Usage:
   python script/cleanup_temp.py            # list files, ask [y/N] then delete
@@ -19,6 +25,7 @@ Usage:
   python script/cleanup_temp.py --dry-run  # list only, delete nothing
   python script/cleanup_temp.py --apply --keep-logs
   python script/cleanup_temp.py --apply --remove-builds   # 同时删除 build/、build_* 构建产物目录
+  python script/cleanup_temp.py --apply --with-sim        # 同时删除 BD32_SoC.sim（xsim 输出）
 """
 
 import argparse
@@ -27,7 +34,9 @@ import shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Working/
 
-SIM_ARTIFACT_NAMES = ("vsim.wlf", "transcript", "vish_stacktrace.vstf", "modelsim.ini")
+SIM_ARTIFACT_NAMES = ("vsim.wlf", "transcript", "vish_stacktrace.vstf")
+# 注意：modelsim.ini 已不是可删 artifact——work 库统一迁移后它承载
+# work → build/msim/<test>/work 的映射（git 跟踪），误删会让 runner 散落重建。
 SIM_ARTIFACT_PREFIXES = ("wlft")
 SIM_ARTIFACT_SUFFIXES = (".log", ".wlf")
 
@@ -49,6 +58,20 @@ def is_within(path, root):
         return False
 
 
+def is_vivado_stray(dirpath, f):
+    """Vivado 会话散落日志：vivado*.jou / vivado*.log / vivado_*.backup.*。
+    只在根目录、BD32_SoC/、script/**、logs/ 生效；runs/ 内的 runme.log 不在
+    遍历范围（collect 不下探 BD32_SoC.runs）。"""
+    name = f.lower()
+    if not (name.endswith(".jou") or name.endswith(".log")):
+        return False
+    rel = os.path.relpath(dirpath, REPO)
+    scope = rel == "." or rel == "BD32_SoC" or rel.startswith("script") or rel.startswith("logs")
+    if not scope:
+        return False
+    return name.startswith("vivado")
+
+
 def collect():
     """Return list of (kind, path) to remove."""
     targets = []
@@ -66,22 +89,32 @@ def collect():
                     targets.append(("artifact", os.path.join(dirpath, f)))
 
     # work libraries (recursive: rtl/**, tb/, script/*/, repo root)
-    # + __pycache__ + .pyc
+    # + __pycache__ + .pyc + Vivado 散落日志 + .Xil
     for dirpath, dirnames, filenames in os.walk(REPO):
-        # skip .git and vendored toolchains
+        # skip .git and vendored toolchains; 永不下探比特流/增量参考/生成目录
         dirnames[:] = [
             d
             for d in dirnames
-            if d not in (".git", "third_party")
+            if d not in (".git", "third_party", "BD32_SoC.runs",
+                         "incremental_file", "build", "BD32_SoC.cache",
+                         "BD32_SoC.gen", "ip_user_files")
         ]
         if "work" in dirnames:
             targets.append(("work", os.path.join(dirpath, "work")))
             dirnames.remove("work")  # do not descend into the library itself
+        if ".Xil" in dirnames:
+            targets.append(("xil", os.path.join(dirpath, ".Xil")))
+            dirnames.remove(".Xil")
+        if "BD32_SoC.hw" in dirnames:
+            targets.append(("hw", os.path.join(dirpath, "BD32_SoC.hw")))
+            dirnames.remove("BD32_SoC.hw")
         if "__pycache__" in dirnames:
             targets.append(("pycache", os.path.join(dirpath, "__pycache__")))
         for f in filenames:
             if f.endswith(".pyc"):
                 targets.append(("pyc", os.path.join(dirpath, f)))
+            elif is_vivado_stray(dirpath, f):
+                targets.append(("vivado", os.path.join(dirpath, f)))
 
     return targets
 
@@ -93,9 +126,15 @@ def main():
     ap.add_argument("--keep-logs", action="store_true", help="do not clear logs/")
     ap.add_argument("--remove-builds", action="store_true",
                     help="同时删除 build/、build_* 构建产物目录（默认保留）")
+    ap.add_argument("--with-sim", action="store_true",
+                    help="同时删除 BD32_SoC/BD32_SoC.sim（xsim 行为仿真输出，默认保留）")
     args = ap.parse_args()
 
     targets = collect()
+    if args.with_sim:
+        simdir = os.path.join(REPO, "BD32_SoC", "BD32_SoC.sim")
+        if os.path.isdir(simdir):
+            targets.append(("sim", simdir))
     if not args.keep_logs:
         logdir = os.path.join(REPO, "logs")
         if os.path.isdir(logdir):
@@ -154,7 +193,7 @@ def main():
             print("  [skip] outside repo: %s" % p)
             continue
         try:
-            if kind in ("work", "pycache", "build"):
+            if kind in ("work", "pycache", "build", "xil", "hw", "sim"):
                 shutil.rmtree(p, ignore_errors=True)
             else:
                 os.remove(p)

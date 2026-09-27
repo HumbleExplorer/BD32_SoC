@@ -104,9 +104,9 @@ always_ff @(posedge clk or negedge rst_n) begin
     else if(mcountinhibit[2])
         minstret <= #1 minstret;
     else if ((hpm_valid && hpm_count_ok && hpm_inst_type != 4'd6) || hpm_oitf_retire)
-        // 2026-09-18 修正：MUL/DIV 的架构提交点在 OITF 退休（port2 写回），
-        // 主流水线 WB 影子会被 RAW 停顿重派发冲掉（实测 20 条 mul 仅 6 条影子
-        // 到达 WB）——影子(MULDIV 类)不再计数，改由 hpm_oitf_retire 恰好计一次。
+        // MUL/DIV 的架构提交点在 OITF 退休（port2 写回）：主流水线 WB 影子
+        // 会被 RAW 停顿重派发冲掉，不可靠——影子(MULDIV 类)不计数，
+        // 改由 hpm_oitf_retire 恰好计一次。
         // 双增量：主流水线退休与 OITF 退休同拍时各计一条（minstret 每拍可 +2）
         minstret <= #1 minstret
                   + ((hpm_valid && hpm_count_ok && hpm_inst_type != 4'd6) ? 'h1 : 'h0)
@@ -153,9 +153,8 @@ generate
 endgenerate
 
 // MULDIV 计数（mhpmcounter8 = 0xB08，mcountinhibit/clr 位 8）
-// 2026-09-18 修正：改在 OITF 退休拍计数（每条 MUL/DIV 恰好一次）。
-// 旧实现挂在主流水线 WB 影子上——影子会被 OITF RAW 停顿的 id_ex_flush
-// 重派发冲掉，实测 20 条依赖 mul 只剩 6 条影子 → 漏计 70%（板上 muldiv=29 悬案根因）。
+// 计数点在 OITF 退休拍（每条 MUL/DIV 恰好一次）：主流水线 WB 影子会被
+// OITF RAW 停顿的 id_ex_flush 重派发冲掉，挂影子上会漏计。
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)                              mhpmcounter[5] <= #1 'h0;
     else if(mcounterclr[8])                 mhpmcounter[5] <= #1 'h0;
@@ -401,8 +400,7 @@ always_ff @(posedge clk or negedge rst_n) begin
 end
 
 // mcounterclr（0xBC0 写 1 清零）＝单拍脉冲：写后仅保持一拍供各计数器块采样，
-// 其余拍自动归零。旧实现把 wdata 锁存成常值，清零位反而把对应计数器永久钉在 0
-// （2026-09-18 stall_test 仿真实锤：load-use 链期间计数恒 0）。
+// 其余拍自动归零（不得锁存成常值，否则清零位把对应计数器永久钉 0）。
 logic                   mcounterclr_wr;
 assign  mcounterclr_wr = (csr_en && csr_addr == 12'hbc0)       ? csr_wdata :
                          (dbg_csr_we && dbg_csr_addr == 12'hbc0) ? dbg_csr_wdata : 'h0;
@@ -531,7 +529,7 @@ end
 
 `ifndef SYNTHESIS
 // ==========================================================================
-// SVA: 中断接受门控不变式（2026-09 中断边界语义修复的防线）
+// SVA: 中断接受门控不变式
 // 门控链一旦被改动破坏（如 EX_MEM 重定向拍门控被删），以下断言立即触发
 // ==========================================================================
 `ifndef FORMAL
@@ -582,18 +580,18 @@ a_int_trap_fire: assert property (
 `endif
 // 6) 陷阱码哨兵：异常陷阱拍锁存的 mcause 不得携带全 1 哨兵（bit30=1）——
 //    get_priority 优先级表缺项时 sel_stage 落 default，异常码 mux 输出全 1 且
-//    mepc=0（2026-09-12 修复，mcause=0x7FFFFFFF 即此家族）
+//    mepc=0
 //    mret 拍 mcause_n 走默认 0 分支（无 trap 码语义），哨兵检查只针对
 //    异常陷阱拍（exception_jump=1，mcause_n = {1'b0,exception_code}）
 `ifdef FORMAL
-// 哨兵契约（2026-09-12 mcause=0x7FFFFFFF 病根防线）：
+// 哨兵契约：
 // 异常触发拍（exception_trap=1）时，Pipeline_Ctrl 选中的阶段码
 // exception_code 必为非哨兵（全 1 bit30=1 仅表示"无异常"）。
 // 若 get_priority 优先级表缺项导致 sel_stage 落 default，
 // 码 mux 输出全 1 哨兵 + mepc=0，mcause 锁存 0x7FFFFFFF。
 // 直接引用输入端口（防 abc opt 消除内部 wire 后 witness 校验失败）
-// 2026-09-18：哨兵契约已由 harness assume（生产者=Pipeline_Ctrl 的
-// fml_a_no_sentinel 负责），此处升级为有意义的组成检查：
+// 哨兵契约已由 harness assume（生产者=Pipeline_Ctrl 的
+// fml_a_no_sentinel）承接，此处升级为有意义的组成检查：
 // 异常陷阱拍 mcause_n 必为 {1'b0, 阶段异常码}（优先级最高项，防 mux 病变）
 fml_a_exc_mcause_composition: assert property
     (exception_trap ? (mcause_n == {1'b0, exception_code}) : 1'b1);
@@ -630,6 +628,21 @@ always @(posedge clk) begin
     fml_c_zcmp_block_int:  cover property (zcmp_busy && int_trap);
 end
 `endif
+`endif
+
+`ifdef ASSERT_MODULE
+// ===== SVA L2：CSR 深化——WARL 掩码与单拍脉冲 =====
+always @(posedge clk) begin
+    if (rst_n) begin
+        // mcountinhibit WARL：仅位 0/2/3-17 可写（位 1 及 18-31 恒 0）
+        a_l2_csr_mci_mask: assert property ((mcountinhibit & ~32'h0003_FFFD) == 'h0);
+        // mcounterclr 单拍脉冲：写 1 后次拍自动归零（不许锁存钉 0）
+        if ($past(mcounterclr) != 'h0)
+            a_l2_csr_clr_pulse: assert property (mcounterclr == 'h0);
+        // mepc 半字对齐（bit0 恒 0，RVC 允许 bit1=1）
+        a_l2_csr_mepc_align: assert property (!mepc[0]);
+    end
+end
 `endif
 
 endmodule

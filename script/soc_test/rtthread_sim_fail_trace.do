@@ -1,7 +1,8 @@
 rem rtthread demo + 故障窗口 trace：先跑 60ms 再开 VCD（绕过 1GB 截断），只抓 60-80ms
-if {[file exists "work"]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/rtthread_sim_fail_trace/work"]} {file delete -force "../../build/msim/rtthread_sim_fail_trace/work"}
+file mkdir ../../build/msim/rtthread_sim_fail_trace
+vlib ../../build/msim/rtthread_sim_fail_trace/work
+vmap work ../../build/msim/rtthread_sim_fail_trace/work
 vlog -f filelist.f +define+DIRECT_LOAD \
     {+define+ITCM_FILE="rtthread_os_itcm.mem"} \
     {+define+DTCM_FILE="rtthread_os_dtcm.mem"}

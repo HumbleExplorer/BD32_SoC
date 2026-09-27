@@ -750,7 +750,7 @@ wire [DATA_WIDTH-1:0]  itcm_wr_data     = itcm_wr_en_cpu ? access_wdata_ex :
                                           (sba_req_valid & sba_itcm_store_sel & sba_write) ? sba_wdata : '0;
 
 // DTCM 访问 mux：SBA 覆盖 EX 级（DTCM 自带字节使能 wmask）
-// 端口地址保持（2026-09-11 SERR 第 3 层修复）：rd_data 每拍跟踪端口地址，而端口在
+// 端口地址保持：rd_data 每拍跟踪端口地址，而端口在
 // 非访问拍会摆上后续指令的 ALU 垃圾结果；tcm_rvalid 按"stall 期间保持"设计跨越
 // 多拍消费数据，消费窗内 rd_data 被垃圾地址刷新（撞上栈 '#' 填充）→ 错误写回。
 // 非真实访问拍冻结端口为上一访问地址，读数据即保持正确（Reg 分支与 BRAM douta 行为一致）。
@@ -1270,8 +1270,7 @@ assign reg_rd_waddr_selected_mem = (bus_rvalid && ~split_active) ? bus_load_wadd
 // ===== SVA：访存一致性 =====
 // 契约：tcm_rvalid 延伸（连续 ≥2 拍）期间，若 EX 级仍是同一条访存指令
 // （inst_ex 不变 = 流水线停顿持有该访问），则 DTCM 端口地址必须稳定——
-// 消费窗口内端口不得漂移（2026-09-12 rvalid×脏端口家族疫苗；
-// dtcm_port_addr_q 端口保持固化此契约）。
+// 消费窗口内端口不得漂移（dtcm_port_addr_q 端口保持固化此契约）。
 // 背靠背不同 load（inst_ex 变化、rvalid 连续服务两条 load）是合法流，
 // 端口按新访问切换，不在本断言约束内。
 property p_rv_port_stable;

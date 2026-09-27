@@ -7,15 +7,12 @@ timeprecision 1ps;
 // =============================================================================
 // IFU_Buffer — 取指缓冲 + 16/32 位指令装配 + RVC 展开（替代 PC_counter）
 // -----------------------------------------------------------------------------
-// 方案（单字 32 位寄存器）：
-//   - 取指按"字流"顺序进行（fetch_addr 每周期 +4，请求字对齐地址），
+// 取指按"字流"推进（fetch_addr 每周期 +4，字对齐），与装配解耦：
 //   - 装配器按 pc_asm[1] 与指令长度编码从 {cur_w, w_new} 中切 16/32 位指令，
-//     跨字 32 位指令 = {cur_w[31:16], w_new[15:0]}（w_new 为下一字，稳态下零停顿），
-//   - 16 位指令经 RVC_Expander 展开为 32 位等价指令后输出（Decoder 零改动）。
-// 取指与装配解耦：pc_asm（架构 PC，16 位对齐）按指令长度推进；
-// fetch_addr 始终领先一字。分支/跳转/调试装载重定向时清空窗口重新取。
-// 与 LSU/SBA 抢占：fetch_served 指示本拍请求是否被存储器服务（未被抢占）；
-// 被抢占时 fetch_addr 保持重发，装配器忽略该拍返回字，保证字流不错位。
+//     跨字 32 位指令 = {w_new[15:0], cur_eff[31:16]}（w_new 为下一字，稳态零停顿），
+//   - 16 位指令经 RVC_Expander 组合展开为 32 位等价指令（Decoder 零改动）。
+// 与 LSU/SBA 抢占：fetch_served 指示本拍请求是否被存储器服务；被抢占时
+// fetch_addr 保持重发、装配器忽略该拍返回字，保证字流不错位。
 // =============================================================================
 module IFU_Buffer #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
@@ -62,7 +59,7 @@ module IFU_Buffer #(
   logic [DATA_WIDTH-1:0] cur_w;       // 包含 pc_asm 的字
   logic [ADDR_WIDTH-1:0] cur_w_addr;  // cur_w 的字地址
   logic                  have_cur;    // cur_w 是否为包含 pc_asm 的字
-  logic [ADDR_WIDTH-1:0] fetch_addr;  // 取指请求字地址（当前/下一拍）
+  logic [ADDR_WIDTH-1:0] fetch_addr;  // 预取请求字地址（当前/下一拍）
   logic [ADDR_WIDTH-1:0] req_addr;    // 上一拍请求的字地址（= 本拍 w_new 的地址）
   logic                  served_d;    // 上一拍请求是否被服务（= 本拍 w_new 是否属于取指）
   logic                  reset_d;
@@ -80,7 +77,7 @@ module IFU_Buffer #(
   // ---------------- 组合装配 ----------------
   logic [15:0] head;
   logic        is32, unaligned32, cur_eff_valid, refill_now, next_ready, can_issue;
-  logic        req_fwd;               // 2026-09-19 预取前推：消费拍请求指针前移
+  logic        req_fwd;               // 预取前推：消费/换装拍请求指针当拍前移
   logic        pred_issue;                   // 展开期=微操作有效，常态=can_issue
   logic [2:0]  inst_len;                       // 2 / 4 字节
   logic        crossing;
@@ -102,28 +99,22 @@ module IFU_Buffer #(
   logic                  zcmp_restore_have_cur, zcmp_restore_served_d;
   logic                  zcmp_redirected_q;  // 展开期间发生重定向（popret 的 ret）
   // ret 微操作恢复预测后，预测命中时 EX 不再发 redirect（branch_predict_success
-  // 抑制），consume 拍不能恢复 capture 时的旧窗口（pc_asm 已在预测目标上），
-  // 用此标记与 redirected_q 同语义跳过 restore。
+  // 抑制），consume 拍不能恢复 capture 时的旧窗口（pc_asm 已在预测目标上）
   logic                  zcmp_ret_pred_q;
 
-  // 显式 mux 取 pc_asm 所在半字。原写法 cur_eff[(pc_asm[1] ? 31 : 15) -: 16]
-  // 是变量基址 part-select，会被 Yosys 降为 $shift，techmap 展开时越界 padding
-  // 为 x，毒化形式验证 AIGER 后端；mux 形式三端等价
+  // 显式 mux 取 pc_asm 所在半字：变量基址 part-select（cur_eff[pc_asm[1]?31:15 -: 16]）
+  // 在 Yosys 会退化为 $shift 并引入 x-padding，故必须写全常量 mux
   assign head = pc_asm[1] ? cur_eff[31:16] : cur_eff[15:0];
   assign is32 = (head[1:0] == 2'b11);
   assign unaligned32 = is32 & pc_asm[1];
   assign inst_len = is32 ? 3'd4 : 3'd2;        // 4 / 2 字节
-  // 本拍 w_new 是 cur_eff 的下一字（跨字 32 位拼接需要）
-  // 2026-09-19 预取前推：refill_now 消费拍请求前移到消费字+4（req_fwd），
-  // 消除消费/请求争用同字的 2 拍气泡（板上 A/B：fetch -34.7%，ticks -6.1%）
-  // 2026-09-20 req_fwd v2：扩展到 crossing 换装拍（16 位 pc_asm[1]=1 出窗 /
-  // 对齐 32 位出窗 / 跨字 32 位发射）——换装拍活 req_addr 即将装入 cur_w，
-  // req_addr+4 恰为下一字，消除"crossing 16 位后紧跟跨字 32 位"模式的
-  // 1 拍缺字（fetch 停顿归因：流内跨字 32.7%，见 Memory_Log 2026-09-20 第八节）。
-  // 须门控 ~zcmp_capture/~zcmp_active：冻结期 pc_asm 停在跨字位置时本项会
-  // 组合为 1，把地址口顶到 +4，冻结结束后 w_new 就不是恢复态 req_addr
-  // 指望的字，展开后首条跨字指令拼脏数据；refill_now 项不门控（capture
-  // from refill 冻结期它保持"预取下字"的一致语义，现状行为）。
+  // 预取前推 req_fwd：消费/换装拍请求指针当拍前移到"消费字+4"，
+  // 消除"消费与请求争用同字"与"crossing 16 位后紧跟跨字 32 位"两类停顿。
+  //   - refill_now：窗口空且请求字恰为消费字，当拍请求消费字+4；
+  //   - crossing && next_ready：换装拍，活 req_addr 即将装入 cur_w，+4 即下一字。
+  // 后一项须门控 ~zcmp_capture/~zcmp_active：冻结期 pc_asm 停在跨字位置时本项
+  // 会组合为 1，把地址口顶到 +4，冻结结束后 w_new 就不是恢复态 req_addr 指望的
+  // 字，展开后首条跨字指令拼脏数据；refill_now 项语义在冻结期保持一致，不门控。
   assign req_fwd = refill_now | ((~zcmp_capture & ~zcmp_active)
                                  & can_issue & crossing & next_ready);
   assign next_ready = have_cur & served_d & (req_addr == (cur_w_addr + 4));
@@ -134,22 +125,18 @@ module IFU_Buffer #(
   assign cur_eff = have_cur ? cur_w : w_new;
   assign can_issue = cur_eff_valid & ~stall & ~redirect & (~unaligned32 | next_ready);
   assign crossing  = can_issue & (is32 | pc_asm[1]);   // 出指令后 pc_asm 进入下一字
-  // predict_redirect 仅在可出指令（非 stall 且字就绪）时组合生效：stall 期间 pc 必须
-  // 保持 req_addr（正在返回的那个字），否则存储器超前读到下一个字，
-  // OITF 停顿（mul/div 密集段）恢复后取指流会错。
-  // Zcmp 微操作共享 cm.popret 的 PC：ret 微操作（jalr）训练 BTB 后，同 PC 的
-  // lw/addi 微操作也会被预测为 taken return → 误预测 flush → 展开被 abort。
-  // 因此展开期预测默认屏蔽，仅 ret 微操作（micro_ret）恢复——RAS/BTB 在该 PC 上
-  // 训练的正是本条返回的目标，预测命中可省掉 EX 重定向 + 冲刷（~3-4 拍/次）。
+  // 预测门控：展开期所有微操作共享 cm.popret 的 PC——ret 微操作训练 BTB/RAS 后，
+  // 同 PC 的 lw/addi 微操作会被误预测为 taken return → 误冲刷 → 展开作废。
+  // 故展开期屏蔽预测，仅 ret 微操作（micro_ret）恢复——该 PC 上训练的正是本条
+  // 返回目标，预测命中可省 EX 重定向冲刷。
   assign predict_taken_o   = predict_taken & ~zcmp_capture
                              & (~zcmp_active | zcmp_micro_ret);
   // 展开期发射门用微操作流（can_issue 描述的是冻结窗口，语义不匹配）
   assign pred_issue        = zcmp_active ? zcmp_micro_valid : can_issue;
   assign predict_redirect = predict_taken_o & ~redirect & ~stall & pred_issue;
 
-  // 跨字 32 位指令（pc_asm[1]=1）：指令低 16 位在 cur_eff 高半字（内存低地址），
-  // 高 16 位在下一字 w_new 低半字（内存高地址）。小端 32 位值必须
-  // {高半字, 低半字} = {w_new[15:0], cur_eff[31:16]}，否则高低颠倒。
+  // 跨字 32 位指令（pc_asm[1]=1）：低 16 位在本字高半字（内存低地址），高 16 位
+  // 在下一字低半字（内存高地址）。小端 32 位值必须 {高半字, 低半字} 拼接。
   assign inst_raw = unaligned32 ? {w_new[15:0], cur_eff[31:16]} :
                     is32        ? cur_eff :
                     pc_asm[1]   ? {16'b0, cur_eff[31:16]} :
@@ -165,13 +152,13 @@ module IFU_Buffer #(
 
   // Zcmp：本拍输出 cm.push（can_issue 已含 ~stall/~redirect），启动展开 FSM
   assign zcmp_capture = can_issue & exp_zcmp & ~zcmp_active;
-  // popret 的 ret（最后一个微操作）自身的分支重定向会触发 if_id_flush + redirect，
-  // 这是正常完成路径，不能 abort（否则 busy 提前清、sp 已调而 ret 被冲）；
-  // 一旦 ret_pending（最后微操作已发出），只等 WB 退休，flush/redirect 均忽略。
+  // popret 的 ret（最后微操作）自身的分支重定向是正常完成路径，不能 abort
+  //（否则 busy 提前清、sp 已调而 ret 被冲）；ret_pending 后只等 WB 退休，
+  // flush/redirect 均忽略。
   assign zcmp_abort   = zcmp_flush_any_i | redirect;
   assign zcmp_active  = zcmp_busy;   // 展开冻结（capture 次拍起，直到 last 退休）
   // 不能直接用 zcmp_last_retired_i：背靠背 Zcmp 时上一条指令残留的 last 标签
-  // 可能在新展开刚 capture 时退休，把窗口状态提前恢复（consume 早到）。
+  // 可能在新展开刚 capture 时退休，把窗口状态提前恢复（consume 早到），
   // 用展开器内部"尾部已发出"门控后的 retire_ok。
   assign zcmp_consume = zcmp_retire_ok;       // 当前展开最后微操作 WB 退休：补消费
 
@@ -192,10 +179,9 @@ module IFU_Buffer #(
   );
 
   // 展开期间（capture 拍起）用微操作流覆盖正常装配输出。
-  // inst_o 数据路径不 做 can_issue NOP 门控：can_issue=0 的拍（redirect/stall/
-  // 字未就绪）IF_ID 必被 Pipeline_Ctrl 同拍 flush 或 stall 覆盖（redirect→if_id_flush、
-  // stall/fetch_wait→if_id_stall），锁不进流水线；去掉门控后 inst 路径不再依赖
-  // ctrl_jump_en（EX 级 trap/branch 长组合链）与 pc_stall 等晚到信号（时序切割）。
+  // inst_o 不做 can_issue NOP 门控：can_issue=0 的拍（redirect/stall/字未就绪）
+  // IF_ID 必被 Pipeline_Ctrl 同拍 flush 或 stall 覆盖，锁不进流水线；去掉门控后
+  // inst 路径不再依赖 EX 级 trap/branch 长组合链与 pc_stall 等晚到信号（时序切割）。
   assign inst_o         = (zcmp_capture | zcmp_active) ? zcmp_micro_inst :
                           (is32 ? inst_raw : inst_exp);
   assign inst_valid_o   = (zcmp_capture | zcmp_active) ? (zcmp_micro_valid & ~stall) :
@@ -215,16 +201,13 @@ module IFU_Buffer #(
   assign predict_spec_upd_o = inst_valid_o & ~redirect
                               & ~zcmp_capture & (~zcmp_active | zcmp_micro_ret);
 
-  // 取指请求地址（给 ROM/RAM）：
-  //  - 重定向拍组合输出目标字（与 PC_counter 的 jump 覆盖一致）
-  //  - stall 期间保持 req_addr（正在返回的那个字），避免存储器超前读到下一个字
-  //  - ret 预测后的展开冻结期同理保持 req_addr（=预测目标字）：consume 后
-  //    refill_now 靠"req_addr==pc_asm 字"配对 w_new，若改请求 fetch_addr
-  //    （目标+4），w_new 会带着错位字冒充目标字，目标首指令被跳过
-  //    （zcmp_popret_ra 回归定位，2026-09-17）
-  //  - have_cur 时 cur_w 可能含 2 条 16 位指令（2 拍消费），本拍只请求 cur_w 的
-  //    下一字（重复请求无害），避免 16 位指令流把下一字提前冲掉；
-  //  - 否则输出 fetch_addr（refill 首字 / 预取地址）
+  // 取指请求地址（给 ROM/RAM），优先级从高到低：
+  //  - 重定向/预测重定向拍：组合输出目标字；
+  //  - stall / ret 预测后的展开冻结期：保持 req_addr——前者避免存储器超前读到
+  //    下一字，后者防止 w_new 带着目标+4 的字冒充目标字（目标首指令会被跳过）；
+  //  - req_fwd：预取前推，请求消费字+4；
+  //  - have_cur：消费中请求窗口的下一字（16 位流 2 拍/字，重复请求无害）；
+  //  - 否则输出 fetch_addr（refill 首字 / 预取地址）。
   assign pc = redirect ? {redirect_target[ADDR_WIDTH-1:2], 2'b00} :
               predict_redirect ? {predict_target[ADDR_WIDTH-1:2], 2'b00} :
               stall    ? req_addr :
@@ -281,19 +264,15 @@ module IFU_Buffer #(
         have_cur   <= 1'b0;
       end else if (predict_redirect && (can_issue || zcmp_active)) begin
         // IF 预测命中：当前指令本拍正常输出（can_issue；展开期仅 ret 微操作
-        // 会走到此分支），下一拍起从预测目标取指/装配
-        // （JAL/JALR 由流水线完成写回与 RAS；展开期窗口已随重定向作废）。
+        // 会走到此分支），下一拍起从预测目标取指/装配。
         pc_asm     <= {predict_target[ADDR_WIDTH-1:1], 1'b0};
         fetch_addr <= {predict_target[ADDR_WIDTH-1:2], 2'b00} + 4;
         req_addr   <= {predict_target[ADDR_WIDTH-1:2], 2'b00};
         served_d   <= fetch_served;
         have_cur   <= 1'b0;
       end else begin
-        // 取指指针：
-        //  - have_cur=1：cur_w 消费中（16 位指令 2 拍/字），请求 cur_w 的下一字
-        //    （重复请求无害，w_new 保持该字直到 crossing 装填）；
-        //  - have_cur=0：每周期 +4（refill 连续消费 / 复位向量）；
-        //  - stall：pc=req_addr 重发在途字（与旧 PC_counter 语义一致）。
+        // 取指指针：Zcmp 冻结/stall 保持；req_fwd 拍请求指针前推；
+        // have_cur 消费中重复请求窗口下一字；否则 fetch_addr +4 连续预取。
         if (zcmp_active | zcmp_capture) begin
           // 展开捕获/冻结：取指指针保持（consume 拍由装配段统一恢复）
           fetch_addr <= fetch_addr;
@@ -352,10 +331,9 @@ module IFU_Buffer #(
                 zcmp_restore_cur_w_addr <= req_addr;
                 zcmp_restore_have_cur   <= 1'b1;
               end else begin
-                // 字内 16 位 cm.push（crossing=0 且 refill_now=0）：窗口字保持不变。
-                // cur_w/cur_w_addr 必须一并锁存——restore 寄存器仅在 capture 拍写入，
-                // 漏锁存会把上一条展开（或复位值）的陈旧窗口恢复进来，取指流错位
-                // （形式验证 fml_a_window_pair 反例定位，2026-09-15）
+                // 字内 16 位 cm.push：窗口字保持不变。cur_w/cur_w_addr 必须一并
+                // 锁存——restore 寄存器仅 capture 拍写入，漏锁存会把上一条展开
+                // 的陈旧窗口恢复进来，取指流错位
                 zcmp_restore_cur_w      <= cur_w;
                 zcmp_restore_cur_w_addr <= cur_w_addr;
                 zcmp_restore_have_cur   <= have_cur;
@@ -363,14 +341,11 @@ module IFU_Buffer #(
               if (have_cur) begin
                 zcmp_restore_req_addr <= cur_w_addr + 4;
               end else if (refill_now || (crossing && next_ready)) begin
-                // 恢复态持有 capture 拍到达的字（restore_cur_w_addr=req_addr）：
-                // 恢复后请求该字 +4。req_fwd 下活 req_addr 领先 fetch_addr，
-                // 旧写法 restore_req_addr=fetch_addr 会恢复出落后 2 字的请求
-                // 指针（fml_a_window_pair 反例定位，2026-09-19）
+                // 恢复态持有 capture 拍到达的字：恢复后请求该字+4
                 zcmp_restore_req_addr <= req_addr + 4;
               end else begin
-                // 恢复态无窗口字：以活 req_addr 为基准（req_fwd 下 fetch_addr
-                // 可能滞后；旧写法 req==fetch 时二者等价，行为保持）
+                // 恢复态无窗口字：以活 req_addr 为基准（req_fwd 下活 req_addr
+                // 领先 fetch_addr）
                 zcmp_restore_fetch_addr <= req_addr + 4;
                 zcmp_restore_req_addr   <= req_addr;
               end
@@ -384,14 +359,13 @@ module IFU_Buffer #(
                   cur_w_addr <= req_addr;
                   have_cur   <= 1'b1;
                 end else if (have_cur) begin
-                  // 16 位流第二拍（have_cur=1）：下一个字未到（被抢占/首字），
+                  // 16 位流第二拍：下一个字未到（被抢占/首字），
                   // 等待补齐：fetch_addr 指回新 pc_asm 所在字重新请求
                   have_cur   <= 1'b0;
                   fetch_addr <= {((pc_asm + inst_len) >> 2), 2'b00};
                 end else begin
-                  // 普通 32 位指令出完（have_cur=0）：外层已把 fetch_addr +4
-                  // （= 新 pc_asm 的下一字，领先一拍预取），不要再回拨，
-                  // 否则下一字被重复请求、每两条指令白等一拍（coremark 22%）。
+                  // 普通 32 位指令出完（窗口空）：外层 fetch_addr+4 已在预取
+                  // 新 pc_asm 的下一字，不回拨（回拨则每两条指令白等一拍）
                   have_cur <= 1'b0;
                 end
               end else if (refill_now) begin
@@ -432,7 +406,7 @@ end
 
 `ifdef FORMAL
 // ===== 形式验证属性（SymbiYosys）=====
-// 取指窗口簿记不变式（字流错位家族疫苗）。w_new/fetch_served 全自由穷举；
+// 取指窗口簿记不变式。w_new/fetch_served 全自由穷举；
 // Zcmp 退休契约假设：last_retired 只允许出现在展开进行中（与核内实际连线一致，
 // 欠此则自由输入可伪造"未展开先退休"，restore 路径加载未捕获状态产生假失败）
 always @(posedge clk) begin
@@ -450,16 +424,16 @@ always @(posedge clk) begin
                 ((req_addr == cur_w_addr + 4) || (req_addr == cur_w_addr));
         end
         // 非冻结消费路径：have_cur 时本拍请求 cur_w 下一字（16 位流两拍/字的簿记合同）；
-        // req_fwd v2 拍合法跳到 req_addr+4（crossing 换装拍请求新窗口字的下一字）
+        // req_fwd 拍合法跳到 req_addr+4（crossing 换装拍请求新窗口字的下一字）
         if (have_cur && !stall && !redirect && !predict_redirect && !zcmp_active && !zcmp_capture) begin
             fml_a_req_next_word: assert property
                 ((pc == cur_w_addr + 4) || (req_fwd && (pc == req_addr + 4)));
         end
         // 展开冻结期指针保持（capture/restore 恢复语义的前提）；
-        // ret 微操作恢复预测后，预测发射拍合法改写窗口，需从冻结断言中排除
+        // ret 微操作恢复预测后，预测发射拍合法改写窗口，需从冻结断言中排除；
+        // req_fwd 拍请求地址合法前移到消费字+4
         if (zcmp_active && !zcmp_consume && !$past(zcmp_consume)
             && !$past(redirect) && !$past(predict_redirect && zcmp_active)) begin
-            // 2026-09-19 预取前推豁免：req_fwd 拍请求地址合法前移到消费字+4
             fml_a_zcmp_freeze: assert property
                 ((pc_asm == $past(pc_asm)) && (fetch_addr == $past(fetch_addr)) &&
                  ((!req_fwd && req_addr == $past(req_addr)) || req_fwd || $past(req_fwd)));
@@ -474,6 +448,24 @@ always @(posedge clk) begin
         fml_c_refill:    cover property (refill_now);
         fml_c_redirect:  cover property (redirect && !zcmp_active);
         fml_c_zcmp_cap:  cover property (zcmp_capture);
+    end
+end
+`endif
+
+`ifdef ASSERT_MODULE
+// ===== SVA L2：IFU_Buffer 深化——窗口簿记（formal 不变式的仿真采样版）=====
+always @(posedge clk) begin
+    if (rst_n && reset_d) begin
+        // 窗口对：持有窗口字时请求指针只允许 窗口字+4 / 窗口字（冻结期豁免）
+        if (have_cur && !zcmp_capture && !zcmp_active)
+            a_l2_ifu_window_pair: assert property (
+                (req_addr == cur_w_addr + 4) || (req_addr == cur_w_addr));
+        // 请求步进：非重定向/非冻结消费拍，请求指针按 formal 合同前推
+        if ($past(have_cur && !stall && !redirect && !predict_redirect
+                  && !zcmp_active && !zcmp_capture))
+            a_l2_ifu_req_step: assert property (
+                (req_addr == $past(cur_w_addr) + 4)
+                || ($past(req_fwd) && (req_addr == $past(req_addr) + 4)));
     end
 end
 `endif

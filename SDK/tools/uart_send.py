@@ -12,6 +12,8 @@ UART 工具 — 程序烧录 + 实时串口终端（两种模式均实时打印�
     python tools/uart_send.py coremark_o2.uartbin --reset   # 先复位再下载
     python tools/uart_send.py uart_echo.uartbin --reset --idle-timeout 3   # 下载后监听，实时打印，输出空闲 3s 停止
     python tools/uart_send.py coremark_o2.uartbin --reset --until "Correct operation validated."
+    # 长静默应用（CoreMark 类）建议 --idle-timeout 30 --timeout 300；监听期 0 字节超 6s
+    # 打印一次挂死/不匹配诊断（--early-warn N 调阈值，0 关闭），结束时仍 0 字节则给明确诊断
     python tools/uart_send.py --interactive --port COM8    # 交互终端：实时收发，本地回显开，Ctrl+C 退出
     # 监听输出默认自动写入 logs/uart_send_<程序>_<时间戳>.log，可用 --log 指定路径
 """
@@ -195,9 +197,12 @@ def main():
                         help="交互终端关闭本地回显（远端设备自身回显时用，避免双字符）")
     args = parser.parse_args()
 
-    # 日志路径校验：--log 必须落在仓库目录内（防路径穿越写到任意位置）
+    # 日志路径校验：--log 必须落在仓库目录内（防路径穿越写到任意位置）；
+    # 顺手补父目录创建（interactive 与监听模式共用：此前 interactive 用户 --log
+    # 指向不存在父目录会 FileNotFoundError，见 09 安全审计缺口2）
     if args.log is not None:
         args.log = safe_log_path(args.log, repo_root())
+        os.makedirs(os.path.dirname(args.log) or ".", exist_ok=True)
 
     # 自动检测串口
     if args.port is None:

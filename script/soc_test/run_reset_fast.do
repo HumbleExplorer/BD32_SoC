@@ -1,7 +1,8 @@
 # 对照实验：复位测试（无波形），看 MROM 是否能正常启动并置位 download_en
-if {[file exists "work"]} {file delete -force work}
-vlib work
-vmap work work
+if {[file exists "../../build/msim/run_reset_fast/work"]} {file delete -force "../../build/msim/run_reset_fast/work"}
+file mkdir ../../build/msim/run_reset_fast
+vlib ../../build/msim/run_reset_fast/work
+vmap work ../../build/msim/run_reset_fast/work
 
 vlog +define+RESET_REDOWNLOAD_TEST -f filelist.f
 

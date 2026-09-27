@@ -106,4 +106,21 @@ a_stall_hold: assert property (
     (stall && !flush) |=> ($stable(inst_o) && $stable(inst_addr_o)));
 `endif
 
+`ifdef ASSERT_MODULE
+// ===== SVA L2：MEM_WB 深化——stall 保持覆盖写回字段（L1 仅查 inst/addr）=====
+// 进入 stall 的第一拍允许是新装载值（合法），stall 持续期间内容必须冻结
+always @(posedge clk) begin
+    if (rst_n && $past(rst_n) && $past(stall && !flush && valid_o)
+        && stall && !flush && valid_o) begin
+        a_l2_memwb_ctrl_hold: assert property (
+            reg_rd_wen_o   == $past(reg_rd_wen_o) &&
+            reg_rd_waddr_o == $past(reg_rd_waddr_o) &&
+            reg_rd_wdata_o == $past(reg_rd_wdata_o) &&
+            inst_type_o    == $past(inst_type_o) &&
+            zcmp_micro_any_o  == $past(zcmp_micro_any_o) &&
+            zcmp_micro_last_o == $past(zcmp_micro_last_o));
+    end
+end
+`endif
+
 endmodule

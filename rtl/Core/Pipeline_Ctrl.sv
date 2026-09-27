@@ -89,7 +89,7 @@ function automatic [3:0] get_priority;
     input [DATA_WIDTH-2:0] code;
     // 只比较 [3:0]：所有合法异常码都是 {{(DATA_WIDTH-5){1'b0}},4'dX} 零扩展，
     // 全 1 哨兵的 [3:0]=4'hF 不命中任何表项仍返回 15，语义与全宽 case 等价；
-    // 砍掉 27 位比较是该函数进入 EX→trap 关键路径后的时序补偿（2026-09-11）
+    // 只比较 [3:0] 同时是该函数进 EX→trap 关键路径的时序补偿
 begin
     get_priority = {4{1'b1}};
     case(stage)
@@ -113,7 +113,7 @@ begin
                 4'd4,4'd6: get_priority = 4'd10; // 访存未对齐（ITCM store/BootROM/APB 拆分不可覆盖时）。
                                                  // 缺失本项时 code 携带合法 bit30=0 却查表落默认 15，
                                                  // sel_stage 保持 default → 异常码 mux 输出全 1 哨兵 + mepc=0，
-                                                 // 陷阱以 mcause=0x7FFFFFFF 发出（2026-09-11 RT-Thread SERR 根因）
+                                                 // 陷阱以全 1 哨兵 mcause=0x7FFFFFFF 发出
             endcase
         end
     endcase
@@ -373,12 +373,11 @@ wire fml_accept_unshadowed = !(dbg_halt_eff || step_halt || trigger_eff
                                || r_trap_redirect
                                // WFI 分支（优先级高于 trap 接受）冻结流水线并把
                                // 异常接受推迟一拍（异常唤醒语义）——推迟拍不检查
-                               // 立即冲刷契约（2026-09-16 审计缺陷③放开异常码后
-                               // 暴露的遮蔽缺口，formal 反例实锤）
+                               // 立即冲刷契约
                                || (waiting_int && ~ex_access_en));
 
 always @(posedge clk) begin
-    // ---- 中断接受拍冲刷契约（2026-09-12 SERR 根因防线）----
+    // ---- 中断接受拍冲刷契约 ----
     // ① 接受拍必须冲 IF_ID（边界指令死在 ID_EX，mepc 已锁存其 PC）
     fml_a_accept_ifid: assert property
         ((int_accept_kill && fml_accept_unshadowed) ? if_id_flush : 1'b1);
@@ -397,7 +396,7 @@ always @(posedge clk) begin
 
     // ---- 异常优先级表不变式（get_priority 缺项 = mcause 全 1 哨兵病根）----
     // ④ 异常触发时，所选阶段码必须非哨兵（哨兵 {W-1{1'b1}} 表示"无异常"，
-    //    若陷阱拍 mux 输出全 1 即 2026-09-12 修复过的 mcause=0x7FFFFFFF 病根）
+    //    若陷阱拍 mux 输出全 1 即哨兵病根 mcause=0x7FFFFFFF）
     // rst_n 门控：复位拍异常码输入自由（assume 按惯例仅在 rst_n 生效），
     // 组合 mux 可瞬时呈现 trap=1+哨兵输出的无意义组合——只在正常工作态检查
     fml_a_no_sentinel: assert property
@@ -509,7 +508,7 @@ always_comb begin
         ctrl_jump_addr  = r_trap_addr;
     end else if (waiting_int && ~ex_access_en) begin
         // WFI 睡眠冻结：但 EX 级若有在途访存（access_en_ex=1），必须先放行一拍让
-        // 该访问正常提交（rvalid），否则唤醒后该 load 用端口残留数据写回（bug 2026-09-11）。
+        // 该访问正常提交（rvalid），否则唤醒后该 load 用端口残留数据写回。
         // 次拍 access_en_ex=0 后重新冻结，wfi 语义不变。
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;
@@ -518,8 +517,7 @@ always_comb begin
     end else if (trap_jump || int_accept_kill) begin
         // trap 当拍完成冲刷与 CSR 采样，PC 跳转延迟一拍。
         // 中断接受拍：IF_ID+ID_EX+EX_MEM 全冲（ex_mem_flush=1 必须保留——
-        // 否则边界指令泄漏 EX_MEM 完成写回 + mret 重执行 = 双重提交，SERR 根因
-        // 2026-09-12，详见 Memory_Log 同日条目）。
+        // 否则边界指令泄漏 EX_MEM 完成写回 + mret 重执行 = 双重提交）。
         // 异常（trap_jump_exc=1）有故障指令级，按 sel_stage 部分冲刷。
         if_id_flush = 1'b1;
         if (trap_jump_exc) begin
@@ -571,7 +569,7 @@ assign dbg_halted = (dbg_halt_eff || step_halt || trigger_eff || ebreak_halt) &&
 `ifndef SYNTHESIS
 `ifndef FORMAL
 // ===========================================================================
-// SVA: 中断接受拍冲刷契约（2026-09 中断边界语义修复的防线）
+// SVA: 中断接受拍冲刷契约
 // 契约：接受拍冲 IF_ID+ID_EX（边界指令死在 ID_EX，mepc 已锁存其 PC），
 //       EX_MEM 不冲（更老指令照常提交）。动作若与契约背离立即触发。
 // ===========================================================================
@@ -580,12 +578,27 @@ a_accept_kill_ifid: assert property (
     @(posedge clk) disable iff (!rst_n)
     (int_accept_kill |-> if_id_flush));
 // 2) 纯中断接受拍（无异常重叠）：冲 ID_EX+EX_MEM（边界指令连 EX 结果一并冲，
-//    防止其写回泄漏 + mret 重执行的双重提交【2026-09-12 SERR 根因】）
+//    防止其写回泄漏 + mret 重执行的双重提交）
 a_accept_kill_flush: assert property (
     @(posedge clk) disable iff (!rst_n)
     ((int_accept_kill && !trap_jump_exc) |->
      (id_ex_flush && ex_mem_flush)));
 `endif
+`endif
+
+`ifdef ASSERT_MODULE
+// ===== SVA L2：Pipeline_Ctrl 深化——异常报告出口质量 =====
+always @(posedge clk) begin
+    if (rst_n) begin
+        // 异常有效时码不得为全 1 哨兵（优先级表完整性，与 CSR 哨兵契约同源）
+        if (exception_val) begin
+            a_l2_pc_exc_nonsentinel: assert property (!(&exception_code));
+            a_l2_pc_exc_nox: assert property (!$isunknown(exception_code));
+        end
+        // 异常有效必伴随重定向（报告即生效，不许"有码无跳"）
+        if (exception_val) a_l2_pc_exc_redirect: assert property (r_trap_redirect || trap_jump_exc);
+    end
+end
 `endif
 
 endmodule

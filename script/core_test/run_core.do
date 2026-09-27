@@ -6,7 +6,8 @@ quit -sim
 if {[file exists work]} {
     vdel -all -lib work
 }
-vlib work
+file mkdir ../../build/msim/run_core
+vlib ../../build/msim/run_core/work
 
 set RTL ../../rtl
 set DEFS "+define+CORE_TEST+CUSTOM_ASM+DIRECT_LOAD"

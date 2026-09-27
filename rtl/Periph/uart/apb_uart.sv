@@ -340,7 +340,7 @@ assign PSLVERR  = 1'b0;
     // ① LSR[5] THRE / LSR[6] TEMT 语义：写 FIFO 恒空（16 深 sync_fifo 无读指针暴露，
     //    故只用 ~full/full 近似；temt=0 当且仅当写满）
     // lsr[5]/[6] 是 NBA 寄存器（下拍锁存组合态），必须 $past 对齐一拍，
-    // 否则每次 THRE/TEMT 翻转必假失败一拍（2026-09-16 审计缺陷②，改并发断言）
+    // 否则每次 THRE/TEMT 翻转必假失败一拍（须用并发断言）
     a_uart_lsr_thre:  assert property (@(posedge PCLK) disable iff (!PRESETn)
                           lsr[5] == $past(tx_fifo_rd_empty));
     a_uart_lsr_empt:  assert property (@(posedge PCLK) disable iff (!PRESETn)

@@ -353,4 +353,18 @@ always @(posedge clk) begin
 end
 `endif
 
+`ifdef ASSERT_MODULE
+// ===== SVA L2：OITF 深化——计数守恒与退休合法性（formal B/F 组的仿真采样版）=====
+always @(posedge clk) begin
+    if (rst_n) begin
+        // cnt 与有效条目数逐拍一致
+        a_l2_oitf_cnt: assert property (cnt == $countones(cur_vld));
+        // 空队列恒无退休
+        if (cnt == 'd0) a_l2_oitf_empty_noret: assert property (!retire_fire);
+        // 退休必来自头部且该条目就绪
+        if (retire_fire) a_l2_oitf_head: assert property (cur_vld[rd_ptr] && cur_ready[rd_ptr]);
+    end
+end
+`endif
+
 endmodule

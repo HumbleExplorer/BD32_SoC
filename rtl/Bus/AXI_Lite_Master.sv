@@ -340,4 +340,19 @@ always @(posedge clk) begin
 end
 `endif
 
+`ifdef ASSERT_MODULE
+// ===== SVA L2：AXI_Lite_Master 深化——单笔在途与响应质量 =====
+always @(posedge clk) begin
+    if (rst_n) begin
+        // 总线超时恒不发生（从机有界完成合同端到端）
+        a_l2_axi_no_timeout: assert property (!bus_timeout);
+        // 响应数据/错误码无 X
+        if (rsp_valid) a_l2_axi_rsp_nox: assert property (!$isunknown(rsp_rdata) && !$isunknown(rsp_error));
+        // 单笔在途：接受请求后未回响应前不得再接受新请求
+        if ($past(req_valid && req_ready) && !rsp_valid)
+            a_l2_axi_single_outstanding: assert property (!req_ready);
+    end
+end
+`endif
+
 endmodule
