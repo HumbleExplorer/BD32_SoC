@@ -19,7 +19,7 @@ module ifu_buffer_formal_top #(
 
     // 控制
     // 三个跳转目标只引出 [31:1]：RTL 取 [31:1] 拼 1'b0（16 位对齐），bit0 被
-    // 弃用；若整端口暴露，未用位会被 opt 转成 x 连接，毒化 abc pdr 的 AIGER 后端
+    // 弃用；若整端口暴露，未用位会被 opt 转成 x 连接，污染 abc pdr 的 AIGER 后端
     logic [ADDR_WIDTH-2:0]     jump_addr_hi;
     logic                      jump_en;
     logic [ADDR_WIDTH-2:0]     predict_target_hi;

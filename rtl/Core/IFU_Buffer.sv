@@ -77,7 +77,7 @@ module IFU_Buffer #(
   // ---------------- 组合装配 ----------------
   logic [15:0] head;
   logic        is32, unaligned32, cur_eff_valid, refill_now, next_ready, can_issue;
-  logic        req_fwd;               // 预取前推：消费/换装拍请求指针当拍前移
+  logic        req_fwd;               // 预取前推：消费/窗口更新拍请求指针当拍前移
   logic        pred_issue;                   // 展开期=微操作有效，常态=can_issue
   logic [2:0]  inst_len;                       // 2 / 4 字节
   logic        crossing;
@@ -108,23 +108,23 @@ module IFU_Buffer #(
   assign is32 = (head[1:0] == 2'b11);
   assign unaligned32 = is32 & pc_asm[1];
   assign inst_len = is32 ? 3'd4 : 3'd2;        // 4 / 2 字节
-  // 预取前推 req_fwd：消费/换装拍请求指针当拍前移到"消费字+4"，
-  // 消除"消费与请求争用同字"与"crossing 16 位后紧跟跨字 32 位"两类停顿。
+  // 预取前推 req_fwd：消费/窗口更新拍请求指针当拍前移到"消费字+4"，
+  // 消除"消费与请求争用同字"与"16 位指令后紧跟跨字 32 位指令"两类停顿。
   //   - refill_now：窗口空且请求字恰为消费字，当拍请求消费字+4；
-  //   - crossing && next_ready：换装拍，活 req_addr 即将装入 cur_w，+4 即下一字。
+  //   - crossing && next_ready：当前 req_addr 即将装入 cur_w，+4 即下一字。
   // 后一项须门控 ~zcmp_capture/~zcmp_active：冻结期 pc_asm 停在跨字位置时本项
   // 会组合为 1，把地址口顶到 +4，冻结结束后 w_new 就不是恢复态 req_addr 指望的
   // 字，展开后首条跨字指令拼脏数据；refill_now 项语义在冻结期保持一致，不门控。
   assign req_fwd = refill_now | ((~zcmp_capture & ~zcmp_active)
                                  & can_issue & crossing & next_ready);
   assign next_ready = have_cur & served_d & (req_addr == (cur_w_addr + 4));
-  // 未装填时本拍 w_new 恰好是 pc_asm 所在字（重定向后首字/补齐字）
+  // 窗口为空时，本拍 w_new 恰好是 pc_asm 所在字（重定向后首字/等待装填）
   assign refill_now = ~have_cur & served_d &
                       (req_addr == {pc_asm[ADDR_WIDTH-1:2], 2'b00});
   assign cur_eff_valid = have_cur | refill_now;
   assign cur_eff = have_cur ? cur_w : w_new;
   assign can_issue = cur_eff_valid & ~stall & ~redirect & (~unaligned32 | next_ready);
-  assign crossing  = can_issue & (is32 | pc_asm[1]);   // 出指令后 pc_asm 进入下一字
+  assign crossing  = can_issue & (is32 | pc_asm[1]);   // 本拍发射后 pc_asm 越过当前字边界
   // 预测门控：展开期所有微操作共享 cm.popret 的 PC——ret 微操作训练 BTB/RAS 后，
   // 同 PC 的 lw/addi 微操作会被误预测为 taken return → 误冲刷 → 展开作废。
   // 故展开期屏蔽预测，仅 ret 微操作（micro_ret）恢复——该 PC 上训练的正是本条
@@ -424,7 +424,7 @@ always @(posedge clk) begin
                 ((req_addr == cur_w_addr + 4) || (req_addr == cur_w_addr));
         end
         // 非冻结消费路径：have_cur 时本拍请求 cur_w 下一字（16 位流两拍/字的簿记合同）；
-        // req_fwd 拍合法跳到 req_addr+4（crossing 换装拍请求新窗口字的下一字）
+        // req_fwd 拍合法跳到 req_addr+4（crossing 窗口更新拍请求新窗口字的下一字）
         if (have_cur && !stall && !redirect && !predict_redirect && !zcmp_active && !zcmp_capture) begin
             fml_a_req_next_word: assert property
                 ((pc == cur_w_addr + 4) || (req_fwd && (pc == req_addr + 4)));
@@ -443,7 +443,7 @@ always @(posedge clk) begin
         if (zcmp_active && zcmp_ret_pred_q && !stall && !redirect && !predict_redirect) begin
             fml_a_ret_pred_req_window: assert property (pc == req_addr);
         end
-        // cover：跨字 32 位指令出窗 / refill 装填 / 重定向 / Zcmp 捕获
+        // cover：跨字 32 位指令发射 / refill 装填 / 重定向 / Zcmp 捕获
         fml_c_crossing:  cover property (can_issue && unaligned32);
         fml_c_refill:    cover property (refill_now);
         fml_c_redirect:  cover property (redirect && !zcmp_active);
