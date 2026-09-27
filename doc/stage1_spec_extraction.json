@@ -1,0 +1,127 @@
+{
+  "schema": "frontend-spec-extraction/stage1",
+  "design_name": "BD32",
+  "source_of_truth": "RTL（BD32 无既有 spec.md，本提取以 RTL 为结构证据与复位值/访问类型的权威来源）",
+  "sources": [
+    "rtl/SoC_top.sv", "rtl/bd32_board_top.sv", "rtl/SoC_Config.sv",
+    "rtl/Periph/apb_gpio.sv", "rtl/Periph/uart/apb_uart.sv",
+    "rtl/Periph/timer/apb_timer.sv", "rtl/Periph/timer/basic_timer.sv",
+    "rtl/Periph/CLINT.sv", "rtl/Periph/plic/PLIC.sv",
+    "rtl/Bus/axi_err_slave.sv", "rtl/Core/CSR_Reg_Access.sv"
+  ],
+  "interfaces": [
+    {"name": "JTAG", "dir": "inout", "protocol": "JTAG (TAP)", "signals": "tck/tms/tdi/tdo/trst(未用)", "notes": "Debug DM 域，复位独立于 SoC"},
+    {"name": "AXI-Lite master", "dir": "out", "protocol": "AXI4-Lite", "signals": "aw/w/b/ar/r 通道", "notes": "互联层仅一个主机；取指与访存共用"},
+    {"name": "APB slaves", "dir": "in", "protocol": "APB3", "signals": "PSEL[0:6] 译码", "notes": "每从机 64KB 段（[31:16] 匹配）"},
+    {"name": "GPIO", "dir": "inout", "width": 8, "notes": "板级 LED/按键"},
+    {"name": "UART", "dir": "inout", "signals": "uart_rx/uart_tx", "notes": "BootROM 下载与运行输出复用"},
+    {"name": "Timer 通道", "dir": "inout", "width": 4, "notes": "输入捕获/输出比较(PWM)"}
+  ],
+  "memory_map": [
+    {"region": "BootROM(MROM)", "base": "0x0000_0000", "end": "0x0000_0FFF", "size": "4KB", "bus": "核内直连", "notes": "复位向量"},
+    {"region": "ITCM", "base": "0x0001_0000", "end": "0x0001_FFFF", "size": "64KB", "bus": "核内直连", "notes": "代码，同步读，字节写使能"},
+    {"region": "DTCM", "base": "0x0002_0000", "end": "0x0002_FFFF", "size": "64KB", "bus": "核内直连", "notes": "数据，WRITE_FIRST"},
+    {"region": "GPIO", "base": "0xE000_0000", "size": "64KB", "bus": "APB", "psel": 2},
+    {"region": "UART", "base": "0xE001_0000", "size": "64KB", "bus": "APB", "psel": 3},
+    {"region": "Timer", "base": "0xE002_0000", "size": "64KB", "bus": "APB", "psel": 4},
+    {"region": "SPI(预留)", "base": "0xE003_0000", "bus": "APB", "notes": "未实现，访问返回错误"},
+    {"region": "I2C(预留)", "base": "0xE004_0000", "bus": "APB", "notes": "未实现，访问返回错误"},
+    {"region": "PLIC", "base": "0xFC00_0000", "bus": "APB", "psel": 1},
+    {"region": "CLINT", "base": "0xF200_0000", "bus": "APB", "psel": 0},
+    {"region": "Flash/DDR", "base": "0x9000_0000 / 0xB000_0000", "bus": "AXI", "notes": "未实现→axi_err_slave 返回错误"},
+    {"region": "未映射", "base": "—", "bus": "—", "notes": "axi_err_slave 兜底（DECERR，有界返回）"}
+  ],
+  "registers": {
+    "GPIO @0xE000_0000 (apb_gpio.sv, DATA_WIDTH=8)": [
+      {"off": "0x00", "name": "MODE", "acc": "R/W", "reset": "0x00", "notes": "0=推挽 1=开漏（逐位）"},
+      {"off": "0x04", "name": "DIRECTION", "acc": "R/W", "reset": "0x00", "notes": "0=输入 1=输出"},
+      {"off": "0x08", "name": "OUTPUT", "acc": "R/W", "reset": "0x00", "notes": "输出数据"},
+      {"off": "0x0C", "name": "INPUT", "acc": "RO", "reset": "0x00", "notes": "多级同步采样（INPUT_STAGES），不受方向影响"},
+      {"off": "0x10", "name": "TR_TYPE", "acc": "R/W", "reset": "0x00", "notes": "0=电平 1=边沿（逐位）"},
+      {"off": "0x14", "name": "TR_LVL0", "acc": "R/W", "reset": "0x00", "notes": "0=低电平/下降沿"},
+      {"off": "0x18", "name": "TR_LVL1", "acc": "R/W", "reset": "0x00", "notes": "1=高电平/上升沿"},
+      {"off": "0x1C", "name": "TR_STAT", "acc": "R/W1C", "reset": "0x00", "notes": "触发状态，写 1 清零；置位源=硬件事件（OR 累积）"},
+      {"off": "0x20", "name": "IRQ_EN", "acc": "R/W", "reset": "0x00", "notes": "逐位中断使能"},
+      {"off": "0x24", "name": "BOP_SET", "acc": "WO(原子置位)", "reset": "—", "notes": "写 1 置位对应输出位"},
+      {"off": "0x28", "name": "BOP_CLR", "acc": "WO(原子清零)", "reset": "—", "notes": "写 1 清零对应输出位"}
+    ],
+    "UART @0xE001_0000 (apb_uart.sv, 16550 子集)": [
+      {"off": "0x00", "name": "RBR/THR/DLL", "acc": "DLAB=0:RBR(RO)/THR(W)；DLAB=1:DLL(R/W)", "reset": "divisor=0x0000", "notes": "DLAB=LCR[7] 分组复用"},
+      {"off": "0x04", "name": "IER/DLM", "acc": "DLAB=0:IER(R/W)/DLAB=1:DLM(R/W)", "reset": "IER=0x0", "notes": "IER[3:0] 中断使能"},
+      {"off": "0x08", "name": "IIR(RO)/FCR(W)", "acc": "IIR=RO / FCR=W+自清", "reset": "FCR=0xC0", "notes": "IIR 复位值 0xC1（FIFO 使能无中断）；FCR[1]/[2] 清 FIFO 后自动归零（自清位）"},
+      {"off": "0x0C", "name": "LCR", "acc": "R/W", "reset": "0x03", "notes": "8N1 默认；bit7=DLAB"},
+      {"off": "0x10", "name": "MCR", "acc": "R/W", "reset": "0x00", "notes": ""},
+      {"off": "0x14", "name": "LSR", "acc": "RO(错误位读清)", "reset": "0x60", "notes": "bit5=THRE bit6=TEMT 复位即空；bit0-4 接收错误读 LSR 清零（读清副作用）"},
+      {"off": "0x1C", "name": "DBG_EN", "acc": "WO", "reset": "0", "notes": "写 1 使能 BootROM 下载通道"},
+      {"off": "0x20", "name": "DBG_STAT", "acc": "RO", "reset": "0", "notes": "bit0=下载完成"},
+      {"off": "0x24", "name": "FCW", "acc": "R/W", "reset": "0x0000_0000", "notes": "NCO 波特率控制字（uart_init 运行时写）"}
+    ],
+    "Timer @0xE002_0000 (apb_timer.sv + basic_timer + timer_ic_oc, TIMER_WIDTH=16)": [
+      {"off": "0x00", "name": "TIMx_PSC", "acc": "R/W", "reset": "0x0000"},
+      {"off": "0x04", "name": "TIMx_CNT", "acc": "R/W", "reset": "0x0000", "notes": "计数器当前值（硬件自由跑，读写不停止）"},
+      {"off": "0x08", "name": "TIMx_ARR", "acc": "R/W", "reset": "0x0000", "notes": "自动重载"},
+      {"off": "0x0C", "name": "TIMx_CR", "acc": "R/W", "reset": "0x0000", "notes": "bit0=EN bit1=CLR(置 1 清零) bit2=DIR(0 增 1 减)"},
+      {"off": "0x10", "name": "TIMx_IER", "acc": "R/W", "reset": "0x0000", "notes": "溢出/捕获/比较使能"},
+      {"off": "0x14", "name": "TIMx_SR", "acc": "R/W1C", "reset": "0x0000", "notes": "bit0=溢出 bit1=触发，写 1 清零"},
+      {"off": "0x18", "name": "TIMx_CCMR", "acc": "R/W", "reset": "0x0000", "notes": "通道模式"},
+      {"off": "0x1C", "name": "TIMx_CCER", "acc": "R/W", "reset": "0x0000", "notes": "通道使能"},
+      {"off": "0x20-0x2C", "name": "TIMx_CCR1~4", "acc": "R/W", "reset": "0x0000", "notes": "捕获锁存/比较值"}
+    ],
+    "CLINT @0xF200_0000 (CLINT.sv, mtime 域=clk_1mhz)": [
+      {"off": "+0x0000", "name": "msip", "acc": "R/W", "reset": "0x0", "notes": "bit0 软件中断挂起，写 1 置/写 0 清"},
+      {"off": "+0x4000/4004", "name": "mtimecmp lo/hi", "acc": "R/W", "reset": "0x0", "notes": "比较值 64 位"},
+      {"off": "+0xBFF8/BFFC", "name": "mtime lo/hi", "acc": "RO", "reset": "0x0", "notes": "1MHz 自增；CSR 0xC01/0xC81 为只读影子"}
+    ],
+    "PLIC @0xFC00_0000 (PLIC.sv, NUM_SOURCES=16, MAX_PRIORITY=7, NUM_TARGETS=1)": [
+      {"off": "0x0000-0x0FFC", "name": "Priority[1:15]", "acc": "R/W", "reset": "0x0(禁用)", "notes": "每源 4B；0=禁用 1-7 有效"},
+      {"off": "0x1000-0x107C", "name": "Pending[15:0]", "acc": "RO", "reset": "0x0", "notes": "gateway 锁存"},
+      {"off": "0x2000", "name": "Enable", "acc": "R/W", "reset": "0x0"},
+      {"off": "0x2000+0x80", "name": "Threshold", "acc": "R/W", "reset": "0x0"},
+      {"off": "0x2000+0x84", "name": "Claim/Complete", "acc": "读=Claim / 写=Complete", "reset": "—", "notes": "读取返回最高优先级待处理源号"}
+    ],
+    "HPM(CSR 0xB03-0xB11, 见 sdk.md)": "复位值 0（mcountinhibit 复位全 0=全计数，WARL 掩码 0x3_FFFD；mcounterclr 0xBC0 单拍脉冲可读回）——唯一有完整复位/访问语义文档的寄存器组"
+  },
+  "interrupt_map": [
+    {"irq_plic": 0, "source": "保留", "trigger": "—", "notes": "恒 0，SVA a_soc_plic_src0_silent 固化"},
+    {"irq_plic": 1, "source": "UART (apb_uart)", "trigger": "电平", "notes": "IIR 报告 5 类中断源"},
+    {"irq_plic": 2, "source": "GPIO (apb_gpio)", "trigger": "电平/边沿（TR_TYPE 可配）", "notes": "TR_STAT×IRQ_EN"},
+    {"irq_plic": 3, "source": "Timer (apb_timer)", "trigger": "电平", "notes": "溢出/捕获/比较"},
+    {"irq_plic": "4-15", "source": "未用", "trigger": "—", "notes": "恒 0，SVA a_soc_plic_unused_zero 固化"},
+    {"irq_plic": "MIP(软件/定时)", "source": "CLINT msip/mtime", "trigger": "电平", "notes": "不经 PLIC，直连 CSR mip[3]/[7]；external_int=PLIC irq_o[0]→mip[11]"},
+    {"irq_plic": "优先级", "source": "核内固定", "trigger": "—", "notes": "外部 > 软件 > 定时；mtimecmp 写 1 后需软件重装（电平语义）"}
+  ],
+  "clock_tree": [
+    {"clock": "sys_clk", "freq": "50MHz", "source": "板载晶振", "notes": "不经 IBUF 直供 clk_div/Cdc_Sync；经 IBUF 供给 clk_wiz"},
+    {"clock": "clk_cpu", "freq": "62.5MHz", "source": "clk_wiz MMCM CLKOUT1（50M 入）", "notes": "CPU/SoC/总线域；时序签核频点"},
+    {"clock": "clk_8m388", "freq": "8.388608MHz", "source": "clk_wiz MMCM CLKOUT2", "notes": "UART 波特率基准（115200×72800 整除关系，NCO 精度来源）"},
+    {"clock": "clk_1mhz", "freq": "1MHz", "source": "sys_clk/50 (clk_div_static DIV_NUM=50)", "notes": "CLINT mtime 域；1 tick=1µs（BootROM 测频/bsp delay_us 依赖）"}
+  ],
+  "reset_tree": [
+    {"reset": "rst_async_n", "formula": "sys_rst_n && ~dbg_rst && clk_wiz_locked", "notes": "按键+调试器复位+MMCM 锁定三与；异步断言"},
+    {"reset": "rst_n_sync (SoC 域)", "path": "rst_async_n → BUFG → Cdc_Sync 3 级 → 同步释放", "notes": "SoC_top 全部 PRESETn；DM/JTAG 域不受 ndmreset 影响（调试器复位 SoC 时 DM 存活）"},
+    {"reset": "rst_n_clint_sync (CLINT 域)", "path": "同构 Cdc_Sync 3 级（dst_clk=sys_clk）", "notes": "clk_div_static 使能门"},
+    {"reset": "CSR", "notes": "全 0 复位；mcause/mepc 复位 0；mcountinhibit 复位 0=全计数（BootROM 测频依赖）"}
+  ],
+  "error_handling": [
+    "未映射地址 → axi_err_slave：AXI DECERR，有界返回（不死等）",
+    "SPI/I2C/Flash/DDR 预留区 → 访问返回错误",
+    "取指地址非 BootROM/ITCM → if_access_fault",
+    "非对齐访存 → Mem_Access 拆分或异常（mtval 记录）",
+    "保留压缩编码 / 非法 CSR → illegal instruction（mcause=2）",
+    "总线超时 → BUS_TIMEOUT 有界退出（SoC_Config 形式下缩参标定）"
+  ],
+  "sw_vs_hw": [
+    "mtime CSR 影子只读，64 位写只能经 CLINT 地址",
+    "LSR bit0-4 读清（软件可见副作用）；THRE/TEMT 只反映 FIFO 状态",
+    "FCR 清 FIFO 位写 1 后自清（硬件回零）",
+    "TR_STAT 写 1 清零 + 硬件置位同时发生时硬件优先（OR 后清）",
+    "Claim/Complete 同地址读写异义（PLIC 惯例）",
+    "DBG_EN 只写、DBG_STAT 只读（BootROM 下载握手）"
+  ],
+  "ambiguities": [
+    "UART RX/TX FIFO 深度未参数化说明（RTL 定值，spec 不写死则标 TBR）",
+    "clk_16mhz 信号在 board_top 声明但 clk_wiz 无对应输出（疑似遗留，连接待核）",
+    "PLIC gateway 对边沿源的锁存行为（电平直通 vs 边沿置存）RTL 有但 spec 层未描述",
+    "GPIO BOP_SET/CLR 读回值未定义（建议 spec 明确读 0）"
+  ]
+}

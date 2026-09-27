@@ -1,0 +1,17 @@
+{
+  "mode": "update",
+  "timestamp": "2026-09-29T15:37:26",
+  "sections_created": [
+    "doc/spec.md（10 节：概览/框图/存储器映射/时钟/复位/中断/寄存器表/模块清单/错误处理/开放问题）"
+  ],
+  "sections_modified": [
+    "doc/architecture.md（+时钟与复位架构、+SoC 集成两节，头部加 spec 引用）",
+    "doc/peripherals.md（头部加权威表指针）",
+    "rtl/Periph/CLINT.sv 与 test_data/soc/mrom.s（时钟来源注释 16MHz→50MHz/50 修正）"
+  ],
+  "reason": "按 mcu-spec-architecture-planning 评审结论补齐 spec 缺口（时钟/复位/中断编号/寄存器复位值与访问类型）",
+  "cascade": [
+    "verification_plan（寄存器读写矩阵/错误注入两项 PLANNED 的依据现已在 spec.md §7）",
+    "tb_gen（寄存器复位值可作 checker 常量）"
+  ]
+}

@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "BD32 SoC 架构（RV32IMC 五级流水）",
+    "output": "doc/bd32_soc_architecture.html",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "viewBox": [
+      1300,
+      600
+    ]
+  },
+  "components": [
+    {
+      "id": "ifu",
+      "type": "backend",
+      "label": "IFU_Buffer",
+      "sublabel": "取指装配 + req_fwd v2",
+      "pos": [
+        60,
+        300
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "expander",
+      "type": "backend",
+      "label": "RVC/Zcmp Expander",
+      "sublabel": "16/32 位 → RV32I",
+      "pos": [
+        290,
+        300
+      ],
+      "size": [
+        152,
+        64
+      ]
+    },
+    {
+      "id": "decoder",
+      "type": "backend",
+      "label": "Decoder",
+      "pos": [
+        522,
+        300
+      ],
+      "size": [
+        110,
+        60
+      ]
+    },
+    {
+      "id": "exe",
+      "type": "backend",
+      "label": "Executer",
+      "sublabel": "EX + Booth-4 乘法",
+      "pos": [
+        712,
+        300
+      ],
+      "size": [
+        136,
+        62
+      ]
+    },
+    {
+      "id": "mem",
+      "type": "backend",
+      "label": "Mem_Access",
+      "pos": [
+        928,
+        300
+      ],
+      "size": [
+        120,
+        60
+      ]
+    },
+    {
+      "id": "wb",
+      "type": "backend",
+      "label": "Write_Back",
+      "pos": [
+        1128,
+        300
+      ],
+      "size": [
+        120,
+        60
+      ]
+    },
+    {
+      "id": "bpu",
+      "type": "backend",
+      "label": "BPU",
+      "sublabel": "Gshare + BTB + RAS",
+      "pos": [
+        60,
+        110
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "oitf",
+      "type": "backend",
+      "label": "OITF",
+      "sublabel": "乘除 FIFO 深 4",
+      "pos": [
+        710,
+        110
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "csr",
+      "type": "backend",
+      "label": "CSR / HPM",
+      "sublabel": "mhpmcounter 0xB03-B11",
+      "pos": [
+        1113,
+        110
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "bootrom",
+      "type": "database",
+      "label": "BootROM",
+      "sublabel": "测频 / UART 引导",
+      "pos": [
+        40,
+        478
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "mems",
+      "type": "database",
+      "label": "ITCM / DTCM",
+      "sublabel": "紧耦合 BRAM",
+      "pos": [
+        288,
+        478
+      ],
+      "size": [
+        170,
+        60
+      ]
+    },
+    {
+      "id": "peri",
+      "type": "external",
+      "label": "AXI-APB 外设",
+      "sublabel": "CLINT / PLIC / UART / Timer / GPIO",
+      "pos": [
+        893,
+        478
+      ],
+      "size": [
+        190,
+        60
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "BD32 核心（5 级流水）",
+      "wraps": [
+        "bpu",
+        "ifu",
+        "expander",
+        "decoder",
+        "exe",
+        "oitf",
+        "mem",
+        "wb",
+        "csr"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "存储与外设",
+      "wraps": [
+        "bootrom",
+        "mems",
+        "peri"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "from": "bootrom",
+      "to": "ifu",
+      "label": "复位取指引导",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [
+        70,
+        405
+      ]
+    },
+    {
+      "from": "bpu",
+      "to": "ifu",
+      "label": "IF 预测重定向",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        200,
+        235
+      ]
+    },
+    {
+      "from": "ifu",
+      "to": "expander",
+      "label": "16/32 位指令流",
+      "variant": "emphasis"
+    },
+    {
+      "from": "expander",
+      "to": "decoder",
+      "label": "RV32I 等价指令"
+    },
+    {
+      "from": "decoder",
+      "to": "exe",
+      "label": "译码发射"
+    },
+    {
+      "from": "exe",
+      "to": "mem",
+      "label": "访存请求",
+      "labelAt": [
+        877,
+        314
+      ]
+    },
+    {
+      "from": "mem",
+      "to": "wb",
+      "label": "结果写回"
+    },
+    {
+      "from": "exe",
+      "to": "oitf",
+      "label": "乘除派发",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "from": "oitf",
+      "to": "wb",
+      "label": "port2 写回",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          780,
+          64
+        ],
+        [
+          1290,
+          64
+        ],
+        [
+          1290,
+          395
+        ],
+        [
+          1188,
+          395
+        ]
+      ]
+    },
+    {
+      "from": "exe",
+      "to": "csr",
+      "label": "CSR 指令执行",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          906,
+          331
+        ],
+        [
+          906,
+          140
+        ]
+      ]
+    },
+    {
+      "from": "wb",
+      "to": "csr",
+      "label": "retire 事件计数",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "from": "ifu",
+      "to": "mems",
+      "label": "取指读（req_fwd 前推）",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          135,
+          430
+        ],
+        [
+          373,
+          430
+        ]
+      ]
+    },
+    {
+      "from": "mem",
+      "to": "mems",
+      "label": "Load / Store",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "via": [
+        [
+          988,
+          440
+        ],
+        [
+          488,
+          440
+        ],
+        [
+          488,
+          508
+        ]
+      ]
+    },
+    {
+      "from": "mem",
+      "to": "peri",
+      "label": "AXI-Lite → APB",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1035,
+        420
+      ]
+    }
+  ]
+}

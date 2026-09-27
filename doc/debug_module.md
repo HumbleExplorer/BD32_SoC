@@ -13,20 +13,16 @@ BD32 实现了 RISC-V Debug Specification 1.0 子集（`dmstatus.version=3`，dc
 
 ## 架构
 
-```
-PC (OpenOCD/GDB)
-    │  USB
-    ▼
-FT2232H Channel A (JTAG: TCK/TDI/TDO/TMS)
-    │
-    ▼
-┌─────────────────────────────────────────────────┐
-│  debug_top                                      │
-│  ┌───────────┐    ┌──────────┐   ┌───────────┐  │
-│  │ jtag_tap  │──▶│ debug_dm │──▶│ debug_cdc │──│──▶ CPU (halt/resume/step)
-│  │ (TAP+DTM) │◀──│ (DM)     │◀──│ (TCK↔CLK) │◀─│── CPU (dbg_halted)
-│  └───────────┘    └──────────┘   └───────────┘  │
-└─────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    PC["PC（OpenOCD/GDB）"] -->|"USB"| FT["FT2232H Channel A<br>JTAG: TCK/TDI/TDO/TMS"]
+    subgraph S["debug_top"]
+        direction LR
+        TAP["jtag_tap（TAP+DTM）"] --> DM["debug_dm（DM）"] --> CDC["debug_cdc（TCK↔CLK）"]
+    end
+    FT --> TAP
+    CDC -->|"halt / resume / step"| CPU["CPU"]
+    CPU -->|"dbg_halted"| CDC
 ```
 
 - **jtag_tap**：IEEE 1149.1 TAP 状态机 + DTM（Debug Transport Module），IDCODE = 0x1BD32003，IR 编码：IDCODE=0x01, DTMCS=0x10, DMI=0x11
@@ -396,7 +392,7 @@ Testbench `tb/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物理
 - Test 22：SBA 读 BootROM（0x0 区，GDB/OpenOCD 在线 stop 判定路径）+ BootROM 只读写保护
 - Test 23：reset halt（CPU 停 0x0）后 2 字节 SBA 读 BootROM，验证子字读不误报 sberror
 
-上板验证（2026-08-06/07 新 bitstream）全部通过：
+上板验证全部通过：
 - DMI 一键测试（`bd32_debug_test.cfg`，OpenOCD 枚举识别 4 个 trigger）
 - GDB 套件（`run_gdb_debug_test.bat`：reset halt / 单步 / GPR / CSR / SBA / hbreak）
 - 真实 demo（breathing.elf）符号级调试（`run_demo_debug.bat`）

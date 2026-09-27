@@ -1,7 +1,7 @@
 # BD32 MROM Bootloader v2 — 主频测量 + UART 自适应初始化
 #
 # 测频方法：
-#   CLINT mtime 由独立 1MHz 定时器时钟驱动（timer_clk_i，16MHz 分频）
+#   CLINT mtime 由独立 1MHz 定时器时钟驱动（timer_clk_i，板级 50MHz /50）
 #   通过 csr mcycle 统计 10ms 内的 CPU 时钟周期数
 #   freq_hz = mcycle_delta / 10ms = mcycle_delta * 100
 #

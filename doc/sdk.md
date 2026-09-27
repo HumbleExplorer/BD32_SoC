@@ -33,22 +33,17 @@
 
 ## update_mrom.py — BootROM 一键更新（改 mrom.s 后必用）
 
-改 `test_data/soc/mrom.s` 后**禁止只跑裸 as**——`call` 的 auipc+jalr 重定位需要
-链接器解析，跳过 ld 会留下 delta=0 自跳转死循环（2026-09-17 上板实锤）。三步：
+改 `test_data/soc/mrom.s` 后**禁止只跑裸 as**——`call` 的 auipc+jalr 重定位需要链接器解析，跳过 ld 会留下 delta=0 自跳转死循环。两步：
 
 ```bash
 cd SDK
 tools\update_mrom_build.bat              # 1) gcc 完整链接 → mrom.elf + objdump 跳转检查
-python tools/update_mrom.py             # 2) 解析 ELF → 校验（0x306 引用必须为 0）→ 生成 mrom.dat + mrom.coe
-tools\update_mrom_synth.bat             # 3) mrom IP 重读 COE + 综合 + 比特流（约 40 分钟）
+python tools/update_mrom.py             # 2) 解析 ELF → 校验 → 生成 mrom.dat + mrom.coe
 ```
 
 要点：
-- **mrom BRAM IP 吃的是 `test_data/soc/mrom.coe` 不是 mrom.dat**，且 Vivado
-  感知不到 COE 内容变化——第 3 步的 tcl 固化了 reset_target + generate_target
-  + 显式重跑 `mrom_synth_1`，缺一不可。
-- 校验失败（访问已移除 CSR / 切进 ELF 头 / 未解析跳转）会直接报错退出，
-  不会带病产出。
+- 第 2 步同时产出 `mrom.dat`（仿真用）与 `mrom.coe`（Vivado IP 用）；
+- 校验规则（默认模式）：发现 mrom 引用了设计中已移除的 CSR、程序指针切进 ELF 头、或有链接器没解析掉的跳转，都会**报错退出、不产出文件**（防止把坏 BootROM 烧进板子）。
 
 ## build_run.py — 一键构建 + 上板运行
 
@@ -72,7 +67,7 @@ python tools/build_run.py demos/nolibc/breathing --no-listen
 python tools/build_run.py demos/nolibc/breathing --no-reset
 ```
 
-构建参数（`--newlib` / `--clang` / `--clang-extra` / `--ld-extra` / `--lld` / `--rtthread` / `--rtthread-version` / `--irq-mode` / `--opt` / `--debug` / `--extra`）透传 build.py，运行参数（`--port` / `--baud` / `--idle-timeout`（默认 3s） / `--timeout` / `--until` / `--log` / `--no-reset` / `--no-listen`）透传 uart_send.py。产物命名与 build.py 一致（默认 Os → `<demo>_os.uartbin`；`--opt O2` → `<demo>_o2.uartbin`；`--clang` → `<demo>_clang_<opt>.uartbin`）。
+构建参数（`--newlib` / `--clang` / `--clang-extra` / `--ld-extra` / `--lld` / `--rtthread` / `--rtthread-version` / `--irq-mode` / `--opt` / `--debug` / `--extra`）透传 build.py，运行参数（`--port` / `--baud` / `--idle-timeout`（默认 3s） / `--timeout` / `--until` / `--early-warn`（0 字节超 N 秒打印一次挂死/不匹配诊断，默认 6s） / `--log` / `--no-reset` / `--no-listen`）透传 uart_send.py。产物命名与 build.py 一致（默认 Os → `<demo>_os.uartbin`；`--opt O2` → `<demo>_o2.uartbin`；`--clang` → `<demo>_clang_<opt>.uartbin`）。
 
 ## build_riscv_tests.py — riscv-tests 编译
 
@@ -84,7 +79,7 @@ git clone https://github.com/riscv/riscv-tests.git third_party/riscv-tests
 
 构建以 `SDK/isa` 为工作目录，`third_party/riscv-tests` 只作为第三方源码来源（路径可用环境变量 `RISCV_TESTS_SRC` 覆盖）：
 
-- `SDK/isa/env/`（`link.ld`、`riscv_test.h`、`encoding.h`）是仓库内维护的 BD32 测试环境，随仓库提交；
+- `SDK/isa/env/`（`link.ld`、`riscv_test.h`、`ending.h`）是仓库内维护的 BD32 测试环境，随仓库提交；
 - `SDK/isa/rv32ui`、`rv32um`、`rv64ui`、`macros` 是可再生成的官方源码与宏（不入库），缺失时脚本自动从 `third_party/riscv-tests/isa/` 复制补齐；`build_asm.py`（custom_asm）首次运行也会做同样处理。
 
 其中 `riscv_test.h` 基于官方版本精简：去掉 PMP/SATP/陷阱向量等特权初始化，pass/fail 上报改为 x26/x27 以匹配 tb_core_top 判定；CSR/异常编码使用官方 `env/encoding.h`。
@@ -103,12 +98,11 @@ python tools/build_riscv_tests.py --clang  # Clang 汇编
 
 ### 体积优化总览（三种途径可叠加）
 
-1. **picolibc 精简 C 库**（`--picolibc`）——整数 printf 档，比 newlib-nano 小 34%~55%，CoreMark 小 32%；
-2. **LLVM LTO**（`--clang --lld`，`-flto`）——跨文件优化，CoreMark 再小 4%~6%，是体积优化的主力；
-3. **ICF 相同代码折叠**（`--lld`，`--icf=all`）——折叠完全相同的代码段（CoreMark 重复代码少，收益有限；
-   对模板/库代码密集场景收益更大）。
+1. **picolibc 精简 C 库**（`--picolibc`）——整数 printf 档，比 newlib-nano 小30%-60%；
+1. **LLVM LTO**（`--clang --lld`，`-flto`）——跨文件优化，可以再减小约 5%，是体积优化的主力；
+1. **ICF 相同代码折叠**（`--lld`，`--icf=all`）——折叠完全相同的代码段（对模板/库代码密集场景收益更大）。
 
-**链接器选择**：默认（含 `--clang`）由 xPack GCC 驱动调用 **GNU ld** 链接**只有加 `--lld` 时才改用 LLVM 的链接器（`ld.lld`）**——配合 `--clang` 的 `-flto` 启用 LTO，并始终开启 `--icf=all`。纯 GCC对象也可用 `--lld`（ICF 生效、无 LTO）。
+**链接器选择**：默认（含 `--clang`）由 xPack GCC 驱动调用 `GNU ld` 链接，只有加 `--lld` 时才改用 LLVM 的链接器`ld.lld`——配合 `--clang` 的 `-flto` 启用 LTO，并始终开启 `--icf=all`。纯 GCC对象也可用 `--lld`（ICF 生效、无 LTO）。
 
 极致最小组合：
 
@@ -127,7 +121,7 @@ python tools/build.py demos/newlib/coremark --picolibc --clang --lld
 | Clang `-Os`（picolibc） | 2921 |
 | **Clang `-Os --lld`（picolibc，LTO+ICF）** | **2739** |
 
-注意：`--lld` 建议与 `-Os`/`-Oz` 搭配——LTO 在 O1/O2/O3 档内联激进，体积可能会反增（数据见下「CoreMark 23 配置自动对比」的 LLD 变体）。
+注意：`--lld` 建议与 `-Os`/`-Oz` 搭配——LTO 在 O1/O2/O3 档内联激进，体积可能会反增。
 
 ### 三个体积优化开关
 
@@ -181,7 +175,7 @@ python tools/auto_coremark.py --compiler gcc --opt o2  # 只跑单个配置
 python tools/auto_coremark.py --xlsx <输出路径>      # 自定义 Excel 路径
 ```
 
-## HPM 性能计数器（固件视角，2026-09-18 规范化版）
+## HPM 性能计数器（固件视角）
 
 计数器走**标准 RISC-V 地址**，复位即全计数（零配置），软件只需在需要时停止/清零。
 
@@ -199,11 +193,8 @@ python tools/auto_coremark.py --xlsx <输出路径>      # 自定义 Excel 路�
 
 ### 门控与清零语义
 
-- **计数门控 = mcountinhibit(0x320)**，位号 = 计数器号（0=mcycle、2=minstret、
-  3-17=mhpmcounter3-17）；复位全 0 即全计数，写 1 停对应计数器。
-  WARL：只有位 0/2/3-17 可写。mcounteren 不存在（未实现 S/U 态）。
-- **mcounterclr(0xBC0) 按位写 1 清零**，单拍脉冲语义：写后下一拍自动归零，
-  不会把计数器钉住。0xBC0 可读回。注意：低位是 0 的写不清对应计数器。
+- **计数门控 = mcountinhibit(0x320)**，位号 = 计数器号（0=mcycle、2=minstret、3-17=mhpmcounter3-17）；**复位值全 0 = 上电即全计数**（刻意设计：BootROM 测频依赖 mcycle 复位后自动计数，若复位为停，启动代码必须先配置 CSR 才能测频；性能分析一律用窗口差值，上电段多计不影响口径），写 1 停对应计数器。WARL：只有位 0/2/3-17 可写。
+- **mcounterclr(0xBC0) 按位写 1 清零**，单拍脉冲语义：写后下一拍自动归零，不会把计数器钉住。0xBC0 可读回。
 - 停顿计数器（0xB0F-0xB11）为周期型：不依赖指令退休，仅受 mcountinhibit 门控。
 
 ### 固件用法示例
@@ -224,12 +215,9 @@ uint32_t ins = read_csr(CSR_MINSTRET) - i0;
 // CPI = cyc / ins；停顿归因读 0xB0F/0xB10/0xB11（同窗口差值）
 ```
 
-要点（踩过的坑，详见 CHANGELOG/文档）：
-- **读差值口径**：做窗口测量时起止都要读，别拿复位以来绝对值当窗口值
-  （否则 BootROM/启动代码全被计入）。
-- **读 CSR 自身会 +1**：窗口内每次 `csrr` 也退休、也被计数，精确对账按 K+1。
-- CoreMark 移植层（`core_main.c`）已有完整示例：窗口差值 + 全类计数 +
-  停顿归因 + 类和==minstret 自检；对账若失配说明计数语义回归了。
+要点：
+- **读差值口径**：做窗口测量时起止都要读，别拿复位以来绝对值当窗口值（否则 BootROM/启动代码全被计入）。- **读 CSR 自身会 +1**：窗口内每次 `csrr` 也退休、也被计数，精确对账按 K+1。
+- **CoreMark 移植层（`core_main.c`）有可直接照抄的完整测量示例**：测量前后各读一次计数器取差值；除总周期/指令数外，把 ALU/访存/分支/乘除等每一类指令分别计数，并读停顿计数器（0xB0F-0xB11）做归因。它自带一个**自检**：所有分类计数相加必须等于 minstret（实际退休的指令总数）——对不上就说明 HPM 的计数语义变了（通常是 RTL 改动引入的回归），先把计数器修对再相信测量数字。
 
 ## MROM 构建
 
@@ -237,7 +225,7 @@ uint32_t ins = read_csr(CSR_MINSTRET) - i0;
 bash test_data/soc/build_mrom.sh
 ```
 
-MROM（0x00000000，4KB）负责：设置 mcounteren → 测量 CPU 主频 → 计算 UART NCO 系数 → 跳转 ITCM 执行用户程序。
+MROM（0x00000000，4KB）负责：上电测量 CPU 主频 → 计算 UART NCO 系数 → 跳转 ITCM 执行用户程序。
 
 ## uartbin 下载协议
 
@@ -276,9 +264,7 @@ BD32 内置 RT-Thread 双版本移植（lts-v3.1.x / v5.1.0），两种中断模
 
 RISC-V 机器模式中断编码（`mcause[11:0]`）中本移植用到三种：
 
-- **3 号 = 机器软件中断（MSI）**：由 CLINT `msip` 触发，RT-Thread 用它请求"延迟切换"（PendSV 角色）；
-- **7 号 = 机器定时器中断（MTI）**：由 CLINT `mtime ≥ mtimecmp` 触发，驱动 1ms 系统 tick；
-- **11 号 = 机器外部中断（MEI）**：由 PLIC 转发外设中断（UART / GPIO / Timer 等）。
+- **3 号 = 机器软件中断（MSI）**：由 CLINT `msip` 触发，RT-Thread 用它请求"延迟切换"（PendSV 角色）；- **7 号 = 机器定时器中断（MTI）**：由 CLINT `mtime ≥ mtimecmp` 触发，驱动 1ms 系统 tick；- **11 号 = 机器外部中断（MEI）**：由 PLIC 转发外设中断（UART / GPIO / Timer 等）。
 
 | 模式 | 工作方式 | 优点 | 缺点 | 适用场景 |
 |---|---|---|---|---|
@@ -312,7 +298,7 @@ python SDK/tools/uart_send.py test_data/soc/c/rtthread51_os.uartbin --port COM8 
 python SDK/tools/uart_send.py test_data/soc/c/rtthread51_picolibc_os.uartbin --port COM8 --reset --idle-timeout 5
 ```
 
-四个组合也各有一键仿真脚本 `script/soc_test/run_rtthread_sim.bat` / `run_rtthread_sim315_pico.bat` / `run_rtthread_sim51.bat` / `run_rtthread_sim51_pico.bat`（输出 `logs/rtthread_sim*_out.txt`）；也可用 `python tools/build_run.py demos/rtthread --rtthread [--picolibc]` 一键构建 + 上板运行。串口输出 RT-Thread banner 后 t1/t2 持续交替打印即验证通过，仿真窗口取 80ms（soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 `mdelay` 唤醒以确认轮转稳定）。
+四个组合也各有一键仿真脚本 `script/soc_test/run_rtthread_sim.bat` / `run_rtthread_sim315_pico.bat` / `run_rtthread_sim51.bat` / `run_rtthread_sim51_pico.bat`（输出 `logs/rtthread_sim*_out.txt`）；也可用 `python tools/build_run.py demos/rtthread --rtthread [--picolibc]` 一键构建 + 上板运行。串口输出 RT-Thread banner 后 t1/t2 持续交替打印即验证通过，仿真窗口取 80ms（soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 `mdelay` 毫秒延时唤醒以确认轮转稳定）。
 
 ### picolibc 适配
 

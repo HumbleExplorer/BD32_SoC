@@ -1,0 +1,26 @@
+{
+  "schema": "frontend-spec-review/stage2",
+  "reviewed_inputs": ["doc/stage1_spec_extraction.json", "doc/architecture.md", "doc/peripherals.md", "doc/sdk.md", "rtl 接线复核"],
+  "consistent_facts": [
+    "memory map 三处文档（architecture/peripherals/提取）地址完全一致，无重叠；预留区（SPI/I2C/Flash/DDR）与错误从机兜底一致",
+    "ITCM/DTCM 64KB（16K 字 ×4B）与 SoC_Config 定义一致",
+    "中断优先级（外部 > 软件 > 定时）与调试旁路描述一致",
+    "mtime 1 tick = 1µs 与 clk_div_static 50MHz/50=1MHz 一致（bsp delay_us、BootROM 测频依赖成立）",
+    "TIMER_WIDTH=16、GPIO INPUT_STAGES=2、PLIC 16 源/7 级优先/1 目标 参数核实一致",
+    "GPIO 全寄存器复位 0；TR_STAT=W1C、BOP_SET/CLR=WO 原子、INPUT=RO",
+    "UART 复位值 LCR=0x03(8N1)/FCR=0xC0/IIR=0xC1/LSR=0x60/FCW=0；LSR bit0-4 读清副作用与 16550 惯例一致",
+    "HPM 寄存器组（sdk.md）复位/访问语义与 CSR_Reg_Access 一致"
+  ],
+  "blocking_issues": [],
+  "risky_assumptions": [
+    {"id": "R1", "issue": "CLINT.sv 与 mrom.s 注释称 1MHz 由 16MHz 分频产生，实际接线为板级 50MHz/50（clk_div_static DIV_NUM=50，clk_wiz PRIM_IN_FREQ=50 实证）", "resolution": "注释已修正为 50MHz/50；输出频率 1MHz 不受影响，BootROM/bsp 行为不变", "status": "resolved"},
+    {"id": "R2", "issue": "mtimecmp 复位 0 意味着 mtime≥mtimecmp 复位即真——复位后定时器中断恒挂起，仅靠 mie[7] 复位 0 屏蔽；软件使能 mie[7] 前必须先写 mtimecmp", "resolution": "行为事实（非 bug），spec 已显式记载并给出软件约束", "status": "documented"},
+    {"id": "R3", "issue": "PLIC gateway 对边沿源在目标未 Claim 前的再次触发行为（重锁存 vs 丢弃）RTL 层有实现但 spec 未描述", "resolution": "列入 spec 开放问题，建议软件层避免依赖边沿重触发", "status": "open"}
+  ],
+  "sw_visible_behavior_check": [
+    "LSR 读清副作用、FCR 自清位、Claim/Complete 同址异义、TR_STAT W1C+硬件置位、mtime 影子只读——全部单侧出现于提取，与既有文档无冲突，已进 spec",
+    "DBG_EN 只写/DBG_STAT 只读 握手契约与 sdk.md 下载协议一致"
+  ],
+  "readiness_decision": "ready（无 blocking；R1 已修，R2/R3 已显式记载）",
+  "recommended_next_step": "mcu-spec-architecture-planning 落 doc/spec.md 并增补 architecture.md 时钟/复位/集成三节"
+}

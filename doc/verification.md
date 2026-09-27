@@ -2,6 +2,7 @@
 
 > 完整验证流程：构建 → 仿真 → 上板 → 基准/差分测试 → 回归建议。
 > 环境依赖与工具安装见 README「快速开始-环境准备」；构建工具与协议见 [SDK 构建工具与协议](sdk.md)；RT-Thread 应用开发（版本、中断模式、编程模板）见 sdk.md「RT-Thread 应用开发」。
+> 验证项矩阵与路线图（已覆盖/缺口/未来计划）见 [验证计划](verification_plan.md)；本手册只讲各脚本的运行方式与作用。
 
 ## 构建固件与测试
 
@@ -10,7 +11,7 @@
 ```bash
 cd test_data/custom_asm
 python build_asm.py <test_name>    # 单个测试
-python build_asm.py all            # 全部 51 个测试
+python build_asm.py all            # 全部 52 个测试
 ```
 
 编译参数：`-march=rv32im -mabi=ilp32 -O0 -mno-relax -nostdlib -static`；产物 `.elf` / `.dump` / `.dat`（readmemh 字流）。
@@ -30,12 +31,12 @@ python tools/build.py demos/newlib/coremark --newlib --opt O2
 python tools/build.py demos/newlib/coremark --newlib --opt O3
 
 # 极致体积：Clang + LLD（LTO + ICF），当前最小配置（详见 sdk.md「LLVM/Clang 集成与代码体积优化」）
-python tools/build.py demos/newlib/coremark --newlib --clang --lld
+python tools/build.py demos/newlib/coremark --picolibc --clang --lld
 ```
 
 产物：`.elf`、`.dump`、`*_itcm.mem`、`*_dtcm.mem`、`.uartbin`（CoreMark 文件名含 `_o2`/`_o3` 后缀），默认 Os 构建的 uartbin 带 `_os` 后缀（如 `hello_os.uartbin`）。
 
-> C 库统一使用 **newlib-nano**（`-specs=nano.specs` 精简版，`printf`/`malloc` 可用）；`--newlib` 与 `--rtthread` 均链接 newlib-nano。
+> C 库默认使用 **newlib-nano**（`-specs=nano.specs` 精简版，`printf`/`malloc` 可用），可通过--picolibc用picolibc；`--newlib` 与 `--rtthread` 均链接 newlib-nano。
 
 ### RT-Thread 程序
 
@@ -56,12 +57,12 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 
 | 套件 | 顶层 | 运行 | 判定 |
 |---|---|---|---|
-| custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 51/51 全过（memstress 由脚本注入 timer 中断激励；+stall_test 停顿计数器/MULDIV、hpm_audit_test 供 TB 审计对账） |
+| custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 52/52 全过（自定义压力测试） |
 | riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 51/51 全过（含 fence_i / ma_data / rvc） |
 | Debug 模块 | tb_debug | `script/debug_test/run_msim_debug.bat` | 94 PASS / 0 FAIL |
-| 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过（PLIC 52 项） |
+| 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过 |
 | SoC | tb_soc_top | `script/run_soc_test.bat` | 默认程序启动输出无异常 |
-| RT-Thread | tb_soc_top | `script/soc_test/rtthread_sim*.do`（含 `rtthread_sim315_pico.do` / `rtthread_sim51_pico.do`） | lts-v3.1.x / v5.1.0 × newlib / picolibc，80ms，banner + t1/t2 轮转、无 ERR |
+| RT-Thread | tb_soc_top | `script/soc_test/rtthread_sim*.do`（含 `rtthread_sim315_pico.do` / `rtthread_sim51_pico.do`） | lts-v3.1.x / v5.1.0 × newlib / picolibc，多任务并发运行 |
 
 ### 运行方式
 
@@ -73,14 +74,14 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
   ```bash
   cd script
   python run_one.py <test_name>              # 单个 custom_asm 测试
-  python run_all_custom_asm.py               # custom_asm 全回归（51 项）
+  python run_all_custom_asm.py               # custom_asm 全回归（52 项）
   python run_hpm_audit.py                    # HPM 审计：参考模型逐项对账（HPM AUDIT: ALL PASS）
-  cd script/soc_test && vsim -batch -do uart_lsr_verify.do   # UART TX 流量下 L2 断言专项（0 SVA Error）
-  cd script/soc_test && vsim -batch -do rtthread_sim_sys.do  # RT-Thread + ASSERT_SYS 系统级哨兵
   python run_all_riscv_tests.py              # riscv-tests 回归（51 项）
   ```
-  判定约定：x26=1 完成、x27=1 通过、x3(gp) 记录失败子测试编号。riscv-tests 中 `rv32ui-p-fence_i`（自修改代码：ITCM 字节写 + FENCE.I 冲刷取指路径）与 `rv32ui-p-ma_data`（非对齐访存：DTCM/总线拆分为两次对齐访问）均已通过。**SVA 判据（2026-09-14 起生效）**：回归脚本对 `** Error: [SVA]` 优先判 FAIL（先于功能 PASS 判据）——PASS 现在隐含"0 断言触发"。
+  **判定约定**：x26=1 完成、x27=1 通过、x3(gp) 记录失败子测试编号。
 
+  SVA 回归判据见「SVA 断言体系」章节。
+  
 - **SoC 级（tb_soc_top）**：一键 `run_soc_test.bat`（输出 `logs/soc_test_out.txt`），或手动：
   
   ```bash
@@ -98,11 +99,7 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
   vsim -batch -do "do rtthread_sim51.do"           # v5.1.0 newlib：加载 rtthread51_os_*.mem
   vsim -batch -do "do rtthread_sim51_pico.do"      # v5.1.0 + picolibc：加载 rtthread51_picolibc_os_*.mem
   ```
-  `rtthread_sim*.do` 通过 `+define+ITCM_FILE/DTCM_FILE` 加载 `test_data/soc/c/rtthread*_os_*.mem`（构建产物自动同步，中断模式不影响产物名），输出 RT-Thread banner + t1/t2 交替即通过。仿真窗口取 80ms：soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮 mdelay 唤醒以确认轮转稳定。
-
-  中断/调度压力回归：`vsim -batch -do "do rtthread_sim_fasttick.do"` 将 CLINT tick 提速到 35.7MHz（正常 1MHz），高频中断下压测上下文切换与中断边界；输出同上（0 SERR + t1/t2 交替）。
-
-  疑难定位：`rtthread_sim_fail_trace.do`（先 `run 60ms` 再开 VCD——全量 dump 会被 1GB 上限截断在约 40ms 处，故障窗口丢失）+ `parse_fail_window.py`（按 clk 上升沿采样重建故障前数据通路表，含 pc/inst_ex/访存地址/读数据/rvalid/MEM_WB 写回/stall-flush 全列）。
+  `rtthread_sim*.do` 通过 `+define+ITCM_FILE/DTCM_FILE` 加载 `test_data/soc/c/rtthread*_os_*.mem`（构建产物自动同步，中断模式不影响产物名），输出 RT-Thread 启动横幅及 t1/t2 双线程交替打印即通过。仿真窗口取 80ms：soc_init 频率测量约占 10ms、UART 打印约占 11ms，需覆盖至少两轮线程延时唤醒以确认轮转稳定。
 
 - **Debug**：`script/debug_test/run_msim_debug.bat`（94 项回归，输出 `logs/msim_out.txt`）。
 
@@ -135,7 +132,7 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 |------|----------|------|------|
 | `core_test/` | 核级 tb_core_top | `run.do`（GUI）；`core_run_batch.do` / `run_core.do`（batch）；`top_tb.bat`（GUI 启动） | custom_asm / riscv-tests 由根目录 Python 脚本驱动 |
 | `debug_test/` | 调试模块 tb_debug | `run.do`（GUI）；`run_msim_debug.bat`（headless 回归，输出 `logs/msim_out.txt`）；`run_batch.do` | Debug Spec 全功能 94 项回归（默认加载 breathing，可用 `BD32_ITCM_FILE` / `BD32_DTCM_FILE` 环境变量指定 .mem） |
-| `soc_test/` | SoC 级 tb_soc_top | `top_tb.bat`（GUI 启动）；`run.do`（主仿真）；`run_diag.do`（MROM 启动诊断）；`run_reset_test.do` / `run_reset_fast.do`（复位后重新下载）；`run_bus_timeout_test.do` / `run_bus_timeout_fast.do`（总线超时） | 各自带波形配置，batch 场景加 `quit -f` |
+| `soc_test/` | SoC 级 tb_soc_top | `top_tb.bat`（GUI 启动）；`run.do`（主仿真） | 各自带波形配置，batch 场景加 `quit -f`；复位/总线超时/诊断等专项脚本见目录内同名 .do |
 | `gpio_test/` `plic_test/` `timer_test/` `uart_test/` | 外设独立 tb_apb_* | `run.do`（GUI）；`top_tb.bat` | 独立于 CPU 的外设仿真 |
 
 说明：
@@ -173,11 +170,7 @@ Vivado 工程位于 `BD32_SoC/`，目标器件 **Xilinx ZYNQ-7020（xc7z020clg40
 
 OpenOCD（JTAG 与复位）通过 libusb 访问 FT2232H，Windows 上需把 Channel A 绑定为 WinUSB 驱动。用 [Zadig](https://zadig.akeo.ie/) 操作一次即可，之后保持 WinUSB 无需再切换：
 
-1. 下载并运行 Zadig（免安装绿色工具）。
-2. 菜单 **Options → List All Devices**，在下拉框选择 **Dual RS232-HS (Interface 0)**（VID:PID = `0403:6010`）。FT2232H 有两个接口，务必选 **Interface 0 / Channel A**。
-3. 右侧目标驱动选择 **WinUSB**（若已显示 WinUSB，说明已绑定，直接关闭即可）。
-4. 点击 **Replace Driver**，完成后在设备管理器确认 Channel A 显示为 WinUSB 设备。
-5. 重新插拔调试器（或重新枚举），确认 OpenOCD 可正常连接。
+1. 下载并运行 Zadig（免安装绿色工具）。2. 菜单 **Options → List All Devices**，在下拉框选择 **Dual RS232-HS (Interface 0)**（VID:PID = `0403:6010`）。FT2232H 有两个接口，务必选 **Interface 0 / Channel A**。3. 右侧目标驱动选择 **WinUSB**（若已显示 WinUSB，说明已绑定，直接关闭即可）。4. 点击 **Replace Driver**，完成后在设备管理器确认 Channel A 显示为 WinUSB 设备。5. 重新插拔调试器（或重新枚举），确认 OpenOCD 可正常连接。
 
 注意事项：
 - 只改 FT2232H Channel A（`0403:6010` 接口 0）；**不要**给 CH340（`1A86:7523`，串口）换驱动，它保持 VCP 即可。
@@ -208,6 +201,8 @@ python tools/fpga_reset.py --release
 原理：FT2232H Channel A 提供 8 根通用 GPIO（ADBUS0~7），可设为 bit-bang（位带）模式，由软件逐位控制电平。复位用的是 **ADBUS5**（bit5 = 0x20），在 Sipeed RV-Debugger 上接到 FPGA 复位脚 `dbg_rst`（高有效）：写 `0x20` 拉高触发复位，写 `0x00` 释放。FPGA 端复位逻辑：`rst_async_n = sys_rst_n && (~dbg_rst) && clk_wiz_locked`。
 
 ### 程序烧录与串口工具
+
+> ⚠️ DTR/RTS 不使用：串口保持默认电平直接打开，不要连接/翻转该模式；下载卡死时先 `kill_listener.ps1` 释放 COM 口。
 
 **一键构建 + 运行（build_run.py）**——构建固件 → 复位 → 下载 → 监听输出，一条命令完成（SDK/ 目录下执行；参数透传 build.py 与 uart_send.py，详见 sdk.md）：
 
@@ -338,24 +333,23 @@ python tools/uart_cmd.py "hi" --idle-timeout 3
 | GDB 在线 watchpoint | `run_gdb_watchpoint.bat`（管道模式） | PASS |
 | GDB 套件 / demo | `run_gdb_debug_test.bat` / `run_demo_debug.bat`（socket） | PASS |
 | CoreMark | `auto_coremark.py` | CRC 通过 |
-| RT-Thread demo | `uart_send.py` 下载 + 串口监听 | lts-v3.1.x / v5.1.0 × ch32 / unified 四组合（lts-v3.1.x + picolibc 已上板验证），banner + t1/t2 持续轮转、无 SERR |
-| uart_echo 全流程 | `uart_send.py` 下载 + 收发校验 | 下载 → banner → 发送回显一致 → 回车打印 Done! |
+| RT-Thread demo | `uart_send.py` 下载 + 串口监听 | lts-v3.1.x / v5.1.0 × ch32 / unified 四组合（lts-v3.1.x + picolibc 已上板验证），启动横幅 + t1/t2 持续轮转、无 SERR |
+| uart_echo 全流程 | `uart_send.py` 下载 + 收发校验 | 下载 → 启动横幅 → 发送回显一致 → 回车打印 Done! |
 
-### 板上 soak 长稳（2026-09-14 新增）
+### 板上长稳测试（soak）
 
-RT-Thread 固件烧入后无人值守长跑，UART 监听器全程抓取并以 SERR marker 判失败：
+RT-Thread 固件烧入后无人值守长跑，UART 监听器全程抓取输出判失败。**SERR**（system error）= 板上双提交哨兵检测到"同一条指令被写回两次"等系统级状态破坏时打印的错误标记，出现即失败：
 
-```bat
-script\soc_test\soak_start.bat        :: 启动后台监听（参数=小时数）
-script\soc_test\soak_report.bat       :: 8 点报告（t1/t2 计数、SERR 次数、结论）
-script\soc_test\check_soak_proc.ps1   :: 监听器存活检查
-script\soc_test\kill_listener.ps1     :: 释放 COM 口（重新下载前必跑）
-```
+| 脚本（`script/soc_test/`） | 作用 |
+|---|---|
+| `soak_start.bat <小时数>` | 启动后台串口监听，持续记录 UART 输出到 `logs/soak_uart.log` |
+| `soak_report.bat` | 生成统计报告：t1/t2 打印计数、错误次数、通过结论 |
+| `check_soak_proc.ps1` | 检查监听进程是否存活 |
+| `kill_listener.ps1` | 结束监听并释放 COM 口（重新下载固件前必跑） |
 
-- 判据：`logs/soak_uart.log` 中 t1/t2 持续交替、`SERR` 出现 0 次、`soak_SERR_FOUND.marker` 不存在；报告写入 `logs/soak_report_8am.txt`。
-- 基线：12 小时 110 万行 t1/t2 交替、0 SERR（2026-09-14，62.5MHz 比特流）。
+- 判据：`logs/soak_uart.log` 中 t1/t2 持续交替、`SERR` 出现 0 次、`soak_SERR_FOUND.marker` 不存在；报告写入 `logs/soak_report.txt`。
+- 基线：12 小时  t1/t2 交替、0 SERR（62.5MHz 比特流）。
 
-> ⚠️ **CH340 DTR 双向约束**：板载 CH340 的 DTR/RTS 接复位/下载电路。**裸 `serial.Serial(port).open()` 的 DTR 脉冲会把板子复位进 BootROM 下载等待**（全程静默假死）；而 `dtr=False` 的"安全打开"对该板同样无数据——板子对 DTR 电平敏感。串口工具一律用**默认电平直接 open**（uart_send/uart_recv/soak 监听器均已按此实现）；下载卡死时先 `kill_listener.ps1` 释放 COM 口再重来。
 
 ## CoreMark 基准
 
@@ -406,10 +400,7 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 
 ### 对比方法
 
-1. **预处理**：RTL trace 中流水线 stall 会导致同一条写回重复记录多个周期，需先去除连续重复项；
-2. **对齐**：RTL 会执行 BootROM 代码（Spike 不执行），需跳过 RTL trace 开头的 boot 段；
-3. **乱序处理**：OITF 使长指令（MUL/DIV）乱序退休，RTL trace 中写回顺序与 Spike 不完全一致，使用 lookahead 窗口（8~16 条）进行模糊匹配；
-4. **定位**：第一个无法匹配的写回即为 bug 的入口点，后续所有差异都是连锁反应。
+1. **预处理**：RTL trace 中流水线 stall 会导致同一条写回重复记录多个周期，需先去除连续重复项；2. **对齐**：RTL 会执行 BootROM 代码（Spike 不执行），需跳过 RTL trace 开头的 boot 段；3. **乱序处理**：OITF 使长指令（MUL/DIV）乱序退休，RTL trace 中写回顺序与 Spike 不完全一致，使用 lookahead 窗口（8~16 条）进行模糊匹配；4. **定位**：第一个无法匹配的写回即为 bug 的入口点，后续所有差异都是连锁反应。
 
 ### 典型调试流程
 
@@ -422,59 +413,90 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 
 ## SVA 断言体系（L1/L2/L3）
 
-按"局部不变式内联、跨模块哨兵 bind、分层宏使能"组织的仿真断言体系（2026-09-14 落地 P0–P2）。
+按"局部不变式内联、跨模块哨兵 bind、分层宏使能"组织的仿真断言体系。
 
 **分层与使能宏**：
 
 | 层 | 使能方式 | 内容 |
 |----|----------|------|
 | L1 核心合同 | 常驻（仅 `ifndef SYNTHESIS` 守卫，回归默认开启） | 各模块局部不变式，`a_` 前缀标签写在模块尾部断言区 |
-| L2 模块级深化 | `+define+ASSERT_MODULE` | 按需深跑（目前大部分仅规划，未铺满） |
+| L2 模块级深化 | `+define+ASSERT_MODULE` | 覆盖清单全部 18 模块已铺满，专项入口 0 SVA Error（见下） |
 | L3 系统级哨兵 | `+define+ASSERT_SYS` | `rtl/assert/bind_core.sv` bind 到 RISC_V_Core：中断接受双提交哨兵（mepc 记录 vs pc_wb）、退休唯一性 |
 
-**文件组织**：局部不变式内联在各模块尾部统一断言区；跨模块/带状态哨兵放
-`rtl/assert/bind_core.sv`（L3）与 `rtl/assert/bind_apb.sv`（bind 到 CLINT/PLIC/UART/
-TIMER/GPIO 五个从机的 APB 协议检查——SETUP→ACCESS 时序、等待期稳定、有界完成，
-L1 常驻；头部契约：只许加入编译全部从机的环境，核级 filelist 因此显式列 bind_core
-而非 glob）。断言失败统一 `$error("[SVA][模块名]")` 前缀。
+**文件组织**：局部不变式内联在各模块尾部统一断言区；跨模块/带状态哨兵放 `rtl/assert/bind_core.sv`（L3）与 `rtl/assert/bind_apb.sv`（bind 到 CLINT/PLIC/UART/TIMER/GPIO 五个从机的 APB 协议检查——SETUP→ACCESS 时序、等待期稳定、有界完成，L1 常驻；头部契约：只许加入编译全部从机的环境，核级 filelist 因此显式列 bind_core 而非 glob）。断言失败统一 `$error("[SVA][模块名]")` 前缀。
 
-**覆盖清单**（内联断言分布约 12 个模块）：Pipeline_Ctrl（中断接受三契约）、
-CSR_Reg_Access（陷阱码哨兵 + 中断 mcause 编码）、Mem_Access（rvalid 端口稳定/仲裁
-互斥/拆分 FSM 4096 拍无卡死）、RegFile（x0 恒 0）、ID_EX/EX_MEM/MEM_WB（flush 清/
-stall 保持）、IFU_Buffer（16 位对齐/重定向清窗）、OITF、Zcmp_Expander（busy 语义）、
-DTCM（WRITE_FIRST 读回）、CLINT、AXI_Lite_Master（握手稳定性）。排除：BootROM（静态
-ROM）、RVC_Expander（riscv-tests 覆盖）、clk_wiz（Xilinx IP）。
+**覆盖清单**（内联断言分布约 12 个模块）：Pipeline_Ctrl（中断接受三契约）、CSR_Reg_Access（陷阱码哨兵 + 中断 mcause 编码）、Mem_Access（rvalid 端口稳定/仲裁互斥/拆分 FSM 4096 拍无卡死）、RegFile（x0 恒 0）、ID_EX/EX_MEM/MEM_WB（flush 清/stall 保持）、IFU_Buffer（16 位对齐/重定向清窗）、OITF、Zcmp_Expander（busy 语义）、DTCM（WRITE_FIRST 读回）、CLINT、AXI_Lite_Master（握手稳定性）。排除：BootROM（静态 ROM）、RVC_Expander（riscv-tests 覆盖）、clk_wiz（Xilinx IP）。
 
-**回归判据**：run_all_custom_asm / run_all_riscv_tests 对 `** Error: [SVA]` 优先判
-FAIL（先于功能 PASS 判据），PASS 隐含 0 断言触发。
+**回归判据**：run_all_custom_asm / run_all_riscv_tests 对 `Error: [SVA]` 优先判 FAIL（先于功能 PASS 判据），PASS 隐含 0 断言触发。
 
-**专项入口**：断言压力注入 `script/core_test/sva_verify.do`（memstress + timer_int）；
-系统级哨兵 `script/soc_test/rtthread_sim_sys.do`（+define+ASSERT_SYS）。
+**专项入口**（SoC 级/系统级，不在核级清单）：L2 用 `script/core_test/sva_verify.do` 与 `script/soc_test/uart_lsr_verify.do`；L3 用 `script/soc_test/rtthread_sim_sys.do`。
 
-**写法约定**：新增断言请用 Yosys SVA 子集兼容写法（时钟取外层 always、`if` 守卫替代
-disable iff/蕴含、`$past` 替代 `|=>`），ModelSim 同样接受——约束清单见
-[property_plan_oitf.md](property_plan_oitf.md) "Yosys SVA/RTL 子集备忘"。
+**写法约定**：新增断言请用 Yosys SVA 子集兼容写法（时钟取外层 always、`if` 守卫替代 disable iff/蕴含、`$past` 替代 `|=>`），ModelSim 同样接受——Yosys 侧约束清单沉淀在 bd32-soc-workflow skill 的 Yosys SVA/RTL Subset Memo 节。
 
 ## 形式验证（SymbiYosys）
 
-SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。**已覆盖六模块全绿**
-（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer + Pipeline_Ctrl / CSR_Reg_Access，各
-bmc depth30-40 + abc-pdr 无界证明 + cover 全命中；IFU_Buffer 借此定位并修复 Zcmp 恢复
-路径窗口污染真 bug；2026-09-18 异常码输入放开后异常优先级表/哨兵/冲刷级映射不变式
-为无界真实证明，非空转），属性计划与落地记录见 [property_plan_oitf.md](property_plan_oitf.md)。
+SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。**已覆盖六模块全绿**（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer + Pipeline_Ctrl / CSR_Reg_Access，各 bmc depth30-40 + abc-pdr 无界证明 + cover 全命中），属性计划与落地记录见本章以下小节。
 
-```bat
+```bash
 call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat
 cd /d Working\rtl\assert\formal
-run_all_formal.bat                 :: 六模块 bmc/prove/cover 一键全跑
-sby -f oitf_formal.sby             :: 或单模块；指定单任务：sby -f oitf_formal.sby prove
+run_all_formal.bat                           # 六模块 bmc/prove/cover 一键全跑
+sby -f oitf_formal.sby prove                 # 单模块单任务示例（prove）
 ```
 
-要点（Windows 环境坑与 Yosys SVA 子集约束详见属性计划文档"落地结果"一节）：
+要点：
 - 必须经 `environment.bat` 启动（yosys 裸跑报 0xC0000139）；
 - OITF.sv 存储为按字段并行数组（Yosys 不支持结构体数组的下标访问，会产生隐式 wire 静默失真）；
-- 模块内 `ifdef FORMAL` 断言与仿真 SVA（`ifndef SYNTHESIS`）共用一套 Yosys 兼容写法，
-  ModelSim 同样接受。
+- 模块内 `ifdef FORMAL` 断言与仿真 SVA（`ifndef SYNTHESIS`）共用一套 Yosys 兼容写法，ModelSim 同样接受。
+
+- DUT: `rtl/Core/OITF.sv`（4 深 FIFO，跟踪 MUL/DIV 长周期指令的乱序完成、顺序退休）
+- 工具: SymbiYosys（BMC depth 30 + prove/k-归纳，引擎 abc pdr 与 smtbmc+yices 双跑）
+- 环境: 输入全部自由穷举（无输入协议假设），仅约束复位时序——最大化病理输入覆盖（wbck 无匹配条目、空 FIFO 退休、flush 与派发/退休同拍交织等均被穷举）
+
+### 属性组（按 skill 优先级）
+
+| 组 | 属性 | 优先级 | formal-ready |
+|----|------|--------|--------------|
+| A 复位 | 复位后 cnt=0、wr_ptr=rd_ptr=0、全条目 vld=0 | P1 | ✓ |
+| B FIFO 序不变式（核心） | 环形序上 [rd_ptr, rd_ptr+cnt) 范围条目 vld=1 且范围外 vld=0；retire 头部清除、派发尾部置位后不变式保持 | P1 | ✓ |
+| C 计数守恒 | cnt == vld 条目数；派发 +1 / 退休 -1 / flush 清零；cnt 永不超 DEPTH 不下溢 | P1 | ✓ |
+| D 指针范围 | wr_ptr / rd_ptr 恒 < DEPTH | P1 | ✓ |
+| E 冲刷 | flush 次拍 cnt=0 且 rd_ptr==wr_ptr 且全条目无效 | P1 | ✓ |
+| F 退休合法性 | retire_valid ⇔ 头部条目 vld&&ready；cnt==0 时恒无 retire | P1 | ✓ |
+| G RAW/WAW 停顿正确性 | oitf_stall ⟺ 派发阻塞（满/unit 忙）∨ RAW 命中 ∨ WAW 命中；命中解除当且仅当匹配条目退休 | P2 | ✓ |
+| H 退休数据一致性 | retire_rd_data == 头部条目 result（结构性）；独立重算 wbck 匹配对照（影子重算） | P2 | ✓（影子版） |
+| I 活性 | 派发的指令最终退休（需要 unit 进度假设，BMC 不覆盖，formal liveness 或仿真覆盖） | P3 | ✗ sim/cover |
+
+### formal-ready 与 sim-only 的切分
+
+- 全部 A-H 为安全属性（永真式），formal-ready ✓
+- I 活性（最终退休）需要 unit 进度假设，留给仿真 cover 压测- 仿真独有的值：CoreMark 端到端（真实程序下的组合爆炸，形式无法覆盖）
+
+### 假设清单（全部可审计）
+
+1. 复位时序：初始 1 拍 rst_n=0，此后恒 1（覆盖复位初始化属性组 A）2. **无输入协议假设**——lp_valid/wbck_valid/flush 全自由穷举 3. OITF 对"无匹配条目的 wbck_valid"按规格丢弃（flush 后单元残留完成），不设假设阻止此类输入
+
+### 求解器与深度
+
+- 引擎1: `abc pdr`（无需归纳不变式，对 FIFO 类设计极强）
+- 引擎2: `smtbmc yices`（对照）
+- depth: 30（4 深 FIFO 的填充/退休/flush 交错 ≈ 12 拍内全覆盖，30 拍含裕量）
+
+### 落地结果
+
+入口：`rtl/assert/formal/oitf_formal.sby`（bmc/prove/cover 三任务）+ `oitf_formal_top.sv` harness。运行方式（Windows 必须 cmd 环境）：
+
+```bash
+call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat
+cd /d Working\rtl\assert\formal
+sby -f oitf_formal.sby                       # 三任务全跑；单任务加任务名后缀
+```
+
+| 任务 | 引擎 | 结果 |
+|------|------|------|
+| bmc depth 30 | smtbmc | **PASS**（假设检查 + 全部断言 30 拍无反例） |
+| prove（无界） | abc pdr | **PASS**（PDR 自动归纳） |
+| cover depth 30 | smtbmc | **PASS**，3/3 命中（full@6、retire∩flush@4、disp∩retire@4） |
 
 ## 回归建议
 

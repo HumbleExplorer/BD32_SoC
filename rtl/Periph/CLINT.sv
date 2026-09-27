@@ -18,7 +18,7 @@ module CLINT #(
     output  logic   [DATA_WIDTH-1:0]    PRDATA,
     output  logic                       PREADY,
     output  logic                       PSLVERR,
-    // 1MHz timer clock（独立时钟域，由 clk_div_static 从 16MHz 分频产生）
+    // 1MHz timer clock（独立时钟域，由 clk_div_static 从板级 50MHz 分频产生）
     input   logic                       timer_clk_i,
     // to Core
     output  logic   [2*DATA_WIDTH-1:0]  mtime_shadow,// 只读影子

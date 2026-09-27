@@ -1,8 +1,8 @@
 # 外设编程指南
 
-所有外设挂载于 APB 总线（经 AXI-APB 桥），寄存器按 32-bit 字访问，地址以
-SoC 配置宏为准（见 `rtl/SoC_Config.sv`）。
-驱动代码参考 `SDK/bsp/drivers/`，demo 见 `SDK/demos/`。
+> 寄存器**复位值与访问类型**的权威表见 [spec.md](spec.md) §7；本章保留编程视角的偏移/功能速查。
+
+所有外设挂载于 APB 总线（经 AXI-APB 桥），寄存器按 32-bit 字访问，地址以 SoC 配置宏为准（见 `rtl/SoC_Config.sv`）。驱动代码参考 `SDK/bsp/drivers/`，demo 见 `SDK/demos/`。
 
 ## 地址映射
 
@@ -17,8 +17,7 @@ SoC 配置宏为准（见 `rtl/SoC_Config.sv`）。
 
 ## GPIO（apb_gpio.sv）
 
-支持推挽/开漏两种输出模式；每个引脚独立配置输入/输出方向；支持电平触发与
-边沿触发两种中断方式；输入数据采样不受方向寄存器影响（输入模式可读实际电平）。
+支持推挽/开漏两种输出模式；每个引脚独立配置输入/输出方向；支持电平触发与边沿触发两种中断方式；输入数据采样不受方向寄存器影响（输入模式可读实际电平）。
 
 | 偏移 | 寄存器 | 说明 |
 |---|---|---|
@@ -38,9 +37,7 @@ SoC 配置宏为准（见 `rtl/SoC_Config.sv`）。
 
 ## UART（apb_uart.sv + uart_rx/tx + uart_download）
 
-兼容 16550 寄存器布局，发送/接收各带 16 字节 FIFO；波特率由 NCO 发生器产生，
-`FCW = round(baud × 16 × 2^32 / Fclk)`，`Fclk` 为运行时实测主频
-（`soc_init()` 测量，见 `SDK/bsp/soc/soc.h`）。
+兼容 16550 寄存器布局，发送/接收各带 16 字节 FIFO；波特率由 NCO 发生器产生，`FCW = round(baud × 16 × 2^32 / Fclk)`，`Fclk` 为运行时实测主频（`soc_init()` 测量，见 `SDK/bsp/soc/soc.h`）。
 
 | 偏移 | DLAB=0 | DLAB=1 |
 |---|---|---|
@@ -55,17 +52,13 @@ SoC 配置宏为准（见 `rtl/SoC_Config.sv`）。
 | 0x20 | DBG_STATE / DBG_DONE（bit0=下载完成） | — |
 | 0x24 | FCW（NCO 频率控制字） | — |
 
-ITCM/DTCM 下载：帧头 `0xBBAABBAA`，随后 ITCM 指令个数与指令数据（每条 32 位
-小端 4 字节），再 DTCM 数据个数与数据；下载完成自动切换用户模式。
-协议细节见 [sdk.md](sdk.md)「uartbin 下载协议」。
+ITCM/DTCM 下载：帧头 `0xBBAABBAA`，随后 ITCM 指令个数与指令数据（每条 32 位小端 4 字节），再 DTCM 数据个数与数据；下载完成自动切换用户模式。协议细节见 [sdk.md](sdk.md)「uartbin 下载协议」。
 
 对应 demo：`uart_echo`（UART 全双工回显）、`hello`（newlib-nano 打印）。
 
 ## Timer（apb_timer.sv + basic_timer + timer_ic_oc）
 
-包含 1 个 16 位基本定时器（预分频/自动重载/递增递减）与 4 个输入捕获/输出比较
-通道。输出比较（PWM）模式：计数器与 CCR 匹配时产生可配置输出；输入捕获模式：
-检测外部引脚上升/下降/双沿并将计数器值锁存至 CCR。
+包含 1 个 16 位基本定时器（预分频/自动重载/递增递减）与 4 个输入捕获/输出比较通道。输出比较（PWM）模式：计数器与 CCR 匹配时产生可配置输出；输入捕获模式：检测外部引脚上升/下降/双沿并将计数器值锁存至 CCR。
 
 | 偏移 | 寄存器 | 说明 |
 |---|---|---|
@@ -83,8 +76,7 @@ ITCM/DTCM 下载：帧头 `0xBBAABBAA`，随后 ITCM 指令个数与指令数据
 
 ## CLINT（CLINT.sv）
 
-核本地中断控制器，管理软件中断（msip）与定时器中断（mtime，mtimecmp）。
-mtime 由独立 1MHz 定时器时钟驱动（timer_clk_i），mtime CSR（0xC01/0xC81）为只读影子，mtime ≥ mtimecmp时触发定时器中断；软件中断由向 msip 写 1 产生、写 0 清除。
+核本地中断控制器，管理软件中断（msip）与定时器中断（mtime，mtimecmp）。mtime 由独立 1MHz 定时器时钟驱动（timer_clk_i），mtime CSR（0xC01/0xC81）为只读影子，mtime ≥ mtimecmp时触发定时器中断；软件中断由向 msip 写 1 产生、写 0 清除。
 
 | 地址 | 寄存器 | 说明 |
 |---|---|---|
@@ -118,7 +110,5 @@ mtime 由独立 1MHz 定时器时钟驱动（timer_clk_i），mtime CSR（0xC01/
 
 ## 上电流程
 
-1. BootROM（MROM）执行：使能 mcycle → 10ms 测频 → 存储实测频率到 DTCM 0x2FFF0 →
-   读 GPIO[0] 决定模式 → 下载模式置 DBG_EN=1 等待 uartbin，否则直接跳 ITCM。
-2. 应用 `_init()`：`soc_init()` 复测主频并更新 `g_cpu_freq_hz` → `uart_init(115200)`
-   （按实测频率计算 FCW）→ 设置 mtvec → `main()`。
+1. BootROM（MROM）执行：使能 mcycle → 10ms 测频 → 存储实测频率到 DTCM 0x2FFF0 →读 GPIO[0] 决定模式 → 下载模式置 DBG_EN=1 等待 uartbin，否则直接跳 ITCM。
+2. 应用 `_init()`：`soc_init()` 复测主频并更新 `g_cpu_freq_hz` → `uart_init(115200)`（按实测频率计算 FCW）→ 设置 mtvec → `main()`。

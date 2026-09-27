@@ -1,26 +1,20 @@
-# BD32 微架构
+# BD32 CPU微架构
+
+> 芯片级权威规格（存储器映射/时钟/复位/中断/寄存器复位值与访问类型）见 [spec.md](spec.md)；本文档聚焦微架构实现。
 
 ## 概览
 
-BD32 是 32 位 RV32IMC 处理器（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），经典 5 级流水线（IF → ID → EX → MEM → WB），
-配备深度 4 的 OITF（乱序退休 FIFO），让多周期乘除指令可与短指令并行执行、乱序写回。
+BD32 是 32 位 RV32IMC 处理器（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），经典 5 级流水线（IF → ID → EX → MEM → WB），配备深度 4 的 OITF（乱序退休 FIFO），让多周期乘除指令可与短指令并行执行、乱序写回。
 
-```
-┌────┐   ┌────┐   ┌────┐   ┌────┐   ┌────┐
-│ IF │──▶│ ID │──▶│ EX │──▶│MEM │──▶│ WB │──▶ Port1 写回
-└────┘   └────┘   └────┘   └────┘   └────┘
-                      │                            ▲
-                      ▼                            │
-                 ┌──────────┐    retire            │
-                 │   OITF   │────────────────────────▶ Port2 写回
-                 │ (depth=4)│
-                 └──────────┘
-                   ▲      ▲
-                   │      │
-              ┌────┴┐  ┌──┴───┐
-              │ MUL │  │ DIV  │
-              │3-cyc│  │32-cyc│
-              └─────┘  └──────┘
+**交互式组件架构图**：[bd32_soc_architecture.html](bd32_soc_architecture.html)（含取指连续化三件套 / 预测体系 / 验证基线三张结论卡片，规格源 [bd32_soc_architecture.arch.json](bd32_soc_architecture.arch.json)，更新流程：改 json → `python` 校验 → 用 archify skill `validate`+`deliver` 重新生成）。
+
+```mermaid
+flowchart LR
+    IF --> ID --> EX --> MEM --> WB --> P1["Port1 写回"]
+    EX --> OITF["OITF（深度 4）"]
+    MUL["MUL（3 周期）"] --> OITF
+    DIV["DIV（32 周期）"] --> OITF
+    OITF --> P2["Port2 写回"]
 ```
 
 ## 流水线
@@ -28,38 +22,40 @@ BD32 是 32 位 RV32IMC 处理器（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），经
 - 短指令（ALU / Load / Store / Branch）走正常 5 级流水，WB 阶段经 Port1 写回。
 - 长指令（MUL/DIV/REM）在 EX 阶段分发到 OITF，由独立功能单元执行，完成后经 Port2 乱序写回。
 - OITF 维护 RAW/WAW 冒险检测，必要时 stall 整条流水线。
-- 寄存器堆双写端口：Port1（正常 WB）与 Port2（OITF 退休），同地址冲突时 Port2 优先；
-  旁路读取优先级 Port2 > Port1 > 寄存器阵列。
+- 寄存器堆双写端口：Port1（正常 WB）与 Port2（OITF 退休），同地址冲突时 Port2 优先；旁路读取优先级 Port2 > Port1 > 寄存器阵列。
 
 ## 取指（IFU_Buffer + RVC/Zcmp 展开器）
 
-- **IFU_Buffer**：替代传统 PC_counter，负责 16/32 位指令装配。取指按字流推进，
-  装配器按 `pc_asm[1]` 与指令长度编码从 `{cur_w, w_new}` 中切出 16/32 位指令；
-  跨字 32 位指令（起始于奇数半字）由 `{w_new[15:0], cur_eff[31:16]}` 拼接。
-  - 取指请求与装配消费同步：`cur_w` 含 2 条 16 位指令时（2 拍消费），请求地址保持
-    `cur_w+4`（重复请求无害），避免 16 位指令流把下一字提前冲掉；
-  - 分支/跳转/调试装载重定向拍：当前指令保留输出，仅把下一拍目标改为重定向地址
-    （JAL/JALR 需流经流水线完成链接写回与 RAS 更新），`fetch_addr` 指向目标+4；
-  - 取指字未就绪（非 stall/redirect）时输出 `fetch_wait`，由流水线控制保持 IF_ID
-    并冲刷 ID_EX，避免 "NOP+地址" 错配对导致指令在 EX 变 NOP。
-- **RVC_Expander**：纯组合的 RV32C→RV32I 展开器（完整 RV32IMC + Zcb：c.lbu/c.lhu/c.lh/c.sb/c.sh/
-  c.mul/c.zext.b/c.not 及依赖 Zbb 的 c.zext.h/c.sext.b/c.sext.h；不含 F/D；C2 象限的 Zcmp 编码
-  只做合法性识别，展开交给 Zcmp_Expander；保留编码置 illegal，hint 展开为 NOP）。
-  压缩指令在 IF 阶段展开为 32 位等价指令，Decoder/Executer 零改动；链接地址语义
-  （C.JAL/C.JALR 的 pc+2）由流水线 `is_compressed` 标志处理（`inst_addr_plus_len = pc + (压缩 ? 2 : 4)`）。
-- **Zcmp_Expander**：时钟 FSM（Ibex 路线），把 cm.push/cm.pop/cm.popret(z)/cm.mvsa01/cm.mva01s
-  逐拍展开为标准 lw/sw/addi/jalr 微操作流；展开期间冻结取指/装配并屏蔽中断、调试事件
-  （halt/断点以整条 Zcmp 指令为粒度），busy 保持到最后一个微操作 WB 退休，
-  HPM 按整条 1 条架构指令计数。
-- 分支预测器 BTB/RAS 按 16 位对齐索引（ALIGN_WIDTH=1）；RAS 压栈使用 EX 级计算好的
-  实际链接地址（32 位 call +2 半字 / 16 位 call +1 半字），返回预测不会错位。
+- **IFU_Buffer**：替代传统 PC_counter，负责 16/32 位指令装配。取指按字流推进，装配器按 `pc_asm[1]` 与指令长度编码从 `{cur_w, w_new}` 中切出 16/32 位指令；跨字 32 位指令（起始于奇数半字）由 `{w_new[15:0], cur_eff[31:16]}` 拼接。
+  - 取指请求与装配消费同步（req_fwd 预取前推）：请求指针在消费/窗口更新拍**当拍前推**，消除"消费与请求争用同字"与"16 位指令后紧跟跨字 32 位指令"两类 1~2 拍停顿——`req_fwd = refill_now | (~zcmp冻结 & can_issue & crossing & next_ready)`：refill_now 拍（窗口空、请求字恰为装配字）请求消费字+4；crossing 窗口更新拍（16 位出窗 / 对齐 32 位出窗 / 跨字发射）活 `req_addr` 即将装入 `cur_w`，请求 `req_addr+4`。Zcmp 展开/捕获冻结期对第二项门控，防冻结期地址口被顶到 +4 污染恢复流（refill_now 项保持原语义不门控）。板级效果：C 配置 fetch 停顿占比 12%→3.6%，剩余停顿为"重定向落跨字"的 1 拍结构性下限。
+
+  典型时序与图中信号说明如下（图取自真实仿真波形）：
+
+    - `pc_asm`：装配指针，当前指令地址（16 位对齐）；
+    - `req_addr`：取指请求字地址（本拍返回数据所属的字）；
+    - `cur_eff_valid`：装配窗口字有效（窗口命中或当拍补装）；
+    - `refill_now`：窗口空且请求字恰为装配字，当拍直接补装；
+    - `next_ready`：跨字指令第二字就绪（可与窗口字拼接发射）；
+    - `指令发射`：本拍发射一条指令；
+    - `fetch_wait`：取指停顿（等待下一字返回）；
+    - `req_fwd`：预取前推（请求地址当拍前移至消费字 +4）。
+  
+    ![重定向目标为跨字 32 位指令](fetch_timing_redirect_crossword.svg)
+  
+  上图为重定向目标为跨字 32 位指令的情况：T0 拍重定向并请求目标字 0x1012c；T1 拍目标字返回（refill_now 当拍补装），此时请求 0x10130；T2 拍等待第二字返回，跨字第二字未到，停顿 1 拍——此为单端口同步 BRAM 的结构性下限；T3 拍拼接两字并发射，此时请求 0x10134。
+  
+- 取指字未就绪（非 stall/redirect）时输出 `fetch_wait`，由流水线控制保持 IF_ID 并冲刷 ID_EX，避免 "NOP+地址" 错配对导致指令在 EX 变 NOP。
+
+- **RVC_Expander**：纯组合的 RV32C→RV32I 展开器（完整 RV32IMC + Zcb：c.lbu/c.lhu/c.lh/c.sb/c.sh/c.mul/c.zext.b/c.not 及依赖 Zbb 的 c.zext.h/c.sext.b/c.sext.h；不含 F/D；C2 象限的 Zcmp 编码只做合法性识别，展开交给 Zcmp_Expander；保留编码置 illegal，hint 展开为 NOP）。压缩指令在 IF 阶段展开为 32 位等价指令，Decoder/Executer 零改动；链接地址语义（C.JAL/C.JALR 的 pc+2）由流水线 `is_compressed` 标志处理（`inst_addr_plus_len = pc + (压缩 ? 2 : 4)`）。
+- **Zcmp_Expander**：时钟 FSM（Ibex 路线），把 cm.push/cm.pop/cm.popret(z)/cm.mvsa01/cm.mva01s 逐拍展开为标准 lw/sw/addi/jalr 微操作流；展开期间冻结取指/装配并屏蔽中断、调试事件（halt/断点以整条 Zcmp 指令为粒度），busy 保持到最后一个微操作 WB 退休，HPM 按整条 1 条架构指令计数。cm.popret(z) 的尾拍微操作是 jalr（micro_ret）：**展开期默认屏蔽预测，仅该 ret 微操作恢复预测**（predict_taken 门控 + spec_upd 同样门控）——同 PC 的 lw/addi 微操作不会被 BTB 上由 ret 训练的条目误预测为 taken return 而冲刷掉展开流；ret 预测命中可省 EX 重定向（~3-4 拍/次）。
+
+- 分支预测器 BTB/RAS 按 16 位对齐索引（ALIGN_WIDTH=1；BTB index 含半字位 pc[8:1]，跨字 jal 与对齐 PC 不再混叠同一条目）；RAS 压栈使用 EX 级计算好的实际链接地址（32 位 call +2 半字 / 16 位 call +1 半字），返回预测不会错位；cm.popret(z) 尾拍 ret 微操作按普通 RET 参与 BTB 训练（Type=RET）与 RAS 出栈。
 
 ## 运算单元
 
 - 乘法：4 级流水基 4 Booth 乘法器（S0 输入+部分积 → S1 压缩 → S2 CLA+修正 → S3 输出；每拍可接受新输入）。
 - 除法：32 周期迭代恢复余数除法器。
-- 位操作（Zba/Zbb/Zbs）：全部单周期实现于 EX 级（andn/orn/xnor、min/max、sh1-3add、rol/ror、
-  clz/ctz/cpop、rev8/orc.b、单比特置位/清除/反转/提取及其立即数形式），走正常流水线不占用 OITF。
+- 位操作（Zba/Zbb/Zbs）：全部单周期实现于 EX 级（andn/orn/xnor、min/max、sh1-3add、rol/ror、clz/ctz/cpop、rev8/orc.b、单比特置位/清除/反转/提取及其立即数形式），走正常流水线不占用 OITF。
 
 ## 分支预测
 
@@ -91,18 +87,29 @@ BD32 是 32 位 RV32IMC 处理器（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），经
 - 总线：AXI-Lite 主接口 + AXI Interconnect（APB 桥 + 错误从机）+ APB 外设互联。
 - 时钟：FPGA 板级 MMCM 输出 CPU 时钟（62.5MHz，xc7z020clg400-2 时序收敛签核值）；CLINT 由独立 1MHz 定时器时钟驱动。
 
+## 时钟与复位架构
+
+- 时钟树：板级 50MHz → clk_wiz MMCM → **62.5MHz clk_cpu**（CPU/总线/外设域）+ **8.388608MHz**（UART 波特率基准）；50MHz/50（clk_div_static）→ **1MHz** CLINT mtime 域（1 tick = 1µs）。
+- CDC 边界仅两处：clk_cpu ↔ clk_1mhz（mtime/mtimecmp 跨域）、clk_cpu ↔ JTAG TCK（debug_cdc），综合侧 false_path 对应。
+- 复位：`rst_async_n = sys_rst_n && ~dbg_rst && clk_wiz_locked`，异步断言 → BUFG → Cdc_Sync 3 级同步释放；CLINT 域同构独立复位；Debug 域复位独立（ndmreset 不影响 DM/JTAG）。完整复位树与上电序列见 [spec.md](spec.md) §5。
+
+## SoC 集成（SoC_top）
+
+- 总线主机仅一个（CPU 侧 AXI-Lite，取指与访存分时复用）；AXI_Interconnect → APB 桥 → PSEL[6:0] 七从机译码（每从机 64KB，`[31:16]` 匹配），未映射段由 axi_err_slave 兜底。
+- SBA 调试访问借用 CPU 侧总线主机口（BootROM/ITCM/DTCM 直连，总线区走 AXI）。
+- 模块层级清单见 [spec.md](spec.md) §8。
+
 ## 中断与异常
 
 - **中断接受（指令边界）**：中断挂起且 MIE 开启时，在 EX 级指令边界接受——冲刷 IF_ID、ID_EX 与 EX_MEM（EX 级边界指令连同其执行结果一并作废），mepc 锁存边界指令 PC，mret 后单次重执行；EX_MEM/MEM_WB 的更老指令照常提交。
-  - ⚠️ 接受拍若不冲 EX_MEM（仅冲 IF_ID+ID_EX），边界指令的结果会泄漏完成写回，mret 后又重执行——非幂等指令（如 `addi` 累加类）状态被双重提交（曾致 RT-Thread tidle SERR，2026-09-12 修复，SVA `a_accept_kill_flush` 固化该契约）。
+  - ⚠️ 接受拍若不冲 EX_MEM（仅冲 IF_ID+ID_EX），边界指令的结果会泄漏完成写回，mret 后又重执行——非幂等指令（如 `addi` 累加类）状态被双重提交（SVA `a_accept_kill_flush` 固化"接受拍必须同冲 EX_MEM"契约）。
 - **多重窗口延后接受**：EX 级分支未决/重定向拍、流水线停顿（OITF/总线/拆分访问）、Zcmp 展开期间、mret 后 gap 数拍内均延后中断接受，避免边界错位。
 - **异常（同步）**：当拍按故障指令所在级（sel_stage）部分冲刷；陷阱码经 get_priority 优先级选择（IF 访错 > ID 非法/ecall/ebreak > EX 访错/非法 CSR/未对齐），无异常级为全 1 哨兵值。
 - Debug halt/断点为独立通路（不影响架构状态），详见 [调试模块](debug_module.md)。
 
 ## 调试挂钩
 
-核通过专用端口与 Debug Module 交互（halt/resume/step、GPR/CSR 直连、SBA 总线访问、
-Trigger 断点/观察点、ebreak 进调试），详见 [调试模块](debug_module.md)。
+核通过专用端口与 Debug Module 交互（halt/resume/step、GPR/CSR 直连、SBA 总线访问、Trigger 断点/观察点、ebreak 进调试），详见 [调试模块](debug_module.md)。
 
 ## 关键配置宏（`rtl/SoC_Config.sv`）
 

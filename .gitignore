@@ -103,3 +103,10 @@ rtl/assert/formal/pc_formal_front_end.bat
 rtl/assert/formal/pc_csr_formal_front_end.bat
 test_data/soc/mrom_build/
 .obsidian/
+
+# agent 项目约定（用户要求不入库）
+/AGENTS.md
+/CLAUDE.md
+
+# 验证计划（内部路线图，不入库）
+/doc/verification_plan.md
