@@ -61,7 +61,7 @@ flowchart TD
 | clk_1mhz | 1MHz | sys_clk / 50（clk_div_static） | CLINT mtime（1 tick = 1µs） |
 
 - **CDC 边界（仅两处）**：① clk_cpu ↔ clk_1mhz（CLINT mtime/mtimecmp 跨域，比较与中断输出在 mtime 域，CSR 影子在 CPU 域同步采样）；② clk_cpu ↔ JTAG TCK（debug_cdc 同步器）。综合侧对应 false_path 约束。
-- 无门控时钟（FPGA 原型豁免）；clk_16mhz 为 board_top 遗留声明，无 MMCM 输出连接（开放问题 Q2）。
+- 无门控时钟（FPGA 原型豁免）。
 
 ## 5. 复位架构
 
@@ -93,6 +93,17 @@ flowchart TD
 
 调试事件（halt/step/trigger/ebreak）不经中断控制器：直接冻结流水线，不产生 trap、不写 mcause。
 
+PLIC gateway（每源独立例化，电平/边沿由参数 TRIGGER_MODE 选择）的确切行为：
+- **电平模式**：`pending = irq_source & gateway_open`。Claim 关闭 gateway，Complete 重新开放；Complete 后若源电平仍有效，pending 立即重新置位（电平不丢失）。
+- **边沿模式**：内部 ip 锁存器检测 irq_source 上升沿（gateway 开放时）置位，pending = ip。**未 Claim 期间源多次触发：pending 保持 1，事件合并为一次中断（不丢失、不重复）**；Claim 清 ip 并关闭 gateway——**Claim 到 Complete 窗口内的新上升沿被丢弃**（标准 PLIC 语义，软件须在 Complete 后保持源撤除直至处理完毕，或改用电平模式）；Complete 重开 gateway 后等新上升沿。
+- 当前 BD32 三个外设中断源（UART/GPIO/Timer）全部使用电平模式（TRIGGER_MODE=0）。
+
+**嵌套中断适用性**：嵌套（handler 内开 MIE）时，Claim–Complete 窗口恰与开中断的处理时段重合。当前三源均为"外设内锁存 + 电平喂 gateway"结构（GPIO=TR_STAT / Timer=TIMx_SR / UART=IIR+FIFO），窗口内新事件锁存于外设状态寄存器，Complete 重开后以电平重新置位——事件不丢，嵌套安全。
+
+**软件契约（handler 标准收尾顺序）**：处理事件 → 清外设状态位（W1C）→ Complete。清状态位是两种触发模式的共同必需动作（W1C 寄存器的存在意义：硬件置位=有事件未处理，软件清零=处理完毕）；先清后 Complete，则 Complete 重开时凡处理期间新到的事件已重新置位状态位，立即产生新中断——一次不丢。状态位为 sticky 合并语义：多次事件可合并为一次处理，不保证逐事件计数（计数类需求由软件层另做）。
+
+架构约束：未来新增中断源必须遵守"外设内锁存状态、以电平驱动 PLIC"的结构；若必须接入裸脉冲源（无状态位、瞬时脉冲直驱），Claim–Complete 窗口内的脉冲会丢失，需软件采用 Claim 后立即 Complete（软件 in-service 标志防重入），或为 gateway 增加 in-service 重触发选项。
+
 ## 7. 外设寄存器表（含复位值与访问类型）
 
 ### 7.1 GPIO（0xE000_0000，DATA_WIDTH=8）
@@ -108,14 +119,14 @@ flowchart TD
 | 0x18 | TR_LVL1 | R/W | 0x00 | 高电平/上升沿 |
 | 0x1C | TR_STAT | R/W1C | 0x00 | 触发状态，写 1 清零；硬件置位与写清同拍时先置后清 |
 | 0x20 | IRQ_EN | R/W | 0x00 | 逐位中断使能 |
-| 0x24 | BOP_SET | WO | — | 写 1 原子置位输出位 |
-| 0x28 | BOP_CLR | WO | — | 写 1 原子清零输出位（读回值未定义，开放问题 Q4） |
+| 0x24 | BOP_SET | WO（读 0） | — | 写 1 原子置位输出位 |
+| 0x28 | BOP_CLR | WO（读 0） | — | 写 1 原子清零输出位 |
 
 ### 7.2 UART（0xE001_0000，16550 子集 + 下载通道）
 
 | 偏移 | 寄存器 | 访问 | 复位值 | 说明 |
 |------|--------|------|--------|------|
-| 0x00 | RBR / THR / DLL | DLAB=0: RO/W；DLAB=1: R/W | divisor=0x0000 | DLAB=LCR[7] 分组复用 |
+| 0x00 | RBR / THR / DLL | DLAB=0: RO/W；DLAB=1: R/W | divisor=0x0000 | DLAB=LCR[7] 分组复用；RX/TX FIFO 各 16 深 × 8 位（sync_fifo 参数化 DEPTH=16） |
 | 0x04 | IER / DLM | R/W | IER=0x0 | IER[3:0] 中断使能 |
 | 0x08 | IIR / FCR | IIR=RO；FCR=W（自清位） | FCR=0xC0；IIR=0xC1 | FCR[1]/[2] 清 FIFO 后硬件自动归零 |
 | 0x0C | LCR | R/W | 0x03 | 默认 8N1；bit7=DLAB |
@@ -124,6 +135,8 @@ flowchart TD
 | 0x1C | DBG_EN | WO | 0x0 | 写 1 使能 BootROM 下载 |
 | 0x20 | DBG_STAT | RO | 0x0 | bit0=下载完成 |
 | 0x24 | FCW | R/W | 0x0000_0000 | NCO 波特率控制字（uart_init 运行时按实测主频计算） |
+
+RX/TX 数据 FIFO 均为 `sync_fifo #(.DEPTH(16), .DATA_WIDTH(8))`（参数化，例化值 16×8 位）；FIFO 满时新接收字节置 LSR 溢出错误位（OE）。
 
 ### 7.3 Timer（0xE002_0000，TIMER_WIDTH=16）
 
@@ -181,7 +194,9 @@ flowchart TD
 
 ## 10. 开放问题
 
-- Q1：UART RX/TX FIFO 深度未参数化（RTL 定值），本 spec 不写死，待实现固化后补录。
-- Q2：board_top 的 `clk_16mhz` 声明无 MMCM 输出连接，疑似遗留，待确认后删除或补用途。
-- Q3：PLIC gateway 对边沿源在未 Claim 期间重复触发的锁存行为未在此层描述，软件建议不依赖边沿重触发。
-- Q4：GPIO BOP_SET/BOP_CLR 读回值未定义，建议固化为读 0。
+- ~~Q1~~ 已撤销：UART RX/TX FIFO 已参数化（sync_fifo DEPTH=16，见 §7.2），原判断为提取疏漏。
+- ~~Q2~~ 已关闭：`clk_16mhz` 确认为遗留声明（clk_wiz 无对应输出），已从 board_top 删除，回归验证通过。
+- ~~Q3~~ 已关闭：PLIC gateway 行为已核实并写入 §6（未 Claim 期间事件合并；Claim–Complete 窗口内新上升沿丢弃）。
+- ~~Q4~~ 已关闭：GPIO BOP_SET/BOP_CLR 读 0 已在 RTL 实现（读 mux 返回 0），见 §7.1。
+
+当前无未决开放问题。

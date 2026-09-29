@@ -51,7 +51,7 @@ wire sys_clk_buf;
 IBUF u_sys_clk_ibuf (.I(sys_clk), .O(sys_clk_buf));
 
 logic clk_wiz_locked;
-logic clk_cpu, clk_16mhz, clk_8m388;
+logic clk_cpu, clk_8m388;
 
 clk_wiz_0 u_clk_wiz_0 (
     .clk_in     (sys_clk_buf),
