@@ -8,7 +8,7 @@ timeprecision 1ps;
 //   4'hE / 4'hF  → APB Bridge    (0xE000_0000 ~ 0xFFFF_FFFF)
 //   4'h8 / 4'h9 / 4'hA → MROM/Flash (err) (0x8000_0000 ~ 0xAFFF_FFFF)
 //   4'hB / 4'hC  → DDR   (err)   (0xB000_0000 ~ 0xCFFF_FFFF)
-//   其他         → 默认 err_slave
+//   其余（0x0~0x7、0xD）→ 无从机选中，无握手发生（主机侧总线超时 DECERR 兜底）
 //
 // 特性：
 //   - 组合逻辑地址译码，无状态机延迟

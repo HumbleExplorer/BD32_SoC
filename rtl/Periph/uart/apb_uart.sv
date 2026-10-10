@@ -79,6 +79,8 @@ logic           rx_fifo_wr_en;
 logic           rx_fifo_rd_en;
 logic           tx_fifo_wr_en;
 logic           tx_fifo_rd_en;
+logic           flush_rx;       // FCR[1] 清接收 FIFO 脉冲
+logic           flush_tx;       // FCR[2] 清发送 FIFO 脉冲
 logic   [7:0]   rx_fifo_rdata;
 logic   [7:0]   tx_fifo_wdata;
 logic           rx_fifo_rd_empty;
@@ -87,6 +89,7 @@ logic           rx_fifo_wr_full;
 logic           tx_fifo_wr_full;
 logic   [4:0]   rx_fifo_cnt;
 logic   [5:0]   timeout_cnt;
+logic           tout_int;       // 超时事件锁存（供 IIR 超时码软件可观测）
 logic           timeout;
 logic           reg_rd_en, reg_wr_en;
 logic           sample_pulse;   // NCO 采样使能脉冲
@@ -101,6 +104,8 @@ assign  reg_rd_en = PSEL & !PWRITE & PENABLE;
 assign  reg_wr_en = PSEL & PWRITE & PENABLE;
 assign  timeout   = timeout_cnt == 6'd63;
 assign  tx_uart_pulse = (tx_sample_cnt == 4'd15) && sample_pulse;
+// 无调制解调器引脚：MSR 恒 0（IIR 的 MSR 子源编码保留，但不产生中断）
+assign  msr = 8'h00;
 
 // ==================== 1. 寄存器写逻辑 ====================
 always_ff @(posedge PCLK or negedge PRESETn) begin
@@ -150,6 +155,9 @@ assign  rx_fifo_wr_en  = rx_data_valid & ~rx_fifo_wr_full;
 assign  rx_fifo_rd_en  = ((reg_rd_en && uart_reg_sel_e'(reg_sel) == REG_SEL_0 && ~lcr[DLAB_BIT])
                           || (download_en && ~download_done))
                           && ~rx_fifo_rd_empty;
+// FCR[1]/[2] 清 FIFO：fcr 清位在写入后一拍自清，此处直接作为 1 拍 flush 脉冲
+assign  flush_rx = fcr[FCR_CLR_RX];
+assign  flush_tx = fcr[FCR_CLR_TX];
 
 // ==================== 2. 寄存器读逻辑 ====================
 always_comb begin
@@ -158,7 +166,7 @@ always_comb begin
         case (uart_reg_sel_e'(reg_sel))
             REG_SEL_0: begin
                 if (lcr[DLAB_BIT]) PRDATA[7:0] = divisor[7:0];
-                else                PRDATA[7:0] = rx_fifo_rdata;
+                else                PRDATA[7:0] = rx_fifo_rd_empty ? 8'h00 : rx_fifo_rdata;  // 空读返回 0（避免未初始化 mem 的 X 传播）
             end
             REG_SEL_1: begin
                 if (lcr[DLAB_BIT]) PRDATA[7:0] = divisor[15:8];
@@ -193,23 +201,29 @@ always_ff @(posedge PCLK or negedge PRESETn) begin
 end
 
 // ==================== 4. 中断逻辑 ====================
+// tout_int：超时事件锁存。timeout 计数仅 1 拍有效，若不锁存则 IIR 超时码
+// （0x0C）软件不可观测；锁存后保持到数据活动（读 RBR / 新字节到达 / FIFO 空）。
 always_ff @(posedge PCLK or negedge PRESETn) begin
     if (!PRESETn) begin
         timeout_cnt <= #1 6'd0;
+        tout_int    <= #1 1'b0;
         irq_o       <= #1 1'b0;
         iir         <= #1 IIR_NO_INT;
     end else begin
-        if (rx_fifo_rd_empty || rx_fifo_wr_en || rx_fifo_rd_en)
+        if (rx_fifo_rd_empty || rx_fifo_wr_en || rx_fifo_rd_en) begin
             timeout_cnt <= #1 6'd0;
-        else if (timeout)
+            tout_int    <= #1 1'b0;
+        end else if (timeout) begin
             timeout_cnt <= #1 6'd0;
-        else
+            tout_int    <= #1 1'b1;
+        end else begin
             timeout_cnt <= #1 timeout_cnt + 1'b1;
+        end
 
         if (ier[2] && (lsr[1] | lsr[2] | lsr[3] | lsr[4])) begin
             irq_o <= #1 1'b1; iir <= #1 IIR_RLS_INT;
         end else if (ier[0] && rx_fifo_cnt >= get_trigger()) begin
-            irq_o <= #1 1'b1; iir <= #1 timeout ? IIR_TOUT_INT : IIR_RDA_INT;
+            irq_o <= #1 1'b1; iir <= #1 (timeout | tout_int) ? IIR_TOUT_INT : IIR_RDA_INT;
         end else if (ier[1] && tx_fifo_rd_empty) begin
             irq_o <= #1 1'b1; iir <= #1 IIR_THRE_INT;
         end else if (ier[3] && (msr[0] | msr[1] | msr[2] | msr[3])) begin
@@ -286,6 +300,7 @@ uart_tx u_uart_tx(
 sync_fifo #(.DEPTH(16), .DATA_WIDTH(8)) rx_fifo_inst(
     .clk        (PCLK),
     .rst_n      (PRESETn),
+    .flush      (flush_rx),
     .wr_en      (rx_fifo_wr_en),
     .wr_data    (rx_data_out),
     .rd_en      (rx_fifo_rd_en),
@@ -298,6 +313,7 @@ sync_fifo #(.DEPTH(16), .DATA_WIDTH(8)) rx_fifo_inst(
 sync_fifo #(.DEPTH(16), .DATA_WIDTH(8)) tx_fifo_inst(
     .clk        (PCLK),
     .rst_n      (PRESETn),
+    .flush      (flush_tx),
     .wr_en      (tx_fifo_wr_en),
     .wr_data    (tx_fifo_wdata),
     .rd_en      (tx_fifo_rd_en),

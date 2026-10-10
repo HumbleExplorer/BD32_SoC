@@ -1370,7 +1370,7 @@ initial begin
     // 汇总
     // ----------------------------------------------------------
     // Test 22: SBA 读 BootROM（0x0000_0000 区）——GDB/OpenOCD 在线调试 stop 判定路径
-    //   0x0000_0000 应为 mrom.dat[0] = 0xc0102373 (csrr t1, 0xC01)——2026-09-17 BootROM 移除 csrw 0x306 后首指令变更
+    //   0x0000_0000 应为 mrom.dat[0] = 0xc0102373 (csrr t1, 0xC01)（BootROM 现行首指令）
     //   BootROM 只读：SBA 写 0x0 应报 sberror=010 且 ROM 内容不变
     // ----------------------------------------------------------
     $display("--- Test 22: SBA read BootROM ---");

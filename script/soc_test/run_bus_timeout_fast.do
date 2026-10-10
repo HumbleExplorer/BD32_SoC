@@ -15,6 +15,7 @@ vsim -voptargs=+acc tb_soc_top
 set NoQuitOnFinish 1
 onbreak {resume}
 
-run 300ms
+# 下载 ~270.5ms + 判定窗口 30ms ≈ 310ms，留余量 400ms
+run 400ms
 echo "=== SIMULATION TIME REACHED 300ms ==="
 quit -f

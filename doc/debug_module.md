@@ -41,7 +41,7 @@ flowchart TD
 | SBA | 已验证 | 32-bit 地址，8/16/32-bit 写 + 32-bit 读，读写 ITCM/DTCM + 外设总线（APB） |
 | 硬件断点 | 已验证 | 4 路 tdata1/tdata2（tselect 选择），mcontrol type=2 地址匹配，OpenOCD `hbreak` + GDB |
 | 数据观察点 | 已验证 | load/store 地址匹配（tdata1 bit0/bit1）+ sizelo 宽度过滤（8/16/32-bit），命中 halt（dpc=访存指令、不提交），GDB `watch` |
-| ebreak 进调试 | 已验证 | `dcsr.ebreakm=1` 时 ebreak 触发 halt，cause=1，dpc=ebreak 地址 |
+| ebreak 进调试 | 已验证 | `dcsr.ebreakm=1` 时 ebreak 触发 halt，cause=1，dpc 记录该 ebreak 指令地址 |
 | GDB 在线调试 | 已验证 | 真实 demo（breathing）符号级调试：加载/断点/单步/变量 |
 
 未实现：Debug ROM / Park Loop、ProgBuf（progbufsize=0）、abstract 内存访问（cmdtype=2）、多 hart。
@@ -82,7 +82,7 @@ DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通
 - CPU 侧多路并行比较 `trigger_hit = |(trigger_en[i] & (inst_addr_if == trigger_addr[i]))`，命中后触发 halt
 - **action 语义**：仅实现 action=1（命中进 debug mode，即 halt）；action=0（异常断点）未实现。tdata1 中未实现字段（chain/match/timing/hit/select 等）写入后原样读回，但不参与硬件匹配逻辑
 - **halt 保持锁存**：CPU 一旦进入 debug mode，DM 锁存 `halt_hold_r` 保持暂停，直到调试器发 `resumereq`（Debug Spec 4.7/4.8）。因此 `haltreq` 写 0（WARZ 清除请求）、删除断点（清 tdata1）或清 `dcsr.ebreakm` 都不会让 CPU 自动恢复运行
-- **ebreak 进调试**：`dcsr.ebreakm=1` 时 ID 级 ebreak 不产生异常，CPU 原地 halt（ID 保持、不冲刷），DM 置 `dcsr.cause=1`、`dpc=ebreak 地址`；调试器恢复原指令后 resume 即可继续执行（软件断点通路）
+- **ebreak 进调试**：`dcsr.ebreakm=1` 时 ID 级 ebreak 不产生异常，CPU 原地 halt（ID 保持、不冲刷），DM 置 `dcsr.cause=1`，dpc 记录该 ebreak 指令地址；调试器恢复原指令后 resume 即可继续执行（软件断点通路）
 - **数据观察点**：EX 级访存有效地址匹配（tdata2），tdata1[0]=load（读观察点）/ tdata1[1]=store（写观察点），sizelo[17:16] 过滤访问宽度（0=任意、1=8bit、2=16bit、3=32bit）；命中时流水线停在 EX、store/load 不落盘（总线请求被抑制），`dpc` 取访存指令自身、`dcsr.cause=2`；清 trigger 后 resume 才完成访问
 
 ## OpenOCD + GDB 使用（调试功能使用手册）
@@ -216,7 +216,7 @@ halt 期间通过 SBA 访问整个 SoC 地址空间（32-bit 地址；读为 32-
 
 #### 7. ebreak 进调试模式（软件断点通路）
 
-`dcsr.ebreakm=1` 时 ebreak 指令不产生异常，CPU 原地 halt（ID 保持不冲刷），`dcsr.cause=1`、`dpc = ebreak 地址`，DM 锁存 haltreq。
+`dcsr.ebreakm=1` 时 ebreak 指令不产生异常，CPU 原地 halt（ID 保持不冲刷），`dcsr.cause=1`，dpc 记录该 ebreak 指令地址，DM 锁存 haltreq。
 
 手动软件断点：用 SBA 把目标指令临时替换为 ebreak（0x0010_0073），命中后恢复原指令再 resume：
 

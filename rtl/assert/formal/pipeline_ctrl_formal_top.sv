@@ -2,7 +2,7 @@
 // pipeline_ctrl_formal_top.sv — Pipeline_Ctrl 形式验证 harness（SymbiYosys）
 // =============================================================================
 // 目标属性（Pipeline_Ctrl.sv `ifdef FORMAL 区）：
-//   ① 中断接受拍冲刷契约（fml_a_accept_*，2026-09-12 SERR 根因防线）
+//   ① 中断接受拍冲刷契约（fml_a_accept_*，双重提交 SERR 的根因防线）
 //   ② 异常优先级表哨兵不变式（fml_a_no_sentinel / trap_consistent / oitf_flush）
 //   ③ 单步 drain 状态机不变式（fml_a_step_legal / drain_bounded）
 //
@@ -58,9 +58,9 @@ module pipeline_ctrl_formal_top #(
     logic [DATA_WIDTH-1:0]                    f_exc_val_id;
     logic [DATA_WIDTH-1:0]                    f_exc_val_ex;
 
-    // 2026-09-16 审计缺陷③修正：异常码/指令地址放开为自由输入。
-    // 原钉哨兵使 exception_trap 恒 0，fml_a_no_sentinel/trap_consistent/
-    // exc_s2/exc_s1_keep/oitf_flush 全部空转假绿（harness 目标②落空）。
+    // 异常码/指令地址放开为自由输入。原钉哨兵使 exception_trap 恒 0，
+    // fml_a_no_sentinel/trap_consistent/exc_s2/exc_s1_keep/oitf_flush 全部
+    // 空转假绿（harness 目标②落空）。
     // 自由码（含哨兵值）让优先级表/哨兵不变式被真实探索；地址独立自由值
     // 使 exc_s2/exc_s1_keep 的地址 mux 选择可观测。
     assign f_exc_val_if  = '0;
@@ -152,7 +152,7 @@ module pipeline_ctrl_formal_top #(
             assume (!(f_trigger_match && f_int_accept_kill));
             assume (!(f_ebreak_halt && f_int_accept_kill));
             assume (!(f_dbg_resume_pulse && f_int_accept_kill));
-            // —— 分阶段合法异常码约束（生产者契约，2026-09-18 补）——
+            // —— 分阶段合法异常码约束（生产者契约）——
             // 自由 31 位码会产生“bit30=0 但 get_priority 落默认 15”的非法组合：
             // trap=1 而选中哨兵 → fml_a_no_sentinel 假失败（真实流水线不会产出）。
             // 各阶段合法集按 get_priority 查表域（code[3:0]）约束，哨兵(bit30=1)恒合法。

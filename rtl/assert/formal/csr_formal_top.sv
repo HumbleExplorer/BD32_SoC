@@ -49,9 +49,9 @@ module csr_formal_top #(
     logic [1:0]            f_hpm_ext;
     logic                    f_zcmp_busy;
 
-    // 异常码 = 自由输入（2026-09-16 审计缺陷③修正：原钉哨兵使 exception_trap
-    // 恒 0、fml_a_exc_code_valid 空转假绿）。接口契约由下方 assume 保证
-    // （trap → 非哨兵），异常路径因此被 formal 真实探索。
+    // 异常码 = 自由输入（钉哨兵会让 exception_trap 恒 0、fml_a_exc_code_valid
+    // 空转假绿）。接口契约由下方 assume 保证（trap → 非哨兵），异常路径因此
+    // 被 formal 真实探索。
     assign f_id_ex_inst_addr = '0;
     assign f_exc_inst_addr   = '0;
     assign f_next_inst_addr  = '0;

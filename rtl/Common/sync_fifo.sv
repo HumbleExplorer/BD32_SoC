@@ -12,6 +12,8 @@ module sync_fifo #(
 )(
     input   logic                       clk,
     input   logic                       rst_n,
+    // 同步清空：读/写指针与计数归零（mem 内容不清理）
+    input   logic                       flush,
     // 写端口
     input   logic                       wr_en,
     input   logic   [DATA_WIDTH-1:0]    wr_data,
@@ -55,6 +57,11 @@ end
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
+        wr_ptr  <= '0;
+        rd_ptr  <= '0;
+        cnt     <= '0;
+    end else if (flush) begin
+        // 清空优先于同拍读写
         wr_ptr  <= '0;
         rd_ptr  <= '0;
         cnt     <= '0;

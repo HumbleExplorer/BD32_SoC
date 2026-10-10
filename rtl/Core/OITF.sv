@@ -330,7 +330,7 @@ always @(posedge clk) begin
     if (rst_n) begin
         a_fml_wr_range: assert property (wr_ptr < OITF_DEPTH);
         a_fml_rd_range: assert property (rd_ptr < OITF_DEPTH);
-        // 退休合法性：retire_valid ⇔ 头部 vld&&ready
+        // 退休合法性：retire_valid 仅当头部条目 vld 且 ready
         a_fml_retire_def: assert property
             (retire_valid == (cur_vld[rd_ptr] && cur_ready[rd_ptr]));
         // 空 FIFO 无退休

@@ -26,8 +26,6 @@
  *   - timer_en: 定时器使能
  *   - timer_clr: 定时器复位
  *   - timer_dir: 计数方向 (0=递增, 1=递减)
- *
- * 日期：2026/03/31
  */
 `include "../../SoC_Config.sv"
 timeunit 1ns;

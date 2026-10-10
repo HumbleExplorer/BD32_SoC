@@ -61,7 +61,7 @@ assign recv_data_n = (uart_rx_valid_pos && ~download_done && download_en) ?
 
 // 帧检测：只有 START_FRAME 需要识别
 assign start_frame_det = (byte_cnt == 2'b11) && uart_rx_valid_pos && (recv_data_n == START_FRAME);
-assign download_done   = (current_state == NORMAL_MODE) || ~download_en;
+assign download_done   = (current_state == NORMAL_MODE);
 
 // 接收缓冲区
 always_ff @(posedge clk or negedge rst_n) begin

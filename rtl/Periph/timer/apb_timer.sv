@@ -23,9 +23,6 @@
  *   0x24 TIMx_CCR2  - 通道2捕获/比较值
  *   0x28 TIMx_CCR3  - 通道3捕获/比较值
  *   0x2c TIMx_CCR4  - 通道4捕获/比较值
- *
- * 作者：
- * 日期：2026/03/31
  */
 `include "../../SoC_Config.sv"
 timeunit 1ns;

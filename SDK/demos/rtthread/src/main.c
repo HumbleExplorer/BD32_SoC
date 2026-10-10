@@ -25,7 +25,7 @@ static rt_uint8_t t1_stack[T1_STACK_SIZE];
 static struct rt_thread t2;
 static rt_uint8_t t2_stack[T2_STACK_SIZE];
 
-/* ---- tidle sp 爬移诊断（2026-09-05 stack overflow 排查，查完可删）----
+/* ---- tidle 栈健康探针 ----
  * 主线程每秒采样一次 tidle TCB：
  *   1) TCB 保存的 sp 相对栈底偏移——递减 = 中断帧泄漏（sp 本身被侵蚀）
  *   2) 栈底 +4/+8 的 '#' 水印字——被改写 = 杂散 store 越界（内存腐蚀）

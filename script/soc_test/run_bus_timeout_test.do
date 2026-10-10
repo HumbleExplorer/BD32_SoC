@@ -62,6 +62,6 @@ add wave -divider "CPU Pipeline"
 add wave -radix hex sim:/tb_soc_top/u_SoC_top/u_RISC_V_Core/inst_addr_if
 add wave -radix hex sim:/tb_soc_top/u_SoC_top/u_RISC_V_Core/pc
 
-# bus_timeout.uartbin ~2992 bytes → 下载约 260ms
-# 下载 + 运行 + 超时(13.65us) + 异常处理 ≈ 270ms，留余量跑 300ms
-run 300ms
+# bus_timeout.uartbin 3116 bytes → 下载约 270.5ms
+# 下载 + 运行 + 超时(13.65us) + 异常处理 + 30ms 判定窗口 ≈ 310ms，留余量跑 400ms
+run 400ms

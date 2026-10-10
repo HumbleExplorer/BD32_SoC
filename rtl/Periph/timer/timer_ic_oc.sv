@@ -14,9 +14,6 @@
  *   - trigger_mode: 捕获触发边沿类型 (00=上升沿, 01=下降沿, 10=双沿)
  *   - cmp_value: 比较值 (来自APB)
  *   - cap_value: 捕获值 (输出到顶层)
- *
- * 作者：
- * 日期：2026/03/31
  */
 `include "../../SoC_Config.sv"
 timeunit 1ns;

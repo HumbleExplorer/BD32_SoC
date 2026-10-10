@@ -140,7 +140,7 @@ def main():
     # ---- 说明追加 ----
     note_row = norm_hdr + len(ROWS) + 1
     notes = [
-        "扩展段说明（2026-09-16 追加）：",
+        "扩展段说明：",
         "7. 扩展段 21 行：5 个 march 组合（rv32imc / +zcb / +zba_zbb_zbs / +zcmp / +zicond）× GCC/LLVM × newlib-nano/picolibc + 全扩展组合 × newlib × GCC。",
         "8. 体积比/性能比基准 = 原表（无扩展 rv32im_zicsr）同 C 库 GCC -O2（newlib→行7，picolibc→行16）。",
         "9. 扩展段 march 含 rv32imc：Zcb/Zcmp 为 RV32C 子集；Zba/Zbb/Zbs/Zicond 可与 C 叠加。",

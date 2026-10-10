@@ -148,7 +148,7 @@ always_ff @(posedge clk) begin
         // $write("[%t]:%c\n", $time, u_SoC_top.u_apb_uart.tx_data_in);
     end
     // 检测 UART TX 完全完成：TEMT (LSR[6]) 上升沿
-    // TEMT=1 表示发送 FIFO 空 && 移位寄存器空闲，所有字符已发完
+    // TEMT=1 表示发送 FIFO 与移位寄存器均已空闲，所有字符已发完
     lsr6_d <= #1 u_SoC_top.u_apb_uart.lsr[6];
     if (u_SoC_top.u_apb_uart.lsr[6] && ~lsr6_d)
         uart_tx_complete <= #1 1'b1;
@@ -242,11 +242,13 @@ end
 //      → CPU 触发 store access fault (mcause=7) → serr_handler
 //   5. handler 记录 mcause/mepc 到 DTCM 0x28000/0x28004，跳过故障指令
 //   6. main 继续，向 GPIO out_reg 写 PASS 签名 0x05
-//   判定：DTCM[0x28000]==7 且 DTCM[0x28004]==0x000105bc 且 GPIO==0x05
+//   判定：DTCM[0x28000]==7 且 DTCM[0x28004]==0x00010638 且 GPIO==0x05
 // =====================================================================
 localparam BT_TIMEOUT_NS   = 30_000_000; // 等待 PASS 签名超时 30ms
 localparam BT_EXPECT_MCAUSE = 32'd7;     // store access fault
-localparam BT_EXPECT_MEPC   = 32'h0001_05bc; // 故障 store 指令地址
+// 故障 store（TIM_PSC 写，0x10638: sw a5,0(a4) a4=0xE0020000）地址随固件构建布局变化；
+// 重建 bus_timeout 固件后需按 out.dump 同步更新本值
+localparam BT_EXPECT_MEPC   = 32'h0001_0638;
 localparam BT_PASS_SIG      = 32'h05;    // GPIO[2]|[0]，避开 BootROM 的 0x18
 
 // DTCM 暂存字索引（字节地址 0x28000/0x28004/0x28008 → 字索引 = addr[15:2] = 0x2000/0x2001/0x2002）
@@ -497,6 +499,48 @@ end
 //     #5000000;
 //     key0_val = 1;  /* 松开 */
 // end
+
+`ifdef UART_IRQ_TEST
+// =====================================================================
+// UART 中断收发闭环测试（配合 SDK/demos/nolibc/uart_irq）
+// =====================================================================
+// DIRECT_LOAD 预载 uart_irq 固件；TB 等固件开中断后注入 3 行字符串，
+// 固件以 RDA 中断收行、THRE 中断驱动回显；回显排空后固件写
+// GPIO out_reg=0xA5 签名。判定：签名出现（超时 50ms 判失败）。
+// =====================================================================
+localparam UI_TIMEOUT_NS = 50_000_000;
+
+initial begin
+    @(posedge rst_n);
+    // 等固件完成初始化：mstatus.MIE 与 mie.MEIE 同时置位
+    wait(tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mstatus[3]
+     && tb_soc_top.u_SoC_top.u_RISC_V_Core.u_CSR_Reg_Access.mie[11]);
+    #5_000_000;
+
+    $display("\n============================================================");
+    $display("  [UART_IRQ] Injecting 3 lines");
+    $display("============================================================");
+    send_uart_line("hello");
+    #3_000_000;
+    send_uart_line("uart");
+    #3_000_000;
+    send_uart_line("irq");
+
+    fork
+        wait(tb_soc_top.u_SoC_top.u_apb_gpio.out_reg == 32'h0000_00A5);
+        #(UI_TIMEOUT_NS);
+    join_any
+    disable fork;
+
+    if (tb_soc_top.u_SoC_top.u_apb_gpio.out_reg == 32'h0000_00A5)
+        $display("\n  [UART_IRQ] === TEST PASSED ===\n");
+    else
+        $display("\n  [UART_IRQ] *** TEST FAILED *** (out_reg=0x%08x)",
+                 tb_soc_top.u_SoC_top.u_apb_gpio.out_reg);
+    #5000;
+    $finish;
+end
+`endif
 
 initial begin
     key0_val = 1;  /* 初始高 */

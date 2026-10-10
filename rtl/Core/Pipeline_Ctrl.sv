@@ -394,9 +394,9 @@ always @(posedge clk) begin
         (trap_jump_exc && fml_accept_unshadowed && (sel_stage == 2'd1)
          ? !ex_mem_flush : 1'b1);
 
-    // ---- 异常优先级表不变式（get_priority 缺项 = mcause 全 1 哨兵病根）----
+    // ---- 异常优先级表不变式（get_priority 缺项会输出全 1 哨兵）----
     // ④ 异常触发时，所选阶段码必须非哨兵（哨兵 {W-1{1'b1}} 表示"无异常"，
-    //    若陷阱拍 mux 输出全 1 即哨兵病根 mcause=0x7FFFFFFF）
+    //    陷阱拍 mux 输出全 1 即 mcause=0x7FFFFFFF）
     // rst_n 门控：复位拍异常码输入自由（assume 按惯例仅在 rst_n 生效），
     // 组合 mux 可瞬时呈现 trap=1+哨兵输出的无意义组合——只在正常工作态检查
     fml_a_no_sentinel: assert property

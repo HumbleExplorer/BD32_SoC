@@ -58,15 +58,27 @@ end
 
 assign bit_val         = vote_cnt_1 >= 4'd4;
 assign s_data_bit_done = (data_bit_cnt == s_target_data_bits);
-assign rx_valid_o      = sample_pulse && rx_state == RX_STOP && (~rx_in_sync_reg[1] || (sample_cnt == 4'd15 && (!lcr[LCR_STOP] || (stop_bit_cnt == 1'd1))));
-assign rx_o            = rx_valid_o ? rx_shift[7:0] : 8'd0;
+// 停止位槽的两种完成事件（每帧单拍）：
+//   · 提前触发：rx 变低且本槽早段仍为高（bit_val=1）＝下一帧起始沿已到（背靠背帧），
+//     当拍输出并同拍重同步到 RX_START（新帧相位从该沿起算，避免逐帧漂移累积）；
+//   · 采样点完成：sample_cnt==15（单帧收尾 / 第二位停止位）。
+// FE 帧（整槽为低，bit_val=0）走 cnt15 路径，不经提前触发。
+assign rx_valid_o      = sample_pulse && rx_state == RX_STOP &&
+                         ((~rx_in_sync_reg[1] && bit_val) ||
+                          (sample_cnt == 4'd15 && (!lcr[LCR_STOP] || (stop_bit_cnt == 1'd1))));
+// 数据右对齐输出（16550 语义）：5/6/7 数据位时移位寄存器把数据收在高位 [7:3]/[7:2]/[7:1]，
+// 需右移回低位 [4:0]/[5:0]/[6:0]；8 位模式不移位。与 TX（按低 N 位发送）对称。
+assign rx_o            = rx_valid_o ? (rx_shift >> (3'd3 - {1'b0, lcr[LCR_DAT1:LCR_DAT0]})) : 8'd0;
 assign oe_err          = (rx_fifo_wr_full && rx_state == RX_DATA);// 溢出错误OE：FIFO满时仍有新数据接收
 assign bi_err          = lcr[LCR_BREAK_CTRL];// 断错误BI：LCR Break位为1时触发
-assign fe_err          = rx_state == RX_STOP && bit_val != 1'b1 && sample_cnt == 4'd15;// 帧错误FE：停止位非高
+// 帧错误FE：停止位非高。投票窗完成后（sample_cnt>=12）多数判决为 0 即判 FE——
+// 停止位整槽为低时 4..11 采样多数为 0；背靠背下一起始沿只污染槽尾，多数仍为高，不误判。
+assign fe_err          = (rx_state == RX_STOP) && (sample_cnt >= 4'd12) && (bit_val != 1'b1);
 assign pe_err          = rx_state == RX_PARITY && sample_cnt == 4'd15 ?// 奇偶错误PE：奇偶校验错误
-                        (lcr[LCR_PARITY_FOR] ?// 强制校验位
+                        (lcr[LCR_PARITY_FOR] ?// 强制校验位：报错 = 校验位偏离 LCR 指定值
                         (lcr[LCR_PARITY_ODD] ? (bit_val != 1'b1) : (bit_val != 1'b0)) :
-                        (lcr[LCR_PARITY_ODD] ? (parity_calc != bit_val) : (parity_calc == bit_val))) : 1'b0;
+                        // 真校验：奇校验正确帧 pc!=bit_val，偶校验正确帧 pc==bit_val，报错条件取其反
+                        (lcr[LCR_PARITY_ODD] ? (parity_calc == bit_val) : (parity_calc != bit_val))) : 1'b0;
 
 // 1. 三级同步消除RX异步信号亚稳态
 always_ff @(posedge clk or negedge rst_n) begin
@@ -152,15 +164,20 @@ always_ff @(posedge clk or negedge rst_n) begin
                     if(lcr[LCR_STOP]) begin
                         if(stop_bit_cnt == 1'd1) begin
                             stop_bit_cnt <= #1 1'd0;
-                            rx_state     <= #1 ~rx_in_sync_reg[1] ? RX_START : RX_IDLE;// 停止位结束后：若RX=0 → 直接启动下一帧，不回IDLE
+                            // 收尾转移：rx 低且本槽多数为高 = 下一帧起始沿已到 → 直接重同步；
+                            // 否则（含 FE 帧 bit_val=0）回 IDLE 重新捕获起始沿
+                            rx_state     <= #1 (~rx_in_sync_reg[1] && bit_val) ? RX_START : RX_IDLE;
                         end else begin
                             stop_bit_cnt <= #1 stop_bit_cnt + 1'b1;
                         end
                     end else begin
-                        rx_state <= #1 ~rx_in_sync_reg[1] ? RX_START : RX_IDLE;// 1位停止位：结束直接判断是否为新起始位
+                        rx_state <= #1 (~rx_in_sync_reg[1] && bit_val) ? RX_START : RX_IDLE;
                     end
                 end else begin
-                    rx_state <= #1 ~rx_in_sync_reg[1] ? RX_START : RX_STOP;
+                    // 提前退出（相位校正）：仅当 rx 变低"且"本槽多数为高（bit_val=1）时判定
+                    // 为下一帧起始沿并重同步；bit_val=0（停止位整槽低 = FE 帧）则保持本槽，
+                    // 待 cnt15 收尾（防止把 FE 帧的低停止位误当起始沿、生成幻影帧）。
+                    rx_state <= #1 (~rx_in_sync_reg[1] && bit_val) ? RX_START : RX_STOP;
                 end
             end
 

@@ -60,7 +60,9 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 | custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 52/52 全过（自定义压力测试） |
 | riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 51/51 全过（含 fence_i / ma_data / rvc） |
 | Debug 模块 | tb_debug | `script/debug_test/run_msim_debug.bat` | 94 PASS / 0 FAIL |
-| 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过 |
+| 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过（UART 为 20 用例全寄存器套件，含 IIR 五子源/LSR 四位错误/FCR 触发级与清 FIFO） |
+| AXI 互联链 | tb_axi_interconnect | `script/axi_test/run.do` | 7 用例（路由回环 / 错误响应 / 超时有界）全过 |
+| UART 下载长流 | tb_uart_dl_file / tb_uart_dl_mini | `script/uart_test/run_file.do`（8x）/ `run_mini.do` | RX→FIFO→下载 FSM 全字对账零失配（已并入外设回归） |
 | SoC | tb_soc_top | `script/run_soc_test.bat` | 默认程序启动输出无异常 |
 | RT-Thread | tb_soc_top | `script/soc_test/rtthread_sim*.do`（含 `rtthread_sim315_pico.do` / `rtthread_sim51_pico.do`） | lts-v3.1.x / v5.1.0 × newlib / picolibc，多任务并发运行 |
 
@@ -134,6 +136,7 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 | `debug_test/` | 调试模块 tb_debug | `run.do`（GUI）；`run_msim_debug.bat`（headless 回归，输出 `logs/msim_out.txt`）；`run_batch.do` | Debug Spec 全功能 94 项回归（默认加载 breathing，可用 `BD32_ITCM_FILE` / `BD32_DTCM_FILE` 环境变量指定 .mem） |
 | `soc_test/` | SoC 级 tb_soc_top | `top_tb.bat`（GUI 启动）；`run.do`（主仿真） | 各自带波形配置，batch 场景加 `quit -f`；复位/总线超时/诊断等专项脚本见目录内同名 .do |
 | `gpio_test/` `plic_test/` `timer_test/` `uart_test/` | 外设独立 tb_apb_* | `run.do`（GUI）；`top_tb.bat` | 独立于 CPU 的外设仿真 |
+| `axi_test/` | AXI 互联链 tb_axi_interconnect | `run.do`（batch） | axi_lite_master_bfm 驱动全真实 DUT 链（互联 → 桥+APB 桩 / err_slave×2）：路由回环、随机等待态压力、PSLVERR→SLVERR、err 段 OKAY+0、从机挂死→桥超时、未路由段 BFM 有界超时 |
 
 说明：
 - `run.do` 第一行统一用 `file delete -force work` 清理旧库，不依赖 `vdel`/`modelsim.ini`，避免 GUI 锁库时报错。
@@ -523,6 +526,7 @@ sby -f oitf_formal.sby                       # 三任务全跑；单任务加任
 | `cpuinfo` | CSR 读写通路（mstatus/mtvec/mie…） | 串口 dump |
 | `comprehensive_test` | 综合中断（定时器 + 按键） | 阶段 A/B 现象 |
 | `bus_timeout` | 总线访问超时保护 | 异常处理打印 |
+| `uart_irq` | UART 中断收发闭环（RDA 收行 + THRE 回显） | 发 3 行即时回显 + PASS! |
 
 ### newlib-nano（精简 C 标准库）
 

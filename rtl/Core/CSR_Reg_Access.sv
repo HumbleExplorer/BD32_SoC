@@ -619,8 +619,8 @@ a_int_code_legal: assert property (p_int_code_legal)
 `endif
 // ===== FORMAL 覆盖点（SymbiYosys cover 任务）=====
 // 注：cover 深度受限于中断接受门控链的时序约束——int_accept_kill 要求
-// bus_ready=1 && oitf_stall=0 && 中断 pending 且使能（mstatus.MIE=1 需先
-// 经 CSR 写入），30 步内路径过长；这些覆盖点由仿真（memstress 中断用例）
+// bus_ready=1 && oitf_stall=0 && int_trap=1（int_trap 已含 mstatus.MIE 与
+// mip&mie 门控，MIE 需先经 CSR 写入），30 步内路径过长；这些覆盖点由仿真（memstress 中断用例）
 // 保证可达性，形式任务只证契约（prove）
 `ifdef FORMAL
 always @(posedge clk) begin

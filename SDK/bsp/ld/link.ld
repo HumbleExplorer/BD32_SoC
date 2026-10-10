@@ -77,8 +77,8 @@ SECTIONS
         __heap_end = .;
     } >dtcm
 
-    /* RT-Thread 独立中断栈（SW_handler 用 mscratch 切换；2026-09-07 起
-       LIGHT_IRQ 也切到本栈执行 handler，调用链需数百字节，1K→2K） */
+    /* RT-Thread 独立中断栈（SW_handler 用 mscratch 切换；LIGHT_IRQ 的
+       handler 调用链也运行在本栈，需数百字节，故 2K） */
     .rt_irq_stack (NOLOAD) : {
         . = ALIGN(16);
         __rt_irq_stack_start = .;

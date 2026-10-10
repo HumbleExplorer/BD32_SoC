@@ -43,9 +43,7 @@ logic   a_sign_en, b_sign_en;
 //==========================================================================
 generate if(PIPELINE==1) begin : MULT_PIPELINE
 
-// ┌─────────────────────────────────────────────────────────────┐
-// │ 流水线乘法器（4 级: S0→S1→S2→S3，每拍可接受新输入）                  │
-// └─────────────────────────────────────────────────────────────┘
+// 流水线乘法器（4 级: S0→S1→S2→S3，每拍可接受新输入）
 
 // --- Pipeline valid bits ---
 logic valid_s1, valid_s2, valid_s3;
@@ -120,9 +118,7 @@ assign mul_o = (valid_s3) ? prod_full : {PROD_WIDTH{1'b0}};
 
 end else begin : MULT_NO_PIPELINE
 
-// ┌─────────────────────────────────────────────────────────────┐
-// │ 原始 4 态状态机（IDLE→COMPRESS→CLA_CALC→DONE）               │
-// └─────────────────────────────────────────────────────────────┘
+// 原始 4 态状态机（IDLE→COMPRESS→CLA_CALC→DONE）
 
 typedef enum logic [3:0] {
     IDLE      = 4'b0001,

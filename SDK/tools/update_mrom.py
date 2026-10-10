@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """BD32 BootROM (MROM) 一键更新——校验/生成器（纯文件变换，零进程调用）
 
-固化 2026-09-17 上板排查出的两个构建坑的正确流程：
-  坑 A: 只 as 不 ld —— `call` 的 auipc+jalr 重定位需要链接器解析，
-        跳过 ld 会留下 delta=0 的自跳转死循环。构建必须走完整链接（见 bat）。
-  坑 B: mrom BRAM IP 读的是 mrom.coe（不是 mrom.dat），且 Vivado 感知不到
-        COE 内容变化，必须 reset_target+generate_target+重跑 mrom_synth_1
-        （生成 synth_flow_mrom_coe.tcl，见 --emit-tcl）。
+两个已固化的构建约束：
+  A: 只 as 不 ld —— `call` 的 auipc+jalr 重定位需要链接器解析，
+     跳过 ld 会留下 delta=0 的自跳转死循环。构建必须走完整链接（见 bat）。
+  B: mrom BRAM IP 读的是 mrom.coe（不是 mrom.dat），且 Vivado 感知不到
+     COE 内容变化，必须 reset_target+generate_target+重跑 mrom_synth_1
+     （生成 synth_flow_mrom_coe.tcl，见 --emit-tcl）。
 
 标准流程（三步）:
   1) SDK/tools/update_mrom_build.bat     # 链接 mrom.s → mrom.elf（含未解析跳转检查）
@@ -33,8 +33,8 @@ for _p in (ELF_PATH, MROM_DAT, MROM_COE):
     if _rp != REPO_ROOT and not _rp.startswith(REPO_ROOT + os.sep):
         raise RuntimeError(f"路径越出仓库目录: {_p}")
 
-# BD32 已移除的 CSR：编码落在这里 = BootROM 会踩非法指令 trap
-FORBIDDEN_CSR = (0x306,)  # mcounteren（2026-09-17 移除）
+# BD32 未实现的 CSR：编码落在这里 = BootROM 会踩非法指令 trap
+FORBIDDEN_CSR = (0x306,)  # mcounteren（S/U 态访问许可，BD32 无 S/U）
 
 
 def parse_elf_words(path):
@@ -66,7 +66,7 @@ def parse_elf_words(path):
             raise ValueError(f"段不连续: 期望 0x{expect:X} 实得 0x{vaddr:X}")
         blob += chunk
         expect = vaddr + len(chunk)
-    # 防护：切到 ELF 头 = phdr 字段序/偏移错（2026-09-18 实锤过的 bug）
+    # 防护：切到 ELF 头 = phdr 字段序/偏移解析错误
     if blob[:4] == b"\x7fELF":
         raise ValueError("切进了 ELF 头（PT_LOAD 字段解析错误）")
     words = []
@@ -79,7 +79,7 @@ def parse_elf_words(path):
 def verify(words):
     if not words:
         raise ValueError("空镜像")
-    # 已移除/未实现 CSR 的访问检查（写 0x306 曾致 BootROM trap 死循环）
+    # 未实现 CSR 的访问检查（访问未实现 CSR 会触发非法指令 trap 死循环）
     for i, w in enumerate(words):
         code = int(w, 16)
         if (code & 0x7F) in (0x73, 0x77):  # SYSTEM opcode（CSR 指令）

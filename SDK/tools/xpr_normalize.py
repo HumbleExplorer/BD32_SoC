@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """xpr_normalize.py — Vivado 工程文件(.xpr)重序列化噪声规范化器（防 churn 复发）
 
-背景（2026-09-20 .xpr churn 收拢，见 Memory_Log 与 CHANGELOG）：
+背景（.xpr churn 收拢）：
 Vivado 每次打开/保存工程都会把 impl 段的 <ReportConfig> 报告自动配置整段展开
-重序列化写回（本次实例 130 行：ReportConfig/ReportConfigOption/dummy_option
+重序列化写回（典型 130 行：ReportConfig/ReportConfigOption/dummy_option
 等默认值），功能上无意义但持续污染 git diff。本工具把 .xpr 收敛到确定的
 紧凑形态，配合 pre-commit 钩子保证提交内容稳定可读。
 
@@ -91,7 +91,7 @@ def collapse_empty_elements(text):
     """<X attrs>\n[仅空行]</X> → <X attrs/>（行扫描，绝不跨名/跨子元素）。
     仅当：开标签行以 '>' 结束且非自闭合；向前找到**同名**闭合行 '</X>'；
     其间所有行都是空行。任何一条不满足就原样保留，避免把 '<Gadget' 误折到
-    '</Gadget>'（正则前缀回溯的坑）。"""
+    '</Gadget>'（正则前缀回溯会把空元素折到错误闭合行）。"""
     lines = text.split("\n")
     out = []
     i = 0

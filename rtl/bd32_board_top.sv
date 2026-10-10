@@ -62,7 +62,7 @@ clk_wiz_0 u_clk_wiz_0 (
 );
 
 // =========================================================================
-// 复位：按键有效 && MMCM 锁定 → BUFG → 异步复位同步释放
+// 复位：sys_rst_n（按键）与 clk_wiz_locked 汇合 → BUFG → 异步复位同步释放
 // DM/JTAG 域复位不受 ndmreset 影响（调试器复位 SoC 时 DM 必须存活）
 // =========================================================================
 // ndmreset：调试器复位整个 SoC（DM/JTAG 自身保持）
@@ -74,7 +74,7 @@ logic rst_n_dbg_sync;
 logic rst_async_n;
 logic rst_n_bufg;
 
-// DM 域复位：按键(低有效) && ~调试器(高有效) && MMCM锁定
+// DM 域复位：sys_rst_n && ~dbg_rst && clk_wiz_locked（dbg_rst 高有效，来自调试器）
 assign rst_dbg_async_n = sys_rst_n && (~dbg_rst) && clk_wiz_locked;
 BUFG u_rst_dbg_bufg (
     .I  (rst_dbg_async_n),
@@ -92,7 +92,7 @@ Cdc_Sync #(
     .sync_sig   (rst_n_dbg_sync)
 );
 
-// SoC 域复位：DM 域复位 && ~ndmreset（调试器可复位整个 SoC）
+// SoC 域复位：rst_dbg_async_n && ~ndmreset（调试器可复位整个 SoC）
 `ifdef BD32_DEBUG_EN
 assign rst_async_n = rst_dbg_async_n && (~ndmreset);
 `else

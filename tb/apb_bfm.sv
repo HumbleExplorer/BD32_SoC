@@ -6,13 +6,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // APB3 协议时序：SETUP 相位（PSEL=1, PENABLE=0）→ ACCESS 相位
 // （PENABLE=1）→ 等待 PREADY → 撤销传输。
+//
+// 传输结果状态：每次 write/read 完成后更新 last_error（ACCESS 完成拍采样的
+// PSLVERR）；超时置 timeout_flag 并打印 $error 后返回（不挂死 TB）。
 // ============================================================================
 timeunit 1ns;
 timeprecision 1ps;
 
 module apb_master_bfm #(
     parameter PADDR_WIDTH = 32,
-    parameter PDATA_WIDTH = 32
+    parameter PDATA_WIDTH = 32,
+    parameter int TIMEOUT_CYCLES = 4096   // PREADY 等待上限（防 TB 挂死）
 )(
     input   logic                       PRESETn,
                                         PCLK,
@@ -28,6 +32,16 @@ module apb_master_bfm #(
     input   logic                       PREADY,
     input   logic                       PSLVERR
 );
+
+// ----------------------------------------------------------------------------
+// 传输结果状态（write/read 完成后有效）
+// ----------------------------------------------------------------------------
+logic last_error;      // 完成拍采样的 PSLVERR
+logic timeout_flag;    // 最近一次传输是否 PREADY 超时
+
+function automatic bit get_last_error();
+    return last_error;
+endfunction
 
 // ----------------------------------------------------------------------------
 // 总线空闲态（复位后 / 传输间隙）
@@ -46,8 +60,34 @@ endtask
 // ----------------------------------------------------------------------------
 task automatic reset();
     bus_idle();
+    last_error   = 1'b0;
+    timeout_flag = 1'b0;
     @(posedge PRESETn);
     #1;
+endtask
+
+// ----------------------------------------------------------------------------
+// ACCESS 相位公共体：PENABLE 已置 1，等待 PREADY 完成拍并采样错误。
+// 在完成沿的活跃区采样（读的是该 ACCESS 拍的值，未过 NBA 更新）；
+// 返回后调用方先采样 PRDATA 再 #1 做 bus_idle（避开与从机状态寄存器的同沿竞争）。
+// ----------------------------------------------------------------------------
+task automatic wait_access_complete(input [PADDR_WIDTH-1:0] address);
+    int unsigned wait_cnt;
+    @(posedge PCLK);
+    wait_cnt = 0;
+    while (!PREADY && wait_cnt < TIMEOUT_CYCLES) begin
+        @(posedge PCLK);
+        wait_cnt++;
+    end
+    if (!PREADY) begin
+        timeout_flag = 1'b1;
+        $error("[APB-BFM] PREADY timeout (%0d cycles) @%0t addr=%h",
+               TIMEOUT_CYCLES, $time, address);
+        last_error = 1'b0;
+    end else begin
+        last_error   = PSLVERR;
+        timeout_flag = 1'b0;
+    end
 endtask
 
 // ----------------------------------------------------------------------------
@@ -70,9 +110,7 @@ task automatic write (
 
     // ACCESS 相位，等待从机就绪
     PENABLE = 1'b1;
-    @(posedge PCLK);  // PENABLE 保持一个完整周期，保证从机在沿上采样到写
-    while (!PREADY)
-        @(posedge PCLK);
+    wait_access_complete(address);
     #1;
 
     // 传输结束，总线回到空闲
@@ -80,7 +118,8 @@ task automatic write (
 endtask
 
 // ----------------------------------------------------------------------------
-// 读传输：SETUP 一拍 → ACCESS 相位等待 PREADY → 采样 PRDATA → 结束
+// 读传输：SETUP 一拍 → ACCESS 相位等待 PREADY → 采样 PRDATA → 结束。
+// 与 write 对称：完成拍即回空闲（PSEL 不多挂一拍，避免无 SETUP 的幻影 ACCESS）。
 // ----------------------------------------------------------------------------
 task automatic read (
     input  [PADDR_WIDTH -1:0] address,
@@ -90,7 +129,7 @@ task automatic read (
     PSEL    = 1'b1;
     PENABLE = 1'b0;
     PADDR   = address;
-    PSTRB   = {PDATA_WIDTH/8{1'bx}};
+    PSTRB   = '0;               // 读传输 PSTRB 无意义，驱动 0 便于 X 传播检查
     PWDATA  = {PDATA_WIDTH{1'bx}};
     PWRITE  = 1'b0;
     @(posedge PCLK);
@@ -98,13 +137,10 @@ task automatic read (
 
     // ACCESS 相位，等待从机就绪后采样数据
     PENABLE = 1'b1;
-    while (!PREADY)
-        @(posedge PCLK);
-    #1;
+    wait_access_complete(address);
     data = PRDATA;
 
-    // 结束一拍后回到空闲
-    @(posedge PCLK);
+    // 结束后回到空闲
     #1;
     bus_idle();
 endtask

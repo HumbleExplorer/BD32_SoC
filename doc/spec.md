@@ -23,7 +23,7 @@ flowchart TD
     JTAG["JTAG（OpenOCD/GDB）"] <--> DBG["Debug_Top（DM/TAP）"]
     DBG <--> CORE["RISC_V_Core（IFU/ID/EX/MEM/WB + OITF + BPU + CSR）"]
     CORE -->|"AXI-Lite 主机（取指/访存共用）"| AXI["AXI_Interconnect"]
-    AXI --> ERR["axi_err_slave（未映射兜底）"]
+    AXI --> ERR["axi_err_slave（Flash/DDR 番位，恒 OKAY+读0）"]
     AXI --> BR["AXI-APB 桥（PSEL[6:0] 译码）"]
     BR --> PERI["CLINT / PLIC / GPIO / UART / Timer / SPI・I2C（预留）"]
     C1 -.-> CORE
@@ -42,14 +42,14 @@ flowchart TD
 | GPIO | 0xE000_0000 | 0xE000_FFFF | 64KB | APB(PSEL2) | 8 位，输入 2 级同步 |
 | UART | 0xE001_0000 | 0xE001_FFFF | 64KB | APB(PSEL3) | 16550 子集 + BootROM 下载通道 |
 | Timer | 0xE002_0000 | 0xE002_FFFF | 64KB | APB(PSEL4) | 16 位基本定时器 + 4 通道 IC/OC |
-| SPI（预留） | 0xE003_0000 | 0xE003_FFFF | 64KB | APB(PSEL5) | 未实现，访问返回错误 |
-| I2C（预留） | 0xE004_0000 | 0xE004_FFFF | 64KB | APB(PSEL6) | 未实现，访问返回错误 |
+| SPI（预留） | 0xE003_0000 | 0xE003_FFFF | 64KB | APB(PSEL5) | 未实现，聚合默认值响应（OKAY + 读 0） |
+| I2C（预留） | 0xE004_0000 | 0xE004_FFFF | 64KB | APB(PSEL6) | 未实现，聚合默认值响应（OKAY + 读 0） |
 | PLIC | 0xFC00_0000 | 0xFC00_FFFF | 64KB | APB(PSEL1) | 16 源 / 7 级优先 / 1 目标 |
 | CLINT | 0xF200_0000 | 0xF200_BFFF | 48KB | APB(PSEL0) | msip / mtimecmp / mtime |
-| Flash / DDR | 0x9000_0000 / 0xB000_0000 | — | — | AXI | 未实现，axi_err_slave 返回错误 |
-| 其他未映射 | — | — | — | — | axi_err_slave 兜底（DECERR，有界返回） |
+| Flash / DDR | 0x9000_0000 / 0xB000_0000 | — | — | AXI | 未实现，axi_err_slave 恒 OKAY（读数据 0、写丢弃） |
+| 未路由段 | 0x0000_0000~0x7FFF_FFFF、0xD000_0000~0xDFFF_FFFF | — | — | AXI | 无从机响应 → 总线超时（BUS_TIMEOUT 后 DECERR，有界返回） |
 
-重叠检查：各段基址按 `[31:16]` 译码、64KB 自然对齐，无重叠；保留/扩展余量即未映射段（由错误从机兜底，访问不挂死）。
+重叠检查：各段基址按 `[31:16]` 译码、64KB 自然对齐，无重叠；Flash/DDR 留空段由 err_slave 恒 OKAY 响应，其余未路由段靠总线超时有界返回（均不挂死）。
 
 ## 4. 时钟架构
 
@@ -66,7 +66,7 @@ flowchart TD
 ## 5. 复位架构
 
 - 极性：全低有效（`*_n`）；模式：**异步断言、同步释放**。
-- 复位公式：`rst_async_n = sys_rst_n（按键）&& ~dbg_rst（FTDI ADBUS5）&& clk_wiz_locked`——三条件全满足才释放。
+- 复位公式：`rst_async_n = sys_rst_n && ~dbg_rst && clk_wiz_locked`——sys_rst_n 为板上按键（低有效），dbg_rst 来自 FTDI ADBUS5（高有效），三条件全满足才释放。
 - 复位树：
 
 | 复位 | 生成路径 | 覆盖范围 |
@@ -129,14 +129,15 @@ PLIC gateway（每源独立例化，电平/边沿由参数 TRIGGER_MODE 选择�
 | 0x00 | RBR / THR / DLL | DLAB=0: RO/W；DLAB=1: R/W | divisor=0x0000 | DLAB=LCR[7] 分组复用；RX/TX FIFO 各 16 深 × 8 位（sync_fifo 参数化 DEPTH=16） |
 | 0x04 | IER / DLM | R/W | IER=0x0 | IER[3:0] 中断使能 |
 | 0x08 | IIR / FCR | IIR=RO；FCR=W（自清位） | FCR=0xC0；IIR=0xC1 | FCR[1]/[2] 清 FIFO 后硬件自动归零 |
-| 0x0C | LCR | R/W | 0x03 | 默认 8N1；bit7=DLAB |
-| 0x10 | MCR | R/W | 0x00 | — |
-| 0x14 | LSR | RO（bit0–4 读清） | 0x60 | bit5=THRE、bit6=TEMT 复位即空；读副作用：接收错误位读后清零 |
+| 0x0C | LCR | R/W | 0x03 | 默认 8N1；bit7=DLAB；bit6（break 控制）置位时强制清 DLAB |
+| 0x10 | MCR | R/W | 0x00 | 纯寄存器回读（无调制解调器引脚） |
+| 0x14 | LSR | RO（bit0–4 读清） | 0x60 | bit0=DR、bit1=OE、bit2=PE、bit3=FE、bit4=BI（粘滞，读后清）、bit5=THRE、bit6=TEMT、bit7=错误位汇总；复位即空 |
+| 0x18 | MSR | RO | 0x00 | 无调制解调器引脚，恒 0（IIR 的 MSR 子源编码保留但不产生中断） |
 | 0x1C | DBG_EN | WO | 0x0 | 写 1 使能 BootROM 下载 |
-| 0x20 | DBG_STAT | RO | 0x0 | bit0=下载完成 |
+| 0x20 | DBG_STAT | RO | 0x0 | bit0=下载完成（仅 NORMAL_MODE 置位），bit1=DBG_EN 回读 |
 | 0x24 | FCW | R/W | 0x0000_0000 | NCO 波特率控制字（uart_init 运行时按实测主频计算） |
 
-RX/TX 数据 FIFO 均为 `sync_fifo #(.DEPTH(16), .DATA_WIDTH(8))`（参数化，例化值 16×8 位）；FIFO 满时新接收字节置 LSR 溢出错误位（OE）。
+RX/TX 数据 FIFO 均为 `sync_fifo #(.DEPTH(16), .DATA_WIDTH(8))`（参数化，例化值 16×8 位）；FIFO 满时新接收字节置 LSR 溢出错误位（OE）；FCR[7:6] 选 RDA 触发级 1/4/8/14；FCR[1]/[2] 写 1 清接收/发送 FIFO；RBR 空读返回 0；IIR 子源优先级 RLS > RDA/超时 > THRE > MSR，超时事件锁存至数据活动（读 RBR / 新字节 / FIFO 空）。
 
 ### 7.3 Timer（0xE002_0000，TIMER_WIDTH=16）
 
@@ -186,17 +187,10 @@ RX/TX 数据 FIFO 均为 `sync_fifo #(.DEPTH(16), .DATA_WIDTH(8))`（参数化�
 
 ## 9. 错误与异常处理
 
-- 未映射总线地址 → axi_err_slave 返回 DECERR（有界完成，不挂死）；
+- Flash/DDR 未实现区 → axi_err_slave 恒 OKAY（读数据 0、写丢弃，靠全 0 译码异常兜底）；未路由段（0x0000~0x7FFF_FFFF、0xD 段）→ 无从机响应，总线超时后 DECERR（有界完成，不挂死）；
+- APB 从机 PSLVERR 或从机超时 → AXI 桥返回 SLVERR（Bus_Access 转 bus_error）；
+- APB 未匹配地址（PSEL 全 0 段）→ APB_Interconnect 聚合默认值响应（PREADY=1、PRDATA=0、PSLVERR=0，立即 OKAY 完成）；
 - 取指地址非 BootROM/ITCM → 取指访问故障（if_access_fault）；
 - 非对齐访存 → Mem_Access 拆分访问或异常（mtval 记录故障地址）；
 - 保留压缩编码 / 非法 CSR 地址 → 非法指令异常（mcause=2，码全 1 哨兵为"无异常"标记，永不作为合法码锁存——SVA 哨兵契约）；
 - 总线超时 → BUS_TIMEOUT 有界退出（形式验证下缩参标定）。
-
-## 10. 开放问题
-
-- ~~Q1~~ 已撤销：UART RX/TX FIFO 已参数化（sync_fifo DEPTH=16，见 §7.2），原判断为提取疏漏。
-- ~~Q2~~ 已关闭：`clk_16mhz` 确认为遗留声明（clk_wiz 无对应输出），已从 board_top 删除，回归验证通过。
-- ~~Q3~~ 已关闭：PLIC gateway 行为已核实并写入 §6（未 Claim 期间事件合并；Claim–Complete 窗口内新上升沿丢弃）。
-- ~~Q4~~ 已关闭：GPIO BOP_SET/BOP_CLR 读 0 已在 RTL 实现（读 mux 返回 0），见 §7.1。
-
-当前无未决开放问题。

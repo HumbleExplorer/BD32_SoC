@@ -510,8 +510,7 @@ def main():
 
     src = os.path.abspath(args.source)
     # 路径前置校验：demo 必须存在于仓库内（SDK/demos），否则立刻报错——
-    # 防止路径解析塌缩后把 build 产物静默撒到 CWD（曾在 Working 根下生成
-    # 全路径名 .o 的 build_Os/）
+    # 防止路径解析塌缩后把 build 产物静默撒到 CWD（生成全路径名 .o 的 build_Os/）
     _work_root = os.path.dirname(SDK_ROOT)
     if not os.path.exists(src):
         print(f"ERROR: 源路径不存在: {args.source}")
