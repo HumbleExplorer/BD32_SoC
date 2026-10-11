@@ -166,7 +166,7 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 - [ ] **QSPI Flash 启动与总线取指（XIP）**：片外 Flash 引导 + 经 AXI 总线取指执行（替代仅 ITCM 取指）；引入时需同步建立访存延时校准（可配置/随机延时从机模型 + 性能计数器，使仿真延时可校准到真实器件）
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器
-- [ ] **AXI-Lite 总线完整性整改**：互连当前为单 master 地址译码（CPU 独占），XIP/DMA 接入前需补多 master 仲裁；BUS_TIMEOUT 强拆（DECERR）后从机侧半事务回收；随机 ready 延时从机模型（LFSR 驱动）纳入回归
+- [ ] **AXI-Lite 总线扩展（XIP/DMA 前置）**：互连升级多 master 仲裁（现单 master 地址译码，CPU 独占）；大延时从机模型（可配置延时，供 XIP 访存延时校准）；有状态从机的半事务自恢复（现全部从机无状态，桥层双层超时已回收，见下）。基础已就位：互联链 7 用例专项（`script/axi_test/`）、随机等待态从机（`$urandom` 驱动，纯仿真用途已足够，无需 LFSR）、双层超时衔接契约断言（主机强拆 → 桥有界回收，`rtl/assert/bind_bus_timeout.sv`）
 - [x] **SV 工程化与形式验证（主体完成）**：分层 SVA 断言体系、SymbiYosys 形式验证均基本完成。待细化：package/interface 化
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……

@@ -12,7 +12,7 @@ vlib ../../build/msim/run_bus_timeout_test/work
 vmap work ../../build/msim/run_bus_timeout_test/work
 
 # 编译时注入 BUS_TIMEOUT_TEST 宏
-vlog +define+BUS_TIMEOUT_TEST -f filelist.f
+vlog +define+BUS_TIMEOUT_TEST +define+ASSERT_SYS -f filelist.f
 
 vsim -voptargs=+acc tb_soc_top
 set NoQuitOnFinish 1

@@ -253,5 +253,32 @@ assign  o_PWDATA    =   PWDATA   ;
 assign  o_tran_done =   tran_done ;
 assign  o_rdata     =   PRDATA    ;
 
+`ifndef SYNTHESIS
+// ===========================================================================
+// SVA: 双层超时衔接契约（L2，+define+ASSERT_MODULE 使能）
+// ---------------------------------------------------------------------------
+// 背景：主机侧 AXI_Lite_Master 在 BUS_TIMEOUT 拍后强拆事务返回 DECERR；本模块
+// 在 APB_TO_VAL（=BUS_TIMEOUT/2）拍后超时回收。APB_TO_VAL < BUS_TIMEOUT 保证
+// 桥先于主机恢复（回 SLVERR 而非 DECERR）——以下断言把这一数值约定固化为可验
+// 契约（从机侧半事务回收语义：强拆后桥侧有界回收、不被新事务叠加、完成单次）。
+// ===========================================================================
+`ifdef ASSERT_MODULE
+    // C1 回收有界：ACCESS 超时置位（半事务产生点）后，至多 2 拍离开 ACCESS
+    //   （apb_timeout 当拍 tran_done=1 → 次拍 next_state=IDLE；2 拍含寄存器时序裕量）
+    a_apbto_recover: assert property (@(posedge i_sys_clk) disable iff (!i_rst_n)
+        (apb_timeout |-> ##[0:2] (current_state == IDLE)));
+
+    // C2 无事务叠加：超时持续期间（半事务未回收前）不得发起新 APB 相位
+    //   （桥 FSM 不得在半事务挂着时用新 transfer 叠加——i_transfer 只允许在 IDLE 被接受）
+    a_apbto_no_overlay: assert property (@(posedge i_sys_clk) disable iff (!i_rst_n)
+        (apb_timeout |-> !(current_state == IDLE && i_transfer)));
+
+    // C3 完成单次：超时次拍必须已在 IDLE（PSEL 已撤）——迟到的 PREADY 不会
+    //   再被本模块采到（ACCESS 已退出），从机制上杜绝双重完成
+    a_apbto_single_done: assert property (@(posedge i_sys_clk) disable iff (!i_rst_n)
+        ($past(apb_timeout) |-> (current_state == IDLE && !PSEL)));
+`endif
+`endif
+
 endmodule
 
