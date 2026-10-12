@@ -121,10 +121,10 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 │   ├── debug_test/           # Debug Module 仿真（run_msim_debug.bat 一键回归）
 │   ├── uart_test/ gpio_test/ plic_test/ timer_test/  # 外设独立仿真
 │   ├── run_one.py            # 运行单个 custom_asm 测试
-│   ├── run_all_custom_asm.py # custom_asm 全回归（49 个测试）
+│   ├── run_all_custom_asm.py # custom_asm 全回归（52 个测试）
 │   └── run_all_riscv_tests.py # riscv-tests 全回归（rv32ui + rv32um + rv32uc）
 ├── test_data/
-│   ├── custom_asm/           # 49 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
+│   ├── custom_asm/           # 52 个自定义流水线压力测试源码（.S；.dat/.elf/.dump 由 build_asm.py 生成）
 │   ├── riscv-tests/          # riscv-tests 测试产物（rv32ui 42 + rv32um 8 + rv32uc-p-rvc 共 51 全过；源码来自官方 riscv-tests 仓库，见 doc/sdk.md）
 │   └── soc/c/                # 固件构建产物（.uartbin / .mem，由 build.py 同步）
 ├── third_party/              # 第三方源码依赖（riscv-tests、rt-thread-3.1.5 / rt-thread-5.1.0、picolibc-1.8.12、OpenOCD，不随仓库分发）
@@ -166,8 +166,8 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 - [ ] **QSPI Flash 启动与总线取指（XIP）**：片外 Flash 引导 + 经 AXI 总线取指执行（替代仅 ITCM 取指）；引入时需同步建立访存延时校准（可配置/随机延时从机模型 + 性能计数器，使仿真延时可校准到真实器件）
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器
-- [ ] **AXI-Lite 总线扩展（XIP/DMA 前置）**：互连升级多 master 仲裁（现单 master 地址译码，CPU 独占）；大延时从机模型（可配置延时，供 XIP 访存延时校准）；有状态从机的半事务自恢复（现全部从机无状态，桥层双层超时已回收，见下）。基础已就位：互联链 7 用例专项（`script/axi_test/`）、随机等待态从机（`$urandom` 驱动，纯仿真用途已足够，无需 LFSR）、双层超时衔接契约断言（主机强拆 → 桥有界回收，`rtl/assert/bind_bus_timeout.sv`）
-- [x] **SV 工程化与形式验证（主体完成）**：分层 SVA 断言体系、SymbiYosys 形式验证均基本完成。待细化：package/interface 化
+- [ ] **AXI-Lite 总线扩展（XIP/DMA 前置）**：互连升级多 master 仲裁（现单 master 地址译码，CPU 独占）；大延时从机模型（可配置延时，供 XIP 访存延时校准）；有状态从机的半事务自恢复（现全部从机无状态，桥层双层超时已回收，见下）。
+- [ ] **SV 工程化与形式验证（主体完成）**：分层 SVA 断言体系、SymbiYosys 形式验证均基本完成。待细化：package/interface 化
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……
 - [ ] **详细PDF设计文档**：正在写……

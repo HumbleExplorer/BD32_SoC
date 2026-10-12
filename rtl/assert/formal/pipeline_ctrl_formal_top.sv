@@ -2,7 +2,7 @@
 // pipeline_ctrl_formal_top.sv — Pipeline_Ctrl 形式验证 harness（SymbiYosys）
 // =============================================================================
 // 目标属性（Pipeline_Ctrl.sv `ifdef FORMAL 区）：
-//   ① 中断接受拍冲刷契约（fml_a_accept_*，双重提交 SERR 的根因防线）
+//   ① 中断接受拍冲刷契约（fml_a_accept_*，防双重提交）
 //   ② 异常优先级表哨兵不变式（fml_a_no_sentinel / trap_consistent / oitf_flush）
 //   ③ 单步 drain 状态机不变式（fml_a_step_legal / drain_bounded）
 //
@@ -60,7 +60,7 @@ module pipeline_ctrl_formal_top #(
 
     // 异常码/指令地址放开为自由输入。原钉哨兵使 exception_trap 恒 0，
     // fml_a_no_sentinel/trap_consistent/exc_s2/exc_s1_keep/oitf_flush 全部
-    // 空转假绿（harness 目标②落空）。
+    // 断言空转（harness 目标②失去覆盖）。
     // 自由码（含哨兵值）让优先级表/哨兵不变式被真实探索；地址独立自由值
     // 使 exc_s2/exc_s1_keep 的地址 mux 选择可观测。
     assign f_exc_val_if  = '0;

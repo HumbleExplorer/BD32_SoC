@@ -61,7 +61,7 @@ assign timer_int = mtime >= mtimecmp;
 // -----------------------------------------------------------------------
 // 1MHz timer_clk_i → PCLK 域同步 + 上升沿检测
 // 两拍同步消除亚稳态，第三拍做边沿检测
-// timer_clk_i 来自同一 MMCM 的 clk_16mhz 分频，相位关系固定
+// timer_clk_i 由板级 clk_div_static 对 50MHz 分频产生（独立于 clk_cpu 的时钟域）
 // -----------------------------------------------------------------------
 logic [1:0] timer_clk_sync;       // 2-FF 同步链
 logic       timer_clk_sync_d1;    // 打一拍用于边沿检测

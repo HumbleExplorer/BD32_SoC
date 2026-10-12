@@ -188,6 +188,7 @@ python tools/auto_coremark.py --xlsx <输出路径>      # 自定义 Excel 路�
 | 0xB05 | STORE 数 | 0xB06 | 条件分支数 |
 | 0xB07 | JUMP 数 | 0xB08 | MUL/DIV 数（OITF 退休拍计数） |
 | 0xB09 | 分支预测失败数 | 0xB0A/0xB0B/0xB0C | Zcb / B / Zcmp 指令数 |
+| 0xB0D | CSR 指令数 | 0xB0E | 系统指令数（ecall/ebreak/mret/wfi/fence） |
 | 0xB0F | load-use 停顿周期 | 0xB10 | OITF 等待周期 | 
 | 0xB11 | 取指等待周期 | 0xBC0 | mcounterclr（按位写 1 清零，单拍脉冲，可读回） |
 

@@ -55,16 +55,16 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 
 ### 验证矩阵
 
-| 套件 | 顶层 | 运行 | 判定 |
-|---|---|---|---|
-| custom_asm | tb_core_top | `script/run_all_custom_asm.py` | 52/52 全过（自定义压力测试） |
-| riscv-tests | tb_core_top | `script/run_all_riscv_tests.py` | 51/51 全过（含 fence_i / ma_data / rvc） |
-| Debug 模块 | tb_debug | `script/debug_test/run_msim_debug.bat` | 94 PASS / 0 FAIL |
-| 外设 | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat` | 全部通过（UART 为 20 用例全寄存器套件，含 IIR 五子源/LSR 四位错误/FCR 触发级与清 FIFO） |
-| AXI 互联链 | tb_axi_interconnect | `script/axi_test/run.do` | 7 用例（路由回环 / 错误响应 / 超时有界）全过 |
-| UART 下载长流 | tb_uart_dl_file / tb_uart_dl_mini | `script/uart_test/run_file.do`（8x）/ `run_mini.do` | RX→FIFO→下载 FSM 全字对账零失配（已并入外设回归） |
-| SoC | tb_soc_top | `script/run_soc_test.bat` | 默认程序启动输出无异常 |
-| RT-Thread | tb_soc_top | `script/soc_test/rtthread_sim*.do`（含 `rtthread_sim315_pico.do` / `rtthread_sim51_pico.do`） | lts-v3.1.x / v5.1.0 × newlib / picolibc，多任务并发运行 |
+| 套件          | 顶层                                                     | 运行                                                                                         | 判定                                                         |
+| ----------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| custom_asm  | tb_core_top                                            | `script/run_all_custom_asm.py`                                                             | 52/52 全过（自定义压力测试）                                          |
+| riscv-tests | tb_core_top                                            | `script/run_all_riscv_tests.py`                                                            | 51/51 全过（含 fence_i / ma_data / rvc）                        |
+| Debug 模块    | tb_debug                                               | `script/debug_test/run_msim_debug.bat`                                                     | 94 PASS / 0 FAIL                                           |
+| 外设          | tb_apb_uart / tb_apb_gpio / tb_apb_plic / tb_apb_timer | `script/run_periph_regression.bat`                                                         | 全部通过（UART 为 24 用例全寄存器套件，含 IIR 五子源/LSR 四位错误/FCR 触发级与清 FIFO/5-7 数据位/两位停止位） |
+| AXI 互联链     | tb_axi_interconnect                                    | `script/axi_test/run.do`                                                                   | 7 用例（路由回环 / 错误响应 / 超时有界）全过                                 |
+| UART 下载长流   | tb_uart_dl_file / tb_uart_dl_mini                      | `script/uart_test/run_file.do`（8x）/ `run_mini.do`                                          | RX→FIFO→下载 FSM 全字对账零失配（已并入外设回归）                            |
+| SoC         | tb_soc_top                                             | `script/run_soc_test.bat`                                                                  | 默认程序启动输出无异常                                                |
+| RT-Thread   | tb_soc_top                                             | `script/soc_test/rtthread_sim*.do`（含 `rtthread_sim315_pico.do` / `rtthread_sim51_pico.do`） | lts-v3.1.x / v5.1.0 × newlib / picolibc，多任务并发运行            |
 
 ### 运行方式
 
@@ -119,14 +119,14 @@ python tools/build.py demos/rtthread51 --rtthread --rtthread-version 51 --picoli
 
 **script/ 根目录（工具脚本）**
 
-| 脚本 | 用途 | 用法 |
-|------|------|------|
-| `run_one.py` | 运行单个 custom_asm 测试 | `cd script && python run_one.py <test_name>` |
-| `run_all_custom_asm.py` | custom_asm 全回归（tb_core_top） | `cd script && python run_all_custom_asm.py` |
-| `run_all_riscv_tests.py` | riscv-tests ISA 兼容性回归（tb_core_top） | `cd script && python run_all_riscv_tests.py` |
-| `cleanup_temp.py` | 清理 ModelSim work 库、transcript/*.log/wlft*/vsim.wlf/modelsim.ini、`__pycache__`、logs/；`--remove-builds` 可同时删除 build/、build_* 构建产物目录 | `cd script && python cleanup_temp.py [--apply] [--dry-run] [--keep-logs] [--remove-builds]`（默认先列出并确认；`--apply` 跳过确认直接删；`--dry-run` 只列出） |
-| `run_periph_regression.bat` | 外设四合一 headless 回归（UART/GPIO/PLIC/Timer），输出 `logs/*_test_out.txt` | 直接运行 |
-| `run_soc_test.bat` | SoC headless 仿真（tb_soc_top，默认程序启动），输出 `logs/soc_test_out.txt` | 直接运行 |
+| 脚本                          | 用途                                                                                                                                | 用法                                                                                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `run_one.py`                | 运行单个 custom_asm 测试                                                                                                                | `cd script && python run_one.py <test_name>`                                                                                            |
+| `run_all_custom_asm.py`     | custom_asm 全回归（tb_core_top）                                                                                                       | `cd script && python run_all_custom_asm.py`                                                                                             |
+| `run_all_riscv_tests.py`    | riscv-tests ISA 兼容性回归（tb_core_top）                                                                                                | `cd script && python run_all_riscv_tests.py`                                                                                            |
+| `cleanup_temp.py`           | 清理 ModelSim work 库、transcript/*.log/wlft*/vsim.wlf/modelsim.ini、`__pycache__`、logs/；`--remove-builds` 可同时删除 build/、build_* 构建产物目录 | `cd script && python cleanup_temp.py [--apply] [--dry-run] [--keep-logs] [--remove-builds]`（默认先列出并确认；`--apply` 跳过确认直接删；`--dry-run` 只列出） |
+| `run_periph_regression.bat` | 外设四合一 headless 回归（UART/GPIO/PLIC/Timer），输出 `logs/*_test_out.txt`                                                                  | 直接运行                                                                                                                                    |
+| `run_soc_test.bat`          | SoC headless 仿真（tb_soc_top，默认程序启动），输出 `logs/soc_test_out.txt`                                                                     | 直接运行                                                                                                                                    |
 
 **script/<test>/ 仿真脚本**（每个测试目录含 `run.do` + `top_tb.bat` + `filelist.f` + `wave.do`）：
 
@@ -424,11 +424,11 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 |----|----------|------|
 | L1 核心合同 | 常驻（仅 `ifndef SYNTHESIS` 守卫，回归默认开启） | 各模块局部不变式，`a_` 前缀标签写在模块尾部断言区 |
 | L2 模块级深化 | `+define+ASSERT_MODULE` | 覆盖清单全部 18 模块已铺满，专项入口 0 SVA Error（见下） |
-| L3 系统级哨兵 | `+define+ASSERT_SYS` | `rtl/assert/bind_core.sv` bind 到 RISC_V_Core：中断接受双提交哨兵（mepc 记录 vs pc_wb）、退休唯一性 |
+| L3 系统级哨兵 | `+define+ASSERT_SYS` | `rtl/assert/bind_core.sv`（中断接受双提交哨兵、退休唯一性）、`rtl/assert/bind_bus_timeout.sv`（双层超时衔接：主机强拆后桥有界回收） |
 
-**文件组织**：局部不变式内联在各模块尾部统一断言区；跨模块/带状态哨兵放 `rtl/assert/bind_core.sv`（L3）与 `rtl/assert/bind_apb.sv`（bind 到 CLINT/PLIC/UART/TIMER/GPIO 五个从机的 APB 协议检查——SETUP→ACCESS 时序、等待期稳定、有界完成，L1 常驻；头部契约：只许加入编译全部从机的环境，核级 filelist 因此显式列 bind_core 而非 glob）。断言失败统一 `$error("[SVA][模块名]")` 前缀。
+**文件组织**：局部不变式内联在各模块尾部统一断言区；跨模块/带状态哨兵放 `rtl/assert/`——`bind_core.sv`（L3，bind 到 RISC_V_Core：中断接受双提交哨兵、退休唯一性）、`bind_bus_timeout.sv`（L3，bind 到 SoC_top：双层超时衔接——主机强拆后桥侧有界回收/半事务不被叠加）、`bind_apb.sv`（bind 到 CLINT/PLIC/UART/TIMER/GPIO 五个从机的 APB 协议检查——SETUP→ACCESS 时序、等待期稳定、有界完成，L1 常驻；头部契约：只许加入编译全部从机的环境，核级 filelist 因此显式列 bind_core 而非 glob）。断言失败统一 `$error("[SVA][模块名]")` 前缀。
 
-**覆盖清单**（内联断言分布约 12 个模块）：Pipeline_Ctrl（中断接受三契约）、CSR_Reg_Access（陷阱码哨兵 + 中断 mcause 编码）、Mem_Access（rvalid 端口稳定/仲裁互斥/拆分 FSM 4096 拍无卡死）、RegFile（x0 恒 0）、ID_EX/EX_MEM/MEM_WB（flush 清/stall 保持）、IFU_Buffer（16 位对齐/重定向清窗）、OITF、Zcmp_Expander（busy 语义）、DTCM（WRITE_FIRST 读回）、CLINT、AXI_Lite_Master（握手稳定性）。排除：BootROM（静态 ROM）、RVC_Expander（riscv-tests 覆盖）、clk_wiz（Xilinx IP）。
+**覆盖清单**（L2 内联断言，共 18 个模块）：Pipeline_Ctrl（中断接受三契约）、CSR_Reg_Access（陷阱码哨兵 + 中断 mcause 编码）、Mem_Access（rvalid 端口稳定/仲裁互斥/拆分 FSM 4096 拍无卡死）、RegFile（x0 恒 0）、ID_EX/EX_MEM/MEM_WB（flush 清/stall 保持）、IFU_Buffer（16 位对齐/重定向清窗）、OITF、Zcmp_Expander（busy 语义）、DTCM（WRITE_FIRST 读回）、CLINT、AXI_Lite_Master（握手稳定性）、SoC_top（中断映射不变式）、APB_Master（双层超时衔接三契约）、Data_Hazard_Forward、plic_target、apb_uart（LSR/IIR 契约）。排除：BootROM（静态 ROM）、RVC_Expander（riscv-tests 覆盖）、clk_wiz（Xilinx IP）。
 
 **回归判据**：run_all_custom_asm / run_all_riscv_tests 对 `Error: [SVA]` 优先判 FAIL（先于功能 PASS 判据），PASS 隐含 0 断言触发。
 

@@ -59,7 +59,7 @@ flowchart LR
 
 - **方向预测（Gshare）**：PHT 存 2 位饱和计数器，索引 = PC 哈希值 ⊕ 全局历史寄存器（GHR）；GHR 记录最近分支的实际跳转方向，利用分支间相关性提高准确率。
 - **目标地址（BTB）**：直接映射，每项含 Valid / Type / Tag / Target；以 PC 低位索引，查得的 Target 与 PC 高位拼接（压缩 Tag/Target 位宽、省面积，略微增加别名）。
-- **返回地址（RAS）**：JAL（rd=x1/x5）视为调用入栈，RET（JALR 且 rs1 为 link 类）出栈；BTB 指令类型为 RET 时取 RAS 栈顶作为预测地址。JALR 的入栈/出栈按 RISC-V 规范表（rd/rs1 是否 link、rs1==rd）执行。
+- **返回地址（RAS）**：JAL（rd=x1/x5）视为调用入栈，RET（JALR 且 rs1 为 link 类）出栈；BTB 指令类型为 RET 时取 RAS 栈顶作为预测地址。JALR 的入栈/出栈按 RISC-V 规范表（rd/rs1 是否 link、rs1=rd）执行。
 - **两阶段流程**：IF 推测（按 PC 查 BTB/PHT，RET 用 RAS 栈顶）；EX 更新（PHT 计数器、GHR 移位写入实际方向、BTB 新增/修改、RAS 压栈/出栈）。
 - PC 更新优先级：中断/异常 > 分支预测失败（EX）> 预测跳转（IF）> 停顿 > PC+4。
 - 调试单步模式下自动门控预测跳转，保证 PC 严格 +4 递增。
@@ -76,10 +76,10 @@ flowchart LR
 - **中断接受（指令边界）**：中断挂起且 MIE 开启时，在 EX 级指令边界接受——冲刷 IF_ID、ID_EX 与 EX_MEM（EX 级边界指令连同其执行结果一并作废），mepc 锁存边界指令 PC，mret 后重新执行该指令；已越过 EX_MEM 的更老指令（MEM/WB 级）照常提交。
 - **多重窗口延后接受**：EX 级分支未决/重定向拍、流水线停顿（OITF/总线/非对齐访存）、Zcmp 展开期间、mret 后 gap 数拍内均延后中断接受，避免边界错位。
 - **异常（同步）**：当拍按故障指令所在级（sel_stage）部分冲刷；陷阱码经 get_priority 优先级选择（IF 访错 > ID 非法/ecall/ebreak > EX 访错/非法 CSR/未对齐），无异常级为全 1 默认值。
-- Debug halt/断点为独立通路（不影响架构状态），详见 [调试模块](debug_module.md)。
+- Debug halt/断点为独立通路（不影响架构状态），详见[调试模块](debug_module.md)。
 
 ## 调试
 
 - 核通过专用端口与 Debug Module 交互（halt/resume/step、GPR/CSR 直连、SBA 总线访问、Trigger 断点/观察点、ebreak 进调试）。
 - Debug Module 不占系统地址空间（非内存映射外设），经 JTAG DMI 访问；SBA 按地址在核内分发——BootROM/ITCM/DTCM 直连，总线区（外设等）借用 CPU 侧总线主机口发起事务。
-- 详见 [调试模块](debug_module.md)。
+- 详见[调试模块](debug_module.md)。

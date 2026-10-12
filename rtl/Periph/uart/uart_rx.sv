@@ -114,7 +114,7 @@ end
 
 // 5. 核心接收状态机
 // IDLE 和非 IDLE 状态统一受 sample_pulse 门控
-// 避免 90MHz 高频检测引入的伪起始位噪声
+// 避免在 PCLK 高频周期上直接检测引入的伪起始位噪声
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
         rx_state       <= #1 RX_IDLE;
