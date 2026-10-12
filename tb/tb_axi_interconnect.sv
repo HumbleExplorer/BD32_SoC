@@ -1,5 +1,5 @@
 // ============================================================================
-// tb_axi_interconnect.sv — AXI 互联链专项验证（verification_plan §SoC PLANNED 项落地）
+// tb_axi_interconnect.sv — AXI 互联链专项验证（verification_plan §SoC PLANNED 项完成）
 //
 // BD32 — RV32IM Pipelined RISC-V SoC
 // Copyright (c) 2026 BD32 Project
@@ -724,7 +724,7 @@ module apb_slave_stub #(
             PRDATA = 32'd0;
     end
 
-    // 写：ACCESS 完成拍按字节使能落盘
+    // 写：ACCESS 完成拍按字节使能写入
     always_ff @(posedge PCLK or negedge PRESETn) begin
         if (!PRESETn) begin
             for (int i = 0; i < NUM_REGS; i++) regs[i] <= 32'd0;

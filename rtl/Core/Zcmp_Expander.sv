@@ -342,7 +342,7 @@ module Zcmp_Expander (
 // SVA: Zcmp busy 语义守护（背靠背展开竞态场景）
 // busy 期间若无 abort 且尾部退休条件未满足，busy 必须保持——
 // 防止上一条残留标签提前清 busy 截断新展开（tail_armed 门控语义）
-// Yosys SVA 子集写法：时钟取自外层 always、|=> 改 $past 守卫（ModelSim 同样接受）
+// Yosys SVA 子集写法：时钟取自外层 always、|=> 改 $past 判断（ModelSim 同样接受）
 // ===========================================================================
 always @(posedge clk) begin
     if (rst_n && $past(busy_q && !abort_i && !retire_ok_o)) begin
@@ -358,7 +358,7 @@ end
 // ① 微操作仅在展开进行中有效；IDLE 态无输出
 always @(posedge clk) begin
     if (rst_n) begin
-        a_zcmp_valid_guarded: assert property
+        a_zcmp_idle_no_micro_valid: assert property
             ((state_q == S_IDLE && !capture_i && !abort_i) ? !micro_valid_o : 1'b1);
     end
 end

@@ -156,9 +156,9 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 
 - [x] **FENCE.I / 自修改代码**：已实现（ITCM 字节写使能 + FENCE.I 冲刷取指路径），`rv32ui-p-fence_i` 通过
 - [x] **非对齐访存**：已实现（DTCM/总线内存拆分为两次对齐访问），`rv32ui-p-ma_data` 通过
-- [x] **RV32C压缩指令扩展**：已实现（取指 16 位对齐 + IFU_Buffer 指令装配 + RVC_Expander 硬件展开），`rv32uc-p-rvc` 通过；`build.py --rvc` 编译 rv32imc 固件
-- [x] **Zcb / Zba+Zbb+Zbs / Zcmp**：已实现（Zcb 于 RVC_Expander 1:1 展开；B 扩展全单周期；Zcmp 由 Zcmp_Expander FSM 多拍展开并保证中断/调试原子性），`zcb_test`/`b_extension_test`/`zcmp_test` 通过；`build.py --zcb/--zbb/--zcmp`
-- [x] **Zicond**：已实现（czero.eqz/nez 单周期，Executer 内 func7 分支扩展），`zicond_test` 12 节通过；`build.py --zicond`
+- [x] **RV32C压缩指令扩展**：已实现（取指 16 位对齐 + IFU_Buffer 指令装配 + RVC_Expander 硬件展开）
+- [x] **Zcb / Zba+Zbb+Zbs / Zcmp**：已实现（Zcb 于 RVC_Expander 1:1 展开；B 扩展全单周期；Zcmp 由 Zcmp_Expander FSM 多拍展开并保证中断/调试原子性）
+- [x] **Zicond**：已实现（czero.eqz/nez 单周期，Executer 内 func7 分支扩展）
 - [ ] **RV32A：A 原子扩展**（LR/SC + AMO，为 RTOS/多核同步铺路）
 - [ ] **RV32F / D：F/D 浮点扩展**（FPU 数据通路 + ABI 切换）
 - [x] **RT-Thread 移植**：v5.1.0 与 lts-v3.1.x 双版本（仅 M-mode，无 U-mode / MPU / SMP）

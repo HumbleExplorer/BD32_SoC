@@ -348,7 +348,7 @@ assign bus_error = bus_tran_done_cpu && (bus_resp != 2'b00);
 
 // =========================================================================
 // 异常编码（统一在顶层完成，子模块只报 1-bit 条件）
-// 约定：无异常 = {31{1'b1}}（bit[30]=1 为哨兵），有效异常码 bit[30]=0
+// 约定：无异常 = {31{1'b1}}（bit[30]=1 为全 1 标记），有效异常码 bit[30]=0
 // =========================================================================
 // 非对齐异常抑制：DTCM / 总线内存（Flash/DDR）由 Mem_Access 拆分访问透明处理（不产生异常）；
 // ITCM store / BootROM / APB 外设仍按规范产生 mcause=4/6 异常
@@ -1268,9 +1268,9 @@ assign reg_rd_waddr_selected_mem = (bus_rvalid && ~split_active) ? bus_load_wadd
 
 `ifndef SYNTHESIS
 // ===== SVA：访存一致性 =====
-// 契约：tcm_rvalid 延伸（连续 ≥2 拍）期间，若 EX 级仍是同一条访存指令
+// 约定：tcm_rvalid 延伸（连续 ≥2 拍）期间，若 EX 级仍是同一条访存指令
 // （inst_ex 不变 = 流水线停顿持有该访问），则 DTCM 端口地址必须稳定——
-// 消费窗口内端口不得漂移（dtcm_port_addr_q 端口保持固化此契约）。
+// 消费窗口内端口不得漂移（dtcm_port_addr_q 端口保持固化此约定）。
 // 背靠背不同 load（inst_ex 变化、rvalid 连续服务两条 load）是合法流，
 // 端口按新访问切换，不在本断言约束内。
 property p_rv_port_stable;

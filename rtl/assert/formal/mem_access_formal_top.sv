@@ -2,9 +2,9 @@
 // mem_access_formal_top.sv — Mem_Access 形式验证 harness（SymbiYosys）
 // =============================================================================
 // 断言在 Mem_Access.sv 内部（`ifdef FORMAL 区）：
-//   · 拆分 FSM 有界完成（liveness，需总线公平性假设——见模块内 assume）
-//   · 拆分期间锁存 rvalid 恒 0（rvalid 提交门合同）
-//   · P3 收尾态结构 / split_stall 合同
+//   · 拆分 FSM 有界完成（最终完成性，需总线公平性假设——见模块内 assume）
+//   · 拆分期间锁存 rvalid 恒 0（rvalid 提交门约定）
+//   · P3 收尾态结构 / split_stall 约定
 // 输入全自由穷举；dtcm_rdata/rd_bus_data 自由意味着本环境只证控制平面，
 // 不证拆分数据合并的语义正确性（后者由 custom_asm 非对齐用例仿真覆盖）。
 // =============================================================================

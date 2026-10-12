@@ -142,7 +142,7 @@ module plic_target #(
 
 `ifndef SYNTHESIS
 // ===== SVA：PLIC target 协议不变式（L2，+define+ASSERT_MODULE 使能）=====
-// Yosys SVA 子集写法：时钟取外层 always、蕴含改 if 守卫（ModelSim 同样接受）
+// Yosys SVA 子集写法：时钟取外层 always、蕴含改 if 判断（ModelSim 同样接受）
 `ifdef ASSERT_MODULE
     always @(posedge clk) begin
         if (rst_n) begin

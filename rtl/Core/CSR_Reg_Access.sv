@@ -333,7 +333,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         int_trap_jump    <= #1 1'b0;
     end else begin
         int_waiting_jump <= #1 int_trap ? 1'b1 :
-                                (bus_ready && ~oitf_stall) ? 1'b0 : // 只需等总线（乘除法由 OITF 兜底）
+                                (bus_ready && ~oitf_stall) ? 1'b0 : // 只需等总线（乘除法停顿由 OITF 计入）
                                 int_waiting_jump;
         int_trap_jump   <= #1 int_trap_jump_n;
         int_jump_addr   <= #1 int_trap_jump_n ? (mtvec[0]                         // 本周期预计算，下周期直接用
@@ -538,7 +538,7 @@ a_redirect_no_accept: assert property (
     @(posedge clk) disable iff (!rst_n)
     (branch_en_ex[1] |-> !int_trap_jump_n));
 `else
-// FORMAL 版：同契约 yosys 子集写法（时钟取外层 always、蕴含改 if 守卫）
+// FORMAL 版：同约定 yosys 子集写法（时钟取外层 always、蕴含改 if 判断）
 fml_a_redirect_no_accept: assert property
     (branch_en_ex[1] ? !int_trap_jump_n : 1'b1);
 `endif
@@ -578,21 +578,21 @@ a_int_trap_fire: assert property (
     @(posedge clk) disable iff (!rst_n)
     (int_trap_jump |-> trap_jump));
 `endif
-// 6) 陷阱码哨兵：异常陷阱拍锁存的 mcause 不得携带全 1 哨兵（bit30=1）——
+// 6) 陷阱码检查：异常陷阱拍锁存的 mcause 不得携带全 1 标记（bit30=1）——
 //    get_priority 优先级表缺项时 sel_stage 落 default，异常码 mux 输出全 1 且
 //    mepc=0
-//    mret 拍 mcause_n 走默认 0 分支（无 trap 码语义），哨兵检查只针对
+//    mret 拍 mcause_n 走默认 0 分支（无 trap 码语义），全 1 标记检查只针对
 //    异常陷阱拍（exception_jump=1，mcause_n = {1'b0,exception_code}）
 `ifdef FORMAL
-// 哨兵契约：
+// 全 1 标记约定：
 // 异常触发拍（exception_trap=1）时，Pipeline_Ctrl 选中的阶段码
-// exception_code 必为非哨兵（全 1 bit30=1 仅表示"无异常"）。
+// exception_code 必为非全 1（全 1 bit30=1 仅表示"无异常"）。
 // 若 get_priority 优先级表缺项导致 sel_stage 落 default，
-// 码 mux 输出全 1 哨兵 + mepc=0，mcause 锁存 0x7FFFFFFF。
+// 码 mux 输出全 1 标记 + mepc=0，mcause 锁存 0x7FFFFFFF。
 // 直接引用输入端口（防 abc opt 消除内部 wire 后 witness 校验失败）
-// 哨兵契约已由 harness assume（生产者=Pipeline_Ctrl 的
-// fml_a_no_sentinel）承接，此处升级为有意义的组成检查：
-// 异常陷阱拍 mcause_n 必为 {1'b0, 阶段异常码}（优先级最高项，防 mux 病变）
+// 全 1 标记约定已由 harness assume（生产者=Pipeline_Ctrl 的
+// fml_a_exc_code_not_all1）承接，此处升级为有意义的组成检查：
+// 异常陷阱拍 mcause_n 必为 {1'b0, 阶段异常码}（优先级最高项，防 mux 输出异常）
 fml_a_exc_mcause_composition: assert property
     (exception_trap ? (mcause_n == {1'b0, exception_code}) : 1'b1);
 `else
@@ -601,7 +601,7 @@ property p_exc_code_valid;
     (exception_trap |-> (exception_code != {DATA_WIDTH-1{1'b1}}));
 endproperty
 a_exc_code_valid: assert property (p_exc_code_valid)
-    else $error("[SVA][CSR] 异常陷阱携带全1哨兵 exception_code=%h（核对 get_priority）", exception_code);
+    else $error("[SVA][CSR] 异常陷阱携带全1标记 exception_code=%h（核对 get_priority）", exception_code);
 `endif
 // 7) 中断原因编码合法：软件 3 / 定时 7 / 外部 11，且中断位（bit31）必须置位
 `ifdef FORMAL
@@ -621,7 +621,7 @@ a_int_code_legal: assert property (p_int_code_legal)
 // 注：cover 深度受限于中断接受门控链的时序约束——int_accept_kill 要求
 // bus_ready=1 && oitf_stall=0 && int_trap=1（int_trap 已含 mstatus.MIE 与
 // mip&mie 门控，MIE 需先经 CSR 写入），30 步内路径过长；这些覆盖点由仿真（memstress 中断用例）
-// 保证可达性，形式任务只证契约（prove）
+// 保证可达性，形式任务只证约定（prove）
 `ifdef FORMAL
 always @(posedge clk) begin
     fml_c_mret_gap_end:    cover property (mret_gap_cnt == 3'd0 && $past(mret_req));

@@ -268,8 +268,8 @@ module AXI_Lite_Master #(
 `ifndef SYNTHESIS
 // ===========================================================================
 // SVA: AXI4-Lite 握手稳定性（VALID 拉起后必须保持到握手完成）
-// Yosys SVA 子集写法：时钟取自外层 always、$stable 改 $past、|=> 改 $past 守卫
-// （ModelSim 同样接受）；总线超时逃逸拍豁免——超时强制撤 valid 是设计行为
+// Yosys SVA 子集写法：时钟取自外层 always、$stable 改 $past、|=> 改 $past 判断
+// （ModelSim 同样接受）；总线超时逃逸拍例外——超时强制撤 valid 是设计行为
 // ===========================================================================
 always @(posedge clk) begin
     if (rst_n) begin
@@ -312,7 +312,7 @@ always @(posedge clk) begin
         fml_a_state_legal: assert property
             ((state == FML_S_IDLE) || (state == FML_S_WAIT_W_AW) || (state == FML_S_WAIT_B)
           || (state == FML_S_WAIT_AR) || (state == FML_S_WAIT_R) || (state == FML_S_DONE));
-        // CPU 侧契约：req_ready/rsp_valid 与状态一致（蕴含式——req_ready 是
+        // CPU 侧约定：req_ready/rsp_valid 与状态一致（蕴含式——req_ready 是
         // 寄存器输出，复位后第一拍 state=IDLE 而 req_ready 仍为复位值 0，
         // 精确相等式会在启动拍误报）
         if (req_ready) begin
@@ -320,7 +320,7 @@ always @(posedge clk) begin
                 ((state == FML_S_DONE) || (state == FML_S_IDLE));
         end
         fml_a_rsp_valid: assert property (rsp_valid == (state == FML_S_DONE));
-        // 等待态有界逃逸：至多 TIMEOUT_VAL+1 拍必被超时强制离开（活性 → 有界活性）
+        // 等待态有界逃逸：至多 TIMEOUT_VAL+1 拍必被超时强制离开（最终完成 → 有界完成）
         fml_a_wait_bounded: assert property (fml_wait_age <= `BUS_TIMEOUT + 2);
         // DONE 拍 req_ready 必为高（响应当拍可被接收/背靠背发射）
         if (state == FML_S_DONE) begin
@@ -344,7 +344,7 @@ end
 // ===== SVA L2：AXI_Lite_Master 深化——单笔在途与响应质量 =====
 always @(posedge clk) begin
     if (rst_n) begin
-        // 总线超时恒不发生（从机有界完成合同端到端）
+        // 总线超时恒不发生（从机有界完成约定端到端）
         a_l2_axi_no_timeout: assert property (!bus_timeout);
         // 响应数据/错误码无 X
         if (rsp_valid) a_l2_axi_rsp_nox: assert property (!$isunknown(rsp_rdata) && !$isunknown(rsp_error));

@@ -88,7 +88,7 @@ function automatic [3:0] get_priority;
     input [1:0] stage; // 0:IF, 1:ID, 2:EX
     input [DATA_WIDTH-2:0] code;
     // 只比较 [3:0]：所有合法异常码都是 {{(DATA_WIDTH-5){1'b0}},4'dX} 零扩展，
-    // 全 1 哨兵的 [3:0]=4'hF 不命中任何表项仍返回 15，语义与全宽 case 等价；
+    // 全 1 标记的 [3:0]=4'hF 不命中任何表项仍返回 15，语义与全宽 case 等价；
     // 只比较 [3:0] 同时是该函数进 EX→trap 关键路径的时序补偿
 begin
     get_priority = {4{1'b1}};
@@ -112,8 +112,8 @@ begin
                 4'd5,4'd7: get_priority = 4'd10; // 访存错误
                 4'd4,4'd6: get_priority = 4'd10; // 访存未对齐（ITCM store/BootROM/APB 拆分不可覆盖时）。
                                                  // 缺失本项时 code 携带合法 bit30=0 却查表落默认 15，
-                                                 // sel_stage 保持 default → 异常码 mux 输出全 1 哨兵 + mepc=0，
-                                                 // 陷阱以全 1 哨兵 mcause=0x7FFFFFFF 发出
+                                                 // sel_stage 保持 default → 异常码 mux 输出全 1 标记 + mepc=0，
+                                                 // 陷阱以全 1 标记 mcause=0x7FFFFFFF 发出
             endcase
         end
     endcase
@@ -132,7 +132,7 @@ logic [DATA_WIDTH-2:0] exception_code_ex_m;
 
 // 分支/跳转重定向有效（branch_jump_en）时，IF/ID 级是被冲刷的更年轻误取指令，
 // 其异常作废（否则误取到的非法字异常会抢在重定向之前触发陷阱，跳飞 PC）。
-// 做法：把 IF/ID 的异常码替换为全 1 的“无异常”哨兵值；EX 级（分支指令自身，
+// 做法：把 IF/ID 的异常码替换为“无异常”的全 1 标记；EX 级（分支指令自身，
 // 如 jalr 地址未对齐 / 非法 CSR）保持不变，仍可正常触发陷阱。
 // 注意：exception_trap 必须沿用原有的 NAND（~(a&&b&&c)）结构，它在复位初期
 // inst_addr 尚为不定态 X 时是“复位安全”的（X&&.. 解析为不触发陷阱）；
@@ -360,11 +360,11 @@ a_trap_addr_stable: assert property (
 
 `ifdef FORMAL
 // ===========================================================================
-// FORMAL：中断接受冲刷契约 + 异常优先级表不变式（SymbiYosys 无界证明）
+// FORMAL：中断接受冲刷约定 + 异常优先级表不变式（SymbiYosys 无界证明）
 // 时钟取外层 always、无 disable-iff（复位时序假设由 harness 提供）
 //
 // 遮蔽谓词：accept 分支被更高优先级分支（debug halt / step 状态机 /
-// r_trap_redirect 挂起重定向）吃掉时不检查——契约只约束"真的走到
+// r_trap_redirect 挂起重定向）吃掉时不检查——约定只约束"真的走到
 // accept 分支"的拍，与 L1 仿真断言（disable-iff + |->）语义等价。
 // ===========================================================================
 wire fml_accept_unshadowed = !(dbg_halt_eff || step_halt || trigger_eff
@@ -373,11 +373,11 @@ wire fml_accept_unshadowed = !(dbg_halt_eff || step_halt || trigger_eff
                                || r_trap_redirect
                                // WFI 分支（优先级高于 trap 接受）冻结流水线并把
                                // 异常接受推迟一拍（异常唤醒语义）——推迟拍不检查
-                               // 立即冲刷契约
+                               // 立即冲刷约定
                                || (waiting_int && ~ex_access_en));
 
 always @(posedge clk) begin
-    // ---- 中断接受拍冲刷契约 ----
+    // ---- 中断接受拍冲刷约定 ----
     // ① 接受拍必须冲 IF_ID（边界指令死在 ID_EX，mepc 已锁存其 PC）
     fml_a_accept_ifid: assert property
         ((int_accept_kill && fml_accept_unshadowed) ? if_id_flush : 1'b1);
@@ -394,14 +394,14 @@ always @(posedge clk) begin
         (trap_jump_exc && fml_accept_unshadowed && (sel_stage == 2'd1)
          ? !ex_mem_flush : 1'b1);
 
-    // ---- 异常优先级表不变式（get_priority 缺项会输出全 1 哨兵）----
-    // ④ 异常触发时，所选阶段码必须非哨兵（哨兵 {W-1{1'b1}} 表示"无异常"，
+    // ---- 异常优先级表不变式（get_priority 缺项会输出全 1 标记）----
+    // ④ 异常触发时，所选阶段码必须非全 1（全 1 标记 {W-1{1'b1}} 表示"无异常"，
     //    陷阱拍 mux 输出全 1 即 mcause=0x7FFFFFFF）
     // rst_n 门控：复位拍异常码输入自由（assume 按惯例仅在 rst_n 生效），
-    // 组合 mux 可瞬时呈现 trap=1+哨兵输出的无意义组合——只在正常工作态检查
-    fml_a_no_sentinel: assert property
+    // 组合 mux 可瞬时呈现 trap=1+全 1 标记输出的无意义组合——只在正常工作态检查
+    fml_a_exc_code_not_all1: assert property
         ((rst_n && exception_trap) ? !(exception_code[DATA_WIDTH-2]) : 1'b1);
-    // ⑤ exception_trap 当且仅当至少一阶段码非哨兵（NAND 语义）
+    // ⑤ exception_trap 当且仅当至少一阶段码非全 1（NAND 语义）
     fml_a_trap_consistent: assert property
         (exception_trap
          == (!exception_code_if_m[DATA_WIDTH-2]
@@ -569,9 +569,9 @@ assign dbg_halted = (dbg_halt_eff || step_halt || trigger_eff || ebreak_halt) &&
 `ifndef SYNTHESIS
 `ifndef FORMAL
 // ===========================================================================
-// SVA: 中断接受拍冲刷契约
-// 契约：接受拍冲 IF_ID+ID_EX（边界指令死在 ID_EX，mepc 已锁存其 PC），
-//       EX_MEM 不冲（更老指令照常提交）。动作若与契约背离立即触发。
+// SVA: 中断接受拍冲刷约定
+// 约定：接受拍冲 IF_ID+ID_EX（边界指令死在 ID_EX，mepc 已锁存其 PC），
+//       EX_MEM 不冲（更老指令照常提交）。动作若与约定背离立即触发。
 // ===========================================================================
 // 1) 接受拍必须冲 IF_ID（无论是否与异常同拍重叠）
 a_accept_kill_ifid: assert property (
@@ -590,9 +590,9 @@ a_accept_kill_flush: assert property (
 // ===== SVA L2：Pipeline_Ctrl 深化——异常报告出口质量 =====
 always @(posedge clk) begin
     if (rst_n) begin
-        // 异常有效时码不得为全 1 哨兵（优先级表完整性，与 CSR 哨兵契约同源）
+        // 异常有效时码不得为全 1 标记（优先级表完整性，与 CSR 全 1 标记约定同源）
         if (exception_val) begin
-            a_l2_pc_exc_nonsentinel: assert property (!(&exception_code));
+            a_l2_exc_code_not_all1: assert property (!(&exception_code));
             a_l2_pc_exc_nox: assert property (!$isunknown(exception_code));
         end
         // 异常有效必伴随重定向（报告即生效，不许"有码无跳"）

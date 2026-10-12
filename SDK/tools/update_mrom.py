@@ -86,7 +86,7 @@ def verify(words):
             csr = (code >> 20) & 0xFFF
             if csr in FORBIDDEN_CSR:
                 raise ValueError(f"word[{i}] 访问已移除 CSR 0x{csr:03X}: {w}")
-    # 跳转重定位是否解析由构建 bat 的 objdump 符号注解检查兜底
+    # 跳转重定位是否解析由构建 bat 的 objdump 符号注解检查保证
 
 
 def write_outputs(words):

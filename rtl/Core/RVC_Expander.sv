@@ -43,7 +43,7 @@ module RVC_Expander (
   assign rd_c   = rvc_inst[4:2];
 
   always_comb begin
-    inst_o    = {16'b0, rvc_inst};          // 默认：原样（非法路径兜底）
+    inst_o    = {16'b0, rvc_inst};          // 默认：原样透传
     illegal_o = 1'b0;
     zcmp_en_o = 1'b0;
     zcb_en_o  = 1'b0;

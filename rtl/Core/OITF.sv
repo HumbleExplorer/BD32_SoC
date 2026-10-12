@@ -291,7 +291,7 @@ end
 `ifndef SYNTHESIS
 // ===== SVA：FIFO 一致性（仿真 + 形式共享）=====
 // Yosys SVA 子集写法：时钟取自外层 always（模块级 @(posedge) 不支持）、
-// disable iff 改为 if 守卫、蕴含 |=> 改写为 $past 守卫（ModelSim 同样接受）
+// disable iff 改为 if 判断、蕴含 |=> 改写为 $past 判断（ModelSim 同样接受）
 always @(posedge clk) begin
     if (rst_n) begin
         // 计数永不超深度（入队/退休/flush 三方更新无双重计数）

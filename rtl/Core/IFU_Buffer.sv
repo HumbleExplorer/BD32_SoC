@@ -387,7 +387,7 @@ module IFU_Buffer #(
 
 `ifndef SYNTHESIS
 // ===== SVA：取指窗口一致性 =====
-// Yosys SVA 子集写法：时钟取自外层 always、disable iff 改 if 守卫、|=> 改 $past 守卫
+// Yosys SVA 子集写法：时钟取自外层 always、disable iff 改 if 判断、|=> 改 $past 判断
 // （ModelSim 同样接受）
 always @(posedge clk) begin
     if (rst_n) begin
@@ -395,7 +395,7 @@ always @(posedge clk) begin
         a_inst_addr_aligned: assert property (inst_addr_o[0] == 1'b0);
         // 重定向清空装配窗口：jump_en/dbg_load_en 次拍 have_cur=0（字流从目标重取），
         // 且请求/预取指针落位目标字流（req=目标字，fetch=目标字+4）
-        // $past(rst_n) 守卫：等价原 disable iff 语义（复位拍发起的求值线程无效）
+        // $past(rst_n) 判断：等价原 disable iff 语义（复位拍发起的求值线程无效）
         if (rst_n && $past(rst_n) && $past(jump_en || dbg_load_en)) begin
             a_redirect_clear: assert property
                 (!have_cur && (req_addr[1:0] == 2'b00) && (fetch_addr == req_addr + 4));
@@ -407,7 +407,7 @@ end
 `ifdef FORMAL
 // ===== 形式验证属性（SymbiYosys）=====
 // 取指窗口簿记不变式。w_new/fetch_served 全自由穷举；
-// Zcmp 退休契约假设：last_retired 只允许出现在展开进行中（与核内实际连线一致，
+// Zcmp 退休约定假设：last_retired 只允许出现在展开进行中（与核内实际连线一致，
 // 欠此则自由输入可伪造"未展开先退休"，restore 路径加载未捕获状态产生假失败）
 always @(posedge clk) begin
     if (rst_n) begin
@@ -423,7 +423,7 @@ always @(posedge clk) begin
             fml_a_window_pair: assert property
                 ((req_addr == cur_w_addr + 4) || (req_addr == cur_w_addr));
         end
-        // 非冻结消费路径：have_cur 时本拍请求 cur_w 下一字（16 位流两拍/字的簿记合同）；
+        // 非冻结消费路径：have_cur 时本拍请求 cur_w 下一字（16 位流两拍/字的簿记约定）；
         // req_fwd 拍合法跳到 req_addr+4（crossing 窗口更新拍请求新窗口字的下一字）
         if (have_cur && !stall && !redirect && !predict_redirect && !zcmp_active && !zcmp_capture) begin
             fml_a_req_next_word: assert property
@@ -456,11 +456,11 @@ end
 // ===== SVA L2：IFU_Buffer 深化——窗口簿记（formal 不变式的仿真采样版）=====
 always @(posedge clk) begin
     if (rst_n && reset_d) begin
-        // 窗口对：持有窗口字时请求指针只允许 窗口字+4 / 窗口字（冻结期豁免）
+        // 窗口对：持有窗口字时请求指针只允许 窗口字+4 / 窗口字（冻结期例外）
         if (have_cur && !zcmp_capture && !zcmp_active)
             a_l2_ifu_window_pair: assert property (
                 (req_addr == cur_w_addr + 4) || (req_addr == cur_w_addr));
-        // 请求步进：非重定向/非冻结消费拍，请求指针按 formal 合同前推
+        // 请求步进：非重定向/非冻结消费拍，请求指针按 formal 约定前推
         if ($past(have_cur && !stall && !redirect && !predict_redirect
                   && !zcmp_active && !zcmp_capture))
             a_l2_ifu_req_step: assert property (

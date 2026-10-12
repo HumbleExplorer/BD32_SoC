@@ -1,13 +1,13 @@
 # BD32 芯片规格书（Chip Specification）
 
-> 本文档是 BD32 SoC 的**权威规格**：寄存器复位值/访问类型、中断编号、时钟与复位架构以此为准（数值从 RTL 实读提取，提取记录见 `stage1_spec_extraction.json` / `stage2_spec_review.json`）。
+> 本文档是 BD32 SoC 的**规格文档**：寄存器复位值/访问类型、中断编号、时钟与复位架构以此为准（数值从 RTL 实读提取，提取记录见 `stage1_spec_extraction.json` / `stage2_spec_review.json`）。
 > 配套文档：微架构实现细节见 [architecture.md](architecture.md)；固件编程见 [sdk.md](sdk.md)；外设编程速查见 [peripherals.md](peripherals.md)；验证流程见 [verification.md](verification.md)。
 
 ## 1. 项目概览
 
 - 设计名称：BD32——RV32IMC 自研 SoC（Zcb/Zba/Zbb/Zbs/Zcmp/Zicond 扩展），5 级流水 + OITF 深度 4 乱序退休 + Gshare/BTB/RAS 预测。
-- 实现平台：FPGA 原型——AMD ZYNQ xc7z020clg400-2（PL 部分），Vivado 2023.1。工艺/功耗/供电不适用（FPGA 平台豁免，ASIC 化时需重新评估并补录）。
-- 目标频率：clk_cpu 62.5MHz（时序收敛签核值，WNS MET）；UART 波特率基准 8.388608MHz；CLINT 计时 1MHz。
+- 实现平台：FPGA 原型——AMD ZYNQ xc7z020clg400-2（PL 部分），Vivado 2023.1。工艺/功耗/供电不涉及（FPGA 平台无此项，ASIC 化时需重新评估并补录）。
+- 目标频率：clk_cpu 62.5MHz（时序收敛签核值，WNS 达标）；UART 波特率基准 8.388608MHz；CLINT 计时 1MHz。
 - 顶层模块：`bd32_board_top`（板级：时钟/复位生成）→ `SoC_top`（数字 IP：核 + 总线 + 外设 + Debug）→ `RISC_V_Core`。
 
 ## 2. 系统框图
@@ -61,7 +61,7 @@ flowchart TD
 | clk_1mhz | 1MHz | sys_clk / 50（clk_div_static） | CLINT mtime（1 tick = 1µs） |
 
 - **CDC 边界（仅两处）**：① clk_cpu ↔ clk_1mhz（CLINT mtime/mtimecmp 跨域，比较与中断输出在 mtime 域，CSR 影子在 CPU 域同步采样）；② clk_cpu ↔ JTAG TCK（debug_cdc 同步器）。综合侧对应 false_path 约束。
-- 无门控时钟（FPGA 原型豁免）。
+- 无门控时钟（FPGA 原型无此需求）。
 
 ## 5. 复位架构
 
@@ -100,7 +100,7 @@ PLIC gateway（每源独立例化，电平/边沿由参数 TRIGGER_MODE 选择�
 
 **嵌套中断适用性**：嵌套（handler 内开 MIE）时，Claim–Complete 窗口恰与开中断的处理时段重合。当前三源均为"外设内锁存 + 电平喂 gateway"结构（GPIO=TR_STAT / Timer=TIMx_SR / UART=IIR+FIFO），窗口内新事件锁存于外设状态寄存器，Complete 重开后以电平重新置位——事件不丢，嵌套安全。
 
-**软件契约（handler 标准收尾顺序）**：处理事件 → 清外设状态位（W1C）→ Complete。清状态位是两种触发模式的共同必需动作（W1C 寄存器的存在意义：硬件置位=有事件未处理，软件清零=处理完毕）；先清后 Complete，则 Complete 重开时凡处理期间新到的事件已重新置位状态位，立即产生新中断——一次不丢。状态位为 sticky 合并语义：多次事件可合并为一次处理，不保证逐事件计数（计数类需求由软件层另做）。
+**软件约定（handler 标准收尾顺序）**：处理事件 → 清外设状态位（W1C）→ Complete。清状态位是两种触发模式的共同必需动作（W1C 寄存器的存在意义：硬件置位=有事件未处理，软件清零=处理完毕）；先清后 Complete，则 Complete 重开时凡处理期间新到的事件已重新置位状态位，立即产生新中断——一次不丢。状态位为 sticky 合并语义：多次事件可合并为一次处理，不保证逐事件计数（计数类需求由软件层另做）。
 
 架构约束：未来新增中断源必须遵守"外设内锁存状态、以电平驱动 PLIC"的结构；若必须接入裸脉冲源（无状态位、瞬时脉冲直驱），Claim–Complete 窗口内的脉冲会丢失，需软件采用 Claim 后立即 Complete（软件 in-service 标志防重入），或为 gateway 增加 in-service 重触发选项。
 
@@ -187,10 +187,10 @@ RX/TX 数据 FIFO 均为 `sync_fifo #(.DEPTH(16), .DATA_WIDTH(8))`（参数化�
 
 ## 9. 错误与异常处理
 
-- Flash/DDR 未实现区 → axi_err_slave 恒 OKAY（读数据 0、写丢弃，靠全 0 译码异常兜底）；未路由段（0x0000~0x7FFF_FFFF、0xD 段）→ 无从机响应，总线超时后 DECERR（有界完成，不挂死）；
+- Flash/DDR 未实现区 → axi_err_slave 恒 OKAY（读数据 0、写丢弃，全 0 取回后按非法指令处理）；未路由段（0x0000~0x7FFF_FFFF、0xD 段）→ 无从机响应，总线超时后 DECERR（有界完成，不挂死）；
 - APB 从机 PSLVERR 或从机超时 → AXI 桥返回 SLVERR（Bus_Access 转 bus_error）；
 - APB 未匹配地址（PSEL 全 0 段）→ APB_Interconnect 聚合默认值响应（PREADY=1、PRDATA=0、PSLVERR=0，立即 OKAY 完成）；
 - 取指地址非 BootROM/ITCM → 取指访问故障（if_access_fault）；
 - 非对齐访存 → Mem_Access 拆分访问或异常（mtval 记录故障地址）；
-- 保留压缩编码 / 非法 CSR 地址 → 非法指令异常（mcause=2，码全 1 哨兵为"无异常"标记，永不作为合法码锁存——SVA 哨兵契约）；
+- 保留压缩编码 / 非法 CSR 地址 → 非法指令异常（mcause=2，码全 1 为"无异常"标记，永不作为合法码锁存（SVA 检查固化该约定））；
 - 总线超时 → BUS_TIMEOUT 有界退出（形式验证下缩参标定）。

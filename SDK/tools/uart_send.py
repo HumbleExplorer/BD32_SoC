@@ -2,7 +2,7 @@
 UART 工具 — 程序烧录 + 实时串口终端（两种模式均实时打印输出）
 
 1. 下载模式（默认）：发送 .uartbin 到 FPGA，可先复位；下载后在同一会话
-   监听输出，边收边实时打印，日志完整落盘。
+   监听输出，边收边实时打印，日志完整保存。
 2. 交互终端模式（--interactive）：打开串口后实时回显板子输出，键盘输入
    实时转发到 TX 并本地回显（--no-echo 关闭），Ctrl+C 退出。
 
@@ -50,7 +50,7 @@ def repo_root():
 def is_inside_repo(path, root=None):
     """非致命子树判定：path 规范化后是否落在 root（默认仓库根）内。
     供写文件前做纵深防御（args.log 已在入口经 safe_log_path 致命校验；
-    此处再兜底一次，防止未来重构让 log_path 逃出仓库时把日志写到任意位置）。"""
+    此处再校验一次，防止未来重构让 log_path 逃出仓库时把日志写到任意位置）。"""
     if root is None:
         root = repo_root()
     p = os.path.realpath(path)

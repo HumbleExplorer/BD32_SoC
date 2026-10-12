@@ -2,13 +2,13 @@
 // pipeline_ctrl_formal_top.sv — Pipeline_Ctrl 形式验证 harness（SymbiYosys）
 // =============================================================================
 // 目标属性（Pipeline_Ctrl.sv `ifdef FORMAL 区）：
-//   ① 中断接受拍冲刷契约（fml_a_accept_*，防双重提交）
-//   ② 异常优先级表哨兵不变式（fml_a_no_sentinel / trap_consistent / oitf_flush）
+//   ① 中断接受拍冲刷约定（fml_a_accept_*，防双重提交）
+//   ② 异常优先级表完整性不变式（fml_a_exc_code_not_all1 / trap_consistent / oitf_flush）
 //   ③ 单步 drain 状态机不变式（fml_a_step_legal / drain_bounded）
 //
 // 断言全部在 Pipeline_Ctrl.sv 内部 `ifdef FORMAL 区（yosys SVA 子集写法：
 // 时钟取外层 always、无 disable iff、无 |->），本 harness 只做：
-//   - 驱动所有输入自由变量（异常码三组全 1 哨兵 = 无异常路径）
+//   - 驱动所有输入自由变量（异常码三组全 1 标记 = 无异常路径）
 //   - 复位时序假设（初始 1 拍 rst_n=0，此后恒 1）
 //   - 让 sby 的 read -formal -D FORMAL 激活 FORMAL 区
 // =============================================================================
@@ -22,7 +22,7 @@ module pipeline_ctrl_formal_top #(
 
     localparam AW = 32;
 
-    // ---- 输入自由变量（默认全 0/哨兵）----
+    // ---- 输入自由变量（默认全 0/全 1 标记）----
     logic                                     f_branch_jump_en;
     logic [AW-1:0]                            f_branch_jump_addr;
     logic                                     f_trap_jump;
@@ -58,10 +58,10 @@ module pipeline_ctrl_formal_top #(
     logic [DATA_WIDTH-1:0]                    f_exc_val_id;
     logic [DATA_WIDTH-1:0]                    f_exc_val_ex;
 
-    // 异常码/指令地址放开为自由输入。原钉哨兵使 exception_trap 恒 0，
-    // fml_a_no_sentinel/trap_consistent/exc_s2/exc_s1_keep/oitf_flush 全部
+    // 异常码/指令地址放开为自由输入。原钉全 1 标记使 exception_trap 恒 0，
+    // fml_a_exc_code_not_all1/trap_consistent/exc_s2/exc_s1_keep/oitf_flush 全部
     // 断言空转（harness 目标②失去覆盖）。
-    // 自由码（含哨兵值）让优先级表/哨兵不变式被真实探索；地址独立自由值
+    // 自由码（含全 1 标记）让优先级表/全 1 标记不变式被真实探索；地址独立自由值
     // 使 exc_s2/exc_s1_keep 的地址 mux 选择可观测。
     assign f_exc_val_if  = '0;
     assign f_exc_val_id  = '0;
@@ -108,7 +108,7 @@ module pipeline_ctrl_formal_top #(
         end
     end
 
-    // ---- 输入契约假设（harness 侧保证，防形式引擎搜出非物理输入组合）----
+    // ---- 输入约定假设（harness 侧保证，防形式引擎搜出非物理输入组合）----
     // ① 冲刷/跳转脉冲互斥（同一拍只能有最高优先级的一类动作）
     // ② trap_jump_exc=1 时 trap_jump 必为 1（exc 是 trap 的子集）
     // ③ 硬件单拍脉冲信号：每拍至多 1 拍有效（dbg_resume_pulse / trigger_match
@@ -132,7 +132,7 @@ module pipeline_ctrl_formal_top #(
             assume (!(f_trap_jump && $past(f_trap_jump)));
             // ⑨ 挂起的 trap 重定向（前一拍 trap_jump/trap_jump_exc 锁存
             //    r_trap_redirect）期间不接受中断（该分支优先级高于 accept 分支，
-            //    会遮蔽 accept 的 flush，契约在遮蔽场景下不检查）
+            //    会遮蔽 accept 的 flush，约定在遮蔽场景下不检查）
             assume (!(f_int_accept_kill && $past(f_trap_jump)));
             assume (!(f_int_accept_kill && $past(f_trap_jump_exc)));
             assume (!(f_int_accept_kill && $past(f_int_accept_kill)));
@@ -147,15 +147,15 @@ module pipeline_ctrl_formal_top #(
             // ⑦ OITF 与接受互斥
             assume (!(f_oitf_stall && f_int_accept_kill));
             // ⑧ 高优先级 debug 分支与 accept 互斥（它们抢先设置 if_id_flush，
-            //    accept_kill 分支被遮蔽，契约只在 debug 静默时检查）
+            //    accept_kill 分支被遮蔽，约定只在 debug 静默时检查）
             assume (!(f_dbg_halt_req && f_int_accept_kill));
             assume (!(f_trigger_match && f_int_accept_kill));
             assume (!(f_ebreak_halt && f_int_accept_kill));
             assume (!(f_dbg_resume_pulse && f_int_accept_kill));
-            // —— 分阶段合法异常码约束（生产者契约）——
+            // —— 分阶段合法异常码约束（生产者约定）——
             // 自由 31 位码会产生“bit30=0 但 get_priority 落默认 15”的非法组合：
-            // trap=1 而选中哨兵 → fml_a_no_sentinel 假失败（真实流水线不会产出）。
-            // 各阶段合法集按 get_priority 查表域（code[3:0]）约束，哨兵(bit30=1)恒合法。
+            // trap=1 而选中全 1 标记 → fml_a_exc_code_not_all1 假失败（真实流水线不会产出）。
+            // 各阶段合法集按 get_priority 查表域（code[3:0]）约束，全 1 标记(bit30=1)恒合法。
             assume (f_exc_code_if[30] || f_exc_code_if[3:0] == 4'd0 || f_exc_code_if[3:0] == 4'd1);
             assume (f_exc_code_id[30] || f_exc_code_id[3:0] == 4'd2 || f_exc_code_id[3:0] == 4'd3
                  || f_exc_code_id[3:0] == 4'd8 || f_exc_code_id[3:0] == 4'd9

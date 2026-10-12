@@ -1,11 +1,11 @@
 // =============================================================================
-// bind_bus_timeout.sv — 双层超时衔接契约（端到端跨层哨兵，bind 挂载，综合不可见）
+// bind_bus_timeout.sv — 双层超时衔接约定（端到端跨层检查，bind 挂载，综合不可见）
 // =============================================================================
-// SVA 分层约定：L3 系统级哨兵（+define+ASSERT_SYS 时编译），与 bind_core.sv 同风格。
+// SVA 分层约定：L3 系统级检查（+define+ASSERT_SYS 时编译），与 bind_core.sv 同风格。
 //
-// 契约（主机 AXI_Lite_Master ↔ 桥内 APB_Master 的跨层超时衔接）：
+// 约定（主机 AXI_Lite_Master ↔ 桥内 APB_Master 的跨层超时衔接）：
 //   APB_TO_VAL = BUS_TIMEOUT/2（数值约定见 APB_Master.sv 注释），保证桥先于主机恢复。
-//   本哨兵在真实 SoC 例化环境里验证端到端窗口：
+//   本检查在真实 SoC 例化环境里验证端到端窗口：
 //   T1 主机 bus_timeout 脉冲（强拆拍）→ 桥内 apb_master 至多再挂 APB_TO_VAL+4 拍
 //   回 IDLE（+4 = 桥 tran_done 采样 1 拍 + 状态寄存 1 拍 + CDC/握手裕量 2 拍）。
 //   若违约 = 主机先于桥恢复后桥仍占着半事务（新事务会叠加到悬空事务上）。
@@ -18,14 +18,14 @@
 
 module bus_timeout_link_chk #(
     // 与 APB_Master 的 APB_TO_VAL（= BUS_TIMEOUT/2 = 1024/2）保持一致；
-    // 改 SoC_Config 的 BUS_TIMEOUT 时须同步本值（checker 启动时自检不一致即报错）
+    // 改 SoC_Config 的 BUS_TIMEOUT 时须同步本值（检查器启动时自检，不一致即报错）
     parameter int unsigned APB_TO_VAL = 512,
     parameter int unsigned GRACE      = 4      // 桥侧回收的额外裕量拍
 )(
     input logic clk,
     input logic rst_n
 );
-    // 参数一致性自检：与本设计 APB_Master 实际 APB_TO_VAL 对账
+    // 参数一致性自检：与本设计 APB_Master 实际 APB_TO_VAL 核对
 `ifdef BTLINK_ENV_SOC
     initial begin
         if (APB_TO_VAL != $root.tb_soc_top.u_SoC_top.u_AXI_APB_Bridge.u_apb_master.APB_TO_VAL)
@@ -76,12 +76,12 @@ module bus_timeout_link_chk #(
         end
     end
 
-    // 契约：强拆后窗口内桥必须回 IDLE（回收有界）
+    // 约定：强拆后窗口内桥必须回 IDLE（回收有界）
     a_bt_link_recover: assert property (@(posedge clk) disable iff (!rst_n)
         (master_abort |-> ##[(APB_TO_VAL/2)+1 : APB_TO_VAL+GRACE] apm_idle))
         else $error("[SVA][BTLINK] bridge apb_master not idle within APB_TO_VAL+GRACE after master abort (wait_cnt=%0d)", wait_cnt);
 
-    // 契约：窗口内桥不得接受新 APB 事务（半事务不被叠加）
+    // 约定：窗口内桥不得接受新 APB 事务（半事务不被叠加）
     a_bt_link_no_overlay: assert property (@(posedge clk) disable iff (!rst_n)
         `ifdef BTLINK_ENV_SOC
         (in_window && !apm_idle |-> !$root.tb_soc_top.u_SoC_top.u_AXI_APB_Bridge.u_apb_master.i_transfer)
@@ -90,7 +90,7 @@ module bus_timeout_link_chk #(
 `endif)
         else $error("[SVA][BTLINK] bridge accepted new APB transfer while half-transaction pending");
 
-    // 强拆事件实时打印（证明 checker 活着且观察到了强拆事件；不依赖 final——
+    // 强拆事件实时打印（证明检查器在运行且观察到了强拆事件；不依赖 final——
     // do 脚本 NoQuitOnFinish/break 流程下 final 不可靠）
     int abort_cnt = 0;
     always_ff @(posedge clk or negedge rst_n) begin
@@ -106,12 +106,12 @@ endmodule
 
 // 挂载（按环境二选一）：
 //   SoC 环境（+define+BTLINK_ENV_SOC）：bind 到 SoC_top，时钟/复位用目标作用域信号
-//   独立 TB（tb_bus_abort_link）：不用 bind——TB 内直接实例化 checker，
+//   独立 TB（tb_bus_abort_link）：不用 bind——TB 内直接实例化检查器，
 //     层次引用走 BTLINK_ENV_SOC 未定义分支（$root.tb_bus_abort_link...）
 `ifdef BTLINK_ENV_SOC
 bind SoC_top bus_timeout_link_chk #(
     .APB_TO_VAL(512),   // = BUS_TIMEOUT/2（bind 文件编译序在 SoC_Config 可见前，宏不可用；
-                        //   checker initial 自检对账 APB_Master 实际值，不一致即 $error）
+                        //   检查器 initial 自检（核对 APB_Master 实际值，不一致即 $error）
     .GRACE     (4)
 ) u_chk_btlink (
     .clk   (clk_soc),

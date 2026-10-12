@@ -21,7 +21,7 @@ vsim -batch -voptargs=+acc tb_soc_top
 # PLIC source 3 (timer_irq) 默认已被 plic_irq 程序配置为 pending+enable，
 # 若跑偏（SVA 误报或程序没跑起来），观察 u_PLIC 层次确认
 run 300us
-# 兜底：若 plic_irq 程序未走 timer 源，force 一条 timer_irq 脉冲
+# 备选：若 plic_irq 程序未走 timer 源，force 一条 timer_irq 脉冲
 # 驱动 u_PLIC 全路径（claim/complete/eip）
 # vsim -batch 下 run 会阻塞推进到目标时间，$finish 终止仿真
 force -freeze tb_soc_top.u_SoC_top.timer_irq 0

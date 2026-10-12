@@ -380,12 +380,12 @@ end
 `ifndef SYNTHESIS
 `ifndef FORMAL
 // ===== SVA：访存一致性（仅仿真；形式验证用下方 FORMAL 有界版）=====
-// Yosys SVA 子集写法：时钟取自外层 always、disable iff 改 if 守卫（ModelSim 同样接受）
-// split FSM 无卡死：同一非 IDLE 状态持续 >4096 拍视为病理性卡死
-// （总线挂死时亦会触发——本身即病理，报告价值大于误报风险）
+// Yosys SVA 子集写法：时钟取自外层 always、disable iff 改 if 判断（ModelSim 同样接受）
+// split FSM 无卡死：同一非 IDLE 状态持续 >4096 拍视为真卡死
+// （总线挂死时亦会触发——本身即异常情形，报告价值大于误报风险）
 always @(posedge clk) begin
     if (rst_n && $past(split_active, 4096) && (split_state == $past(split_state, 4096))) begin
-        a_split_liveness: assert property (split_state == 3'd0)
+        a_split_bounded: assert property (split_state == 3'd0)
             else $error("[SVA][MA] split FSM 状态 %h 停留超 4096 拍（疑似总线/握手卡死）", split_state);
     end
 end
@@ -395,7 +395,7 @@ end
 `ifdef FORMAL
 // ===== 形式验证属性（SymbiYosys）=====
 // 环境公平性假设：总线拆分访问等待 bus_tran_done 期间，完成信号至多
-// FML_BUS_RESP 拍内到达（健康 AXI 互连的环境契约；挂死场景由
+// FML_BUS_RESP 拍内到达（健康 AXI 互连的环境约定；挂死场景由
 // AXI_Lite_Master 的 BUS_TIMEOUT 超时逃逸负责，不在本模块证明范围）
 localparam int FML_BUS_RESP  = 8;
 localparam int FML_SPLIT_MAX = 2 * FML_BUS_RESP + 4;   // P1+P2 各 ≤RESP+1 拍 + P3 一拍 + 裕量
@@ -417,10 +417,10 @@ always_ff @(posedge clk) begin
 end
 always @(posedge clk) begin
     if (rst_n) begin
-        // 公平性假设（欠此则总线挂死是合法环境，liveness 无从谈起）
+        // 公平性假设（欠此则总线挂死是合法环境，有界完成无从谈起）
         fml_assume_bus_resp: assume property (fml_bus_wait <= FML_BUS_RESP);
-        // 拆分 FSM 有界完成（活性 → 有界活性）
-        fml_a_split_liveness: assert property (fml_split_age <= FML_SPLIT_MAX);
+        // 拆分 FSM 有界完成（最终完成 → 有界完成）
+        fml_a_split_bounded: assert property (fml_split_age <= FML_SPLIT_MAX);
         // P3 恒为收尾态：次拍必回 IDLE（FSM 结构）
         if (split_state == 3'd3) begin
             fml_a_p3_to_idle: assert property (split_next == 3'd0);
@@ -429,7 +429,7 @@ always @(posedge clk) begin
         // 读数据只允许由 split_rvalid 在 P3 合并拍给出）
         if (split_active) begin
             fml_a_rvalid_gate: assert property (!tcm_rvalid_q);
-            fml_a_stall_contract: assert property (split_stall);
+            fml_a_split_stall_hold: assert property (split_stall);
         end
         // cover：四条典型拆分路径
         fml_c_bus_split_load: cover property (split_is_bus && !split_is_wr && (split_state == 3'd3));

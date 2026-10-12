@@ -6,7 +6,7 @@
  *     取一字节写 THR，发送环空则关 IER.THRE 停发
  * 回显 3 行后写 GPIO 签名 0xA5 并打印 PASS
  *
- * 中断收尾顺序与 PLIC 契约一致：处理事件 → 读状态寄存器清中断源 → Complete
+ * 中断收尾顺序与 PLIC 约定一致：处理事件 → 读状态寄存器清中断源 → Complete
  */
 #include "bsp.h"
 

@@ -4,7 +4,7 @@
 // 断言在 IFU_Buffer.sv 内部（`ifdef FORMAL 区）：取指窗口簿记不变式
 //   · 取指请求恒字对齐 / cur_w 窗口与 req_addr 配对 / Zcmp 冻结期指针保持
 // w_new/fetch_served 全自由穷举（存储器可为任意内容、任意抢占时机）；
-// Zcmp 契约假设见模块内 assume（last_retired 只许在展开进行中出现）。
+// Zcmp 约定假设见模块内 assume（last_retired 只许在展开进行中出现）。
 // 范围说明：本环境证控制平面簿记；"指令流==存储器流"的数据等价需要
 // 存储器模型 harness，暂由仿真（riscv-tests/custom_asm 全量）覆盖。
 // =============================================================================

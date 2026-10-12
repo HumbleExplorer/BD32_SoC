@@ -2,7 +2,7 @@
 // csr_formal_top.sv — CSR_Reg_Access 形式验证 harness（SymbiYosys）
 // =============================================================================
 // 目标属性（CSR_Reg_Access.sv `ifdef FORMAL 区）：
-//   ① 中断接受门控契约（zcmp_busy / mret_gap / PC 对齐 / mcause 码合法）
+//   ① 中断接受门控约定（zcmp_busy / mret_gap / PC 对齐 / mcause 码合法）
 //   ② mret 间隙窗口不变式（fml_c_mret_gap_end 可达性）
 // 输入全自由穷举；复位时序假设由本 harness 提供（初始 1 拍 rst_n=0）。
 // =============================================================================
@@ -32,7 +32,7 @@ module csr_formal_top #(
     logic                    f_wfi_req;
     logic                    f_mret_req;
     logic                    f_exception_trap;
-    logic [DATA_WIDTH-2:0] f_exception_code;   // 全 1 哨兵（bit30）= 无异常
+    logic [DATA_WIDTH-2:0] f_exception_code;   // 全 1 标记（bit30）= 无异常
     logic [DATA_WIDTH-1:0] f_exception_val;
     logic                    f_external_int;
     logic                    f_software_int;
@@ -49,8 +49,8 @@ module csr_formal_top #(
     logic [1:0]            f_hpm_ext;
     logic                    f_zcmp_busy;
 
-    // 异常码 = 自由输入（钉哨兵会让 exception_trap 恒 0，fml_a_exc_code_valid
-    // 断言空转不覆盖真实路径）。接口契约由下方 assume 保证（trap → 非哨兵），
+    // 异常码 = 自由输入（钉全 1 标记会让 exception_trap 恒 0，fml_a_exc_code_valid
+    // 断言空转不覆盖真实路径）。接口约定由下方 assume 保证（trap → 非全 1），
     // 异常路径因此被 formal 真实探索。
     assign f_id_ex_inst_addr = '0;
     assign f_exc_inst_addr   = '0;
@@ -75,7 +75,7 @@ module csr_formal_top #(
         if (!f_past_valid) assume (!rst_n);
         else               assume (rst_n);
     end
-    // ---- 输入契约假设（harness 侧，保证输入落在物理可达子集）----
+    // ---- 输入约定假设（harness 侧，保证输入落在物理可达子集）----
     // ① 复位期间控制动作输入恒 0（L1 disable-iff 等价假设）
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -85,9 +85,9 @@ module csr_formal_top #(
             assume (!f_wfi_req);
         end
     end
-    // ② 异常码架构契约（Pipeline_Ctrl 保证）：
+    // ② 异常码架构约定（Pipeline_Ctrl 保证）：
     //    陷阱触发拍（exception_trap=1）时，CSR 看到的码是 Pipeline_Ctrl
-    //    sel_stage mux 选出的"阶段码"（非全 1 哨兵，全 1 = 无异常）。
+    //    sel_stage mux 选出的"阶段码"（非全 1 标记，全 1 = 无异常）。
     //    仅约束陷阱拍；非陷阱拍码值自由
     //  ③ mret 与异常互斥（异常陷阱期间 mret 不合法——mret 是系统指令，
     //    与 EX 级异常同拍出现 = 引擎构造的非物理组合）

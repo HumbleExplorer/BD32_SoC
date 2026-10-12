@@ -278,7 +278,7 @@ initial begin
         begin : bt_wait_pass
             wait(tb_soc_top.u_SoC_top.u_apb_gpio.out_reg == BT_PASS_SIG);
         end
-        begin : bt_timeout_guard
+        begin : bt_timeout_watch
             #(BT_TIMEOUT_NS);
         end
     join_any
@@ -371,7 +371,7 @@ initial begin
             $display("[%0t] SUCCESS: download_en asserted after reset!", $time);
             $display("  MROM correctly entered download_mode.");
         end
-        begin : timeout_guard
+        begin : timeout_watch
             #(DOWNLOAD_TIMEOUT);
             $display("\n[%0t] *** FAILURE: TIMEOUT ***", $time);
             $display("  download_en NOT asserted within %0d ns after reset.", DOWNLOAD_TIMEOUT);

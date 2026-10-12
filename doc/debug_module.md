@@ -83,7 +83,7 @@ DM 内部实现 4 路 trigger 寄存器组（tselect + 4×tdata1/tdata2），通
 - **action 语义**：仅实现 action=1（命中进 debug mode，即 halt）；action=0（异常断点）未实现。tdata1 中未实现字段（chain/match/timing/hit/select 等）写入后原样读回，但不参与硬件匹配逻辑
 - **halt 保持锁存**：CPU 一旦进入 debug mode，DM 锁存 `halt_hold_r` 保持暂停，直到调试器发 `resumereq`（Debug Spec 4.7/4.8）。因此 `haltreq` 写 0（WARZ 清除请求）、删除断点（清 tdata1）或清 `dcsr.ebreakm` 都不会让 CPU 自动恢复运行
 - **ebreak 进调试**：`dcsr.ebreakm=1` 时 ID 级 ebreak 不产生异常，CPU 原地 halt（ID 保持、不冲刷），DM 置 `dcsr.cause=1`，dpc 记录该 ebreak 指令地址；调试器恢复原指令后 resume 即可继续执行（软件断点通路）
-- **数据观察点**：EX 级访存有效地址匹配（tdata2），tdata1[0]=load（读观察点）/ tdata1[1]=store（写观察点），sizelo[17:16] 过滤访问宽度（0=任意、1=8bit、2=16bit、3=32bit）；命中时流水线停在 EX、store/load 不落盘（总线请求被抑制），`dpc` 取访存指令自身、`dcsr.cause=2`；清 trigger 后 resume 才完成访问
+- **数据观察点**：EX 级访存有效地址匹配（tdata2），tdata1[0]=load（读观察点）/ tdata1[1]=store（写观察点），sizelo[17:16] 过滤访问宽度（0=任意、1=8bit、2=16bit、3=32bit）；命中时流水线停在 EX、store/load 不写入（总线请求被抑制），`dpc` 取访存指令自身、`dcsr.cause=2`；清 trigger 后 resume 才完成访问
 
 ## OpenOCD + GDB 使用（调试功能使用手册）
 
@@ -204,7 +204,7 @@ halt 期间通过 SBA 访问整个 SoC 地址空间（32-bit 地址；读为 32-
 (gdb) watch *(int*)0x20000   # 观察 DTCM 0x20000
 (gdb) continue
 (gdb) p/x $pc                # 命中：停在访存指令（dpc = load/store 自身）
-(gdb) p/x *(int*)0x20000     # store 观察点：新值尚未落盘，读到旧值
+(gdb) p/x *(int*)0x20000     # store 观察点：新值尚未写入，读到旧值
 (gdb) delete breakpoints
 (gdb) continue               # 清观察点后 resume，该次访问才完成
 ```
@@ -212,7 +212,7 @@ halt 期间通过 SBA 访问整个 SoC 地址空间（32-bit 地址；读为 32-
 要点：
 
 - tdata1[0]=load（读观察点）、[1]=store（写观察点）、[2]=execute（断点）；sizelo[17:16] 过滤访问宽度：0=任意、1=8bit、2=16bit、3=32bit。例如只监视 32-bit 访问时，sb（8bit）不命中、sw（32bit）命中。
-- 命中时流水线停在 EX：store 不落盘 / load 不写回（总线请求被抑制），dcsr.cause=2；清除观察点后 resume 才完成该访问。
+- 命中时流水线停在 EX：store 不写入 / load 不写回（总线请求被抑制），dcsr.cause=2；清除观察点后 resume 才完成该访问。
 
 #### 7. ebreak 进调试模式（软件断点通路）
 

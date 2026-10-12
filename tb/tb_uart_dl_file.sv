@@ -3,8 +3,8 @@
 //
 // 目的：把真实 bus_timeout.uartbin（3116 字节）以 8 倍速（921600 baud 等效）
 //       灌进 apb_uart 的 RX 引脚，验证 RX→FIFO→下载 FSM 全程字节级完整性：
-//       收到的字节数、ITCM/DTCM 字数、每个字的内容都与文件逐字对账。
-// 与 tb_uart_dl_mini 的区别：用真实文件 + 长流 + 全字对账（保真度最高）。
+//       收到的字节数、ITCM/DTCM 字数、每个字的内容都与文件逐字比对。
+// 与 tb_uart_dl_mini 的区别：用真实文件 + 长流 + 全字比对（保真度最高）。
 // ============================================================================
 timeunit 1ns;
 timeprecision 1ps;
@@ -30,7 +30,7 @@ int rx_byte_count = 0;
 int itcm_wr_count = 0;
 int dtcm_wr_count = 0;
 
-// 文件内容与接收内容对账缓冲
+// 文件内容与接收内容比对缓冲
 logic [31:0] exp_itcm [0:1023];
 logic [31:0] got_itcm [0:1023];
 logic [31:0] exp_dtcm [0:255];
@@ -151,7 +151,7 @@ initial begin
     check(dtcm_wr_count == exp_dtcm_n, "DTCM word count exact");
     check(dut.download_done === 1'b1, "download_done asserts");
 
-    // 全字对账
+    // 全字比对
     begin
         int mism = 0;
         for (int w = 0; w < exp_itcm_n; w++) begin

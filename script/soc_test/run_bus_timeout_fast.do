@@ -18,6 +18,6 @@ onbreak {resume}
 # 下载 ~270.5ms + 判定窗口 30ms ≈ 310ms，留余量 400ms
 run 400ms
 echo "=== SIMULATION TIME REACHED 400ms ==="
-# TB 的 $finish 被 NoQuitOnFinish 转为 break；resume 让 final 块（checker 统计）执行
+# TB 的 $finish 被 NoQuitOnFinish 转为 break；resume 让 final 块（检查器 统计）执行
 run -all
 quit -f

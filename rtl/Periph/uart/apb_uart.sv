@@ -369,7 +369,7 @@ assign PSLVERR  = 1'b0;
                  || (iir == IIR_TOUT_INT) || (iir == IIR_THRE_INT) || (iir == IIR_MSR_INT));
             // ③ irq 拉高必须对应一个非无中断的 iir
             a_uart_irq_iir:   assert property (irq_o ? (iir != IIR_NO_INT) : 1'b1);
-            // ④ RX FIFO 计数单调契约：写多读少不越界（cnt 域 0..16）
+            // ④ RX FIFO 计数单调约定：写多读少不越界（cnt 域 0..16）
             a_uart_rx_cnt:    assert property (rx_fifo_cnt <= 6'd16);
             // ⑤ RDA/超时 中断触发条件：rx_fifo_cnt 必须达到 trigger 水位
             a_uart_rda_level: assert property

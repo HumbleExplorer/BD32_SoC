@@ -1,12 +1,12 @@
 // ============================================================================
-// tb_bus_abort_link.sv — 主机强拆（bus_timeout DECERR）→ 桥侧回收 衔接契约验证
+// tb_bus_abort_link.sv — 主机强拆（bus_timeout DECERR）→ 桥侧回收 衔接约定验证
 //
 // BD32 — RV32IM Pipelined RISC-V SoC
 // Copyright (c) 2026 BD32 Project
 // SPDX-License-Identifier: Apache-2.0
 //
 // 背景：bus_timeout 测试（force PREADY=0）的"超时"由桥层 APB_TO_VAL（512 拍）
-// 先行消化，主机层 bus_timeout（1024 拍）从未真实触发——双层超时衔接契约
+// 先行消化，主机层 bus_timeout（1024 拍）从未真实触发——双层超时衔接约定
 // （bind_bus_timeout.sv）在该场景下无可观察事件。本 TB 用**真实 AXI_Lite_Master**
 // （Bus_Access 全链）访问**未路由段（0xD000_0000，无从机选中、无握手）**，
 // 使主机 bus_timeout 真实触发，验证：
@@ -248,7 +248,7 @@ generate
     end
 endgenerate
 
-// =================== 跨层契约 checker（与 bind_bus_timeout 同一模块）==================
+// =================== 跨层检查器（与 bind_bus_timeout 同一模块）==================
 // 直接实例化（本 TB 顶层就是被观察环境，无需 bind）：
 //   层次引用指向本 TB 的 u_bus_access.u_AXI_Lite_Master 与 u_AXI_APB_Bridge.u_apb_master
 bus_timeout_link_chk #(
