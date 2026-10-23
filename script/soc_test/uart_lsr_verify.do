@@ -1,4 +1,4 @@
-# UART LSR 跨拍断言专项验证（+define+ASSERT_MODULE）
+# UART LSR 跨拍断言验证（+define+ASSERT_MODULE）
 # 目的：在有 UART TX 流量的场景下验证 a_uart_lsr_thre/empt 的 $past 并发断言
 #       （跨拍信号必须用 $past 比较，当拍直比会假失败）
 # 程序: hello（UART TX 密集，THRE/TEMT 高频翻转）

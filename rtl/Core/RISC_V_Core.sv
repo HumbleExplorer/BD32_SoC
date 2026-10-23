@@ -751,8 +751,8 @@ wire [DATA_WIDTH-1:0]  itcm_wr_data     = itcm_wr_en_cpu ? access_wdata_ex :
 
 // DTCM 访问 mux：SBA 覆盖 EX 级（DTCM 自带字节使能 wmask）
 // 端口地址保持：rd_data 每拍跟踪端口地址，而端口在
-// 非访问拍会摆上后续指令的 ALU 垃圾结果；tcm_rvalid 按"stall 期间保持"设计跨越
-// 多拍消费数据，消费窗内 rd_data 被垃圾地址刷新（撞上栈 '#' 填充）→ 错误写回。
+// 非访存拍可能在地址端口出现后续指令的无效 ALU 结果；tcm_rvalid 按"stall 期间保持"设计跨越
+// 多拍消费数据，若消费窗口内 rd_data 被其他地址的数据覆盖（例如栈填充值），会导致错误写回。
 // 非真实访问拍冻结端口为上一访问地址，读数据即保持正确（Reg 分支与 BRAM douta 行为一致）。
 wire [ADDR_WIDTH-1:0]  dtcm_addr_next  = (sba_req_valid & sba_dtcm_sel) ? sba_addr :
                                          split_active ? split_addr_use : access_addr_ex;
@@ -1261,7 +1261,7 @@ DTCM #(
 assign reg_rd_wdata_selected_mem = (tcm_rvalid || bus_rvalid) ? func3_expanded_data : reg_rd_wdata_mem;
 
 // MEM/WB reg_rd_wen/reg_rd_waddr bypass: bus loads skip EX/MEM, DTCM/ALU go through EX/MEM
-// 总线错误（bus_error）时禁止写回，避免把超时返回的垃圾数据写入寄存器
+// 总线错误（bus_error）时禁止写回，避免把超时返回的无效数据写入寄存器。
 assign reg_rd_wen_selected_mem   = (tcm_rvalid || (bus_rvalid && ~bus_error)) ? 1'b1 : reg_rd_wen_mem;
 // 非对齐拆分期间 EX_MEM 被 mem_split_stall 保持，rd 仍有效，无需走 bus_load_waddr 旁路
 assign reg_rd_waddr_selected_mem = (bus_rvalid && ~split_active) ? bus_load_waddr : reg_rd_waddr_mem;

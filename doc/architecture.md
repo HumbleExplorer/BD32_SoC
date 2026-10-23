@@ -4,7 +4,7 @@
 
 ## 概览
 
-BD32 是 32 位 RV32IMC 处理器核（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），经典 5 级流水线（IF → ID → EX → MEM → WB），配备深度 4 的 OITF（乱序退休 FIFO），让多周期乘除指令可与短指令并行执行、乱序写回。
+BD32 是 32 位 RV32IMC 处理器核（含 Zcb、Zba/Zbb/Zbs、Zcmp 扩展），采用经典 5 级流水线（IF → ID → EX → MEM → WB），并配备深度为 4 的 OITF 长周期指令跟踪队列。OITF 允许多周期乘除法与无数据依赖的短指令并行执行；乘除法结果按队列顺序写回。
 
 **交互式核组件架构图**：[bd32_core_architecture.html](bd32_core_architecture.html)。简图如下：
 
@@ -19,7 +19,7 @@ flowchart LR
 ## 流水线
 
 - 短指令（ALU / Load / Store / Branch）走正常 5 级流水，WB 阶段经 Port1 写回。
-- 长指令（MUL/DIV/REM）在 EX 阶段分发到 OITF，由独立功能单元执行，完成后经 Port2 乱序写回。
+- 长指令（MUL/DIV/REM）在 EX 阶段分发到 OITF，由独立功能单元执行；结果就绪后写入对应条目，队列头部就绪时经 Port2 写回寄存器堆。
 - OITF 维护 RAW/WAW 冒险检测，必要时 stall 整条流水线。
 - 寄存器堆双写端口：Port1（正常 WB）与 Port2（OITF 退休），同地址冲突时 Port2 优先；旁路读取优先级 Port2 > Port1 > 寄存器阵列。
 
@@ -69,7 +69,7 @@ flowchart LR
 
 - 核侧仅一个 AXI-Lite 主机口，取指与访存分时复用（取指字被 LSU/SBA 抢占时由 fetch_served 通知 IFU 重发）。
 - SoC 侧拓扑：AXI_Interconnect → APB 桥 → PSEL[6:0] 七从机译码（每从机 64KB，`[31:16]` 匹配）；Flash/DDR 留空段挂 axi_err_slave（恒 OKAY + 读 0），其余未路由段无从机响应、靠总线超时 DECERR 有界返回；错误响应模型见 [spec.md](spec.md) §3/§9。
-- 时钟：CPU/总线/外设同域（clk_cpu，62.5MHz）；CLINT mtime 独立 1MHz 域（mtime/mtimecmp 跨域为两处 CDC 边界之一，另一处为 JTAG TCK）。
+- 时钟：CPU/总线/外设同域（clk_cpu，50MHz）；CLINT mtime 独立 1MHz 域（mtime/mtimecmp 跨域为两处 CDC 边界之一，另一处为 JTAG TCK）。
 
 ## 中断与异常
 

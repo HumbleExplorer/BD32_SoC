@@ -2,15 +2,15 @@
  * Demo: Bus Timeout — 总线访问超时异常测试
  *
  * 测试目标：
- *   验证总线超时保护机制。当某个 APB 从机挂死（PREADY 永不拉高）时，
+ *   验证总线超时保护机制。当某个 APB 从机无响应（PREADY 始终为低）时，
  *   APB_Master 在 BUS_TIMEOUT/2 个时钟后强制完成并返回 SLVERR；
  *   若桥也未恢复，AXI_Lite_Master 在 BUS_TIMEOUT 个时钟后返回 DECERR。
  *   CPU 将两者均转为 load/store access fault，跳入异常处理，
- *   而不是永久卡死在 ~bus_ready 等待里。
+ *   而不是无限期等待 ~bus_ready。
  *
  * 测试流程：
  *   1. main 向 Timer (0xE0020000) 写一个寄存器。
- *   2. 仿真台在下载完成后 force apb_pready[4]=0，使 Timer 挂死。
+ *   2. 仿真台在下载完成后 force apb_pready[4]=0，使 Timer 从机不返回响应。
  *   3. 该 store 在总线上得不到响应 → APB 桥超时返回 SLVERR →
  *      触发 store access fault (mcause=7)，跳入 serr_handler。
  *   4. serr_handler 把 mcause / 原始 mepc 记录到固定 DTCM 地址，

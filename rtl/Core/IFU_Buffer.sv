@@ -114,7 +114,7 @@ module IFU_Buffer #(
   //   - crossing && next_ready：当前 req_addr 即将装入 cur_w，+4 即下一字。
   // 后一项须门控 ~zcmp_capture/~zcmp_active：冻结期 pc_asm 停在跨字位置时本项
   // 会组合为 1，把地址口顶到 +4，冻结结束后 w_new 就不是恢复态 req_addr 指望的
-  // 字，展开后首条跨字指令拼脏数据；refill_now 项语义在冻结期保持一致，不门控。
+  // 字，展开后首条跨字指令会使用错误数据；refill_now 项语义在冻结期保持一致，不门控。
   assign req_fwd = refill_now | ((~zcmp_capture & ~zcmp_active)
                                  & can_issue & crossing & next_ready);
   assign next_ready = have_cur & served_d & (req_addr == (cur_w_addr + 4));

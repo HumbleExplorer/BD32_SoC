@@ -2,7 +2,7 @@
   "schema": "frontend-spec-review/stage2",
   "reviewed_inputs": ["doc/stage1_spec_extraction.json", "doc/architecture.md", "doc/peripherals.md", "doc/sdk.md", "rtl 接线复核"],
   "consistent_facts": [
-    "memory map 三处文档（architecture/peripherals/提取）地址完全一致，无重叠；预留区（SPI/I2C/Flash/DDR）与错误从机兜底一致",
+    "memory map 三处文档（architecture/peripherals/提取）地址完全一致，无重叠；预留区（SPI/I2C/Flash/DDR）与错误从机响应一致",
     "ITCM/DTCM 64KB（16K 字 ×4B）与 SoC_Config 定义一致",
     "中断优先级（外部 > 软件 > 定时）与调试旁路描述一致",
     "mtime 1 tick = 1µs 与 clk_div_static 50MHz/50=1MHz 一致（bsp delay_us、BootROM 测频依赖成立）",
@@ -22,5 +22,5 @@
     "DBG_EN 只写/DBG_STAT 只读 握手契约与 sdk.md 下载协议一致"
   ],
   "readiness_decision": "ready（无 blocking；R1 已修，R2/R3 已显式记载）",
-  "recommended_next_step": "mcu-spec-architecture-planning 落 doc/spec.md 并增补 architecture.md 时钟/复位/集成三节"
+  "recommended_next_step": "后续若 RTL 时钟或复位结构变更，同步更新 stage1_spec_extraction.json、stage2_spec_review.json 与 doc/spec.md；当前时钟事实以 rtl/bd32_board_top.sv 和 clk_wiz_0.xci 为准"
 }

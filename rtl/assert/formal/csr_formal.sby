@@ -7,7 +7,7 @@ bmc: mode bmc
 bmc: depth 30
 prove: mode prove
 prove: depth 25
-# 可达性（fml_c_* 覆盖点）交给仿真兜底（memstress 中断用例 + rtthread 长稳 24h），
+# 可达性（fml_c_* 覆盖点）由仿真覆盖（memstress 中断用例 + rtthread 长稳 24h），
 # 形式侧只跑 prove/bmc；cover 点保留在 RTL 内供 ModelSim 仿真检查
 
 [engines]

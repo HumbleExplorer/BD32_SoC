@@ -1,4 +1,4 @@
-# UART 中断收发闭环仿真（uart_irq demo：RDA 收行 + THRE 回显 ×3 → GPIO 签名）
+# UART 中断收发仿真（uart_irq demo：RDA 收行 + THRE 回显 ×3 → GPIO 签名）
 # 用法: cd script/soc_test && vsim -batch -do run_uart_irq.do
 quit -sim
 

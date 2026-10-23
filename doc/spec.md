@@ -5,9 +5,9 @@
 
 ## 1. 项目概览
 
-- 设计名称：BD32——RV32IMC 自研 SoC（Zcb/Zba/Zbb/Zbs/Zcmp/Zicond 扩展），5 级流水 + OITF 深度 4 乱序退休 + Gshare/BTB/RAS 预测。
+- 设计名称：BD32——RV32IMC 自研 SoC（Zcb/Zba/Zbb/Zbs/Zcmp/Zicond 扩展），采用 5 级流水、深度为 4 的 OITF 长周期指令跟踪队列，以及 Gshare/BTB/RAS 分支预测器。
 - 实现平台：FPGA 原型——AMD ZYNQ xc7z020clg400-2（PL 部分），Vivado 2023.1。工艺/功耗/供电不涉及（FPGA 平台无此项，ASIC 化时需重新评估并补录）。
-- 目标频率：clk_cpu 62.5MHz（时序收敛签核值，WNS 达标）；UART 波特率基准 8.388608MHz；CLINT 计时 1MHz。
+- 目标频率：clk_cpu / 外设 PCLK 50MHz（与板载 sys_clk 同频）；UART 波特率由 PCLK 内部 NCO 生成；CLINT 计时 1MHz。
 - 顶层模块：`bd32_board_top`（板级：时钟/复位生成）→ `SoC_top`（数字 IP：核 + 总线 + 外设 + Debug）→ `RISC_V_Core`。
 
 ## 2. 系统框图
@@ -15,9 +15,10 @@
 ```mermaid
 flowchart TD
     subgraph CLK["时钟树"]
-        OSC["50MHz 板钟"] --> MMCM["clk_wiz MMCM"]
-        MMCM --> C1["62.5MHz clk_cpu"]
-        MMCM --> C2["8.388MHz UART 波特率基准"]
+        OSC["50MHz 板钟"] --> C1["50MHz clk_cpu / 总线 / 外设"]
+        C1 --> C2["UART NCO 波特率"]
+        OSC --> MMCM["clk_wiz MMCM（locked 用于复位放行）"]
+        MMCM -. "预留输出，当前 RTL 未使用" .-> C4["8.42285MHz"]
         OSC --> DIV["clk_div_static /50"] --> C3["1MHz CLINT mtime"]
     end
     JTAG["JTAG（OpenOCD/GDB）"] <--> DBG["Debug_Top（DM/TAP）"]
@@ -49,15 +50,15 @@ flowchart TD
 | Flash / DDR | 0x9000_0000 / 0xB000_0000 | — | — | AXI | 未实现，axi_err_slave 恒 OKAY（读数据 0、写丢弃） |
 | 未路由段 | 0x0000_0000~0x7FFF_FFFF、0xD000_0000~0xDFFF_FFFF | — | — | AXI | 无从机响应 → 总线超时（BUS_TIMEOUT 后 DECERR，有界返回） |
 
-重叠检查：各段基址按 `[31:16]` 译码、64KB 自然对齐，无重叠；Flash/DDR 留空段由 err_slave 恒 OKAY 响应，其余未路由段靠总线超时有界返回（均不挂死）。
+重叠检查：各段基址按 `[31:16]` 译码、64KB 自然对齐，无重叠；Flash/DDR 留空段由 err_slave 恒 OKAY 响应，其余未路由段由总线超时保证有界返回。
 
 ## 4. 时钟架构
 
 | 时钟 | 频率 | 来源 | 域 |
 |------|------|------|-----|
 | sys_clk | 50MHz | 板载晶振 | 板级输入 |
-| clk_cpu | 62.5MHz | clk_wiz MMCM CLKOUT1（输入 50MHz） | CPU / 总线 / 外设 PCLK |
-| clk_8m388 | 8.388608MHz | clk_wiz MMCM CLKOUT2 | UART 波特率基准（115200 精确整除） |
+| clk_cpu | 50MHz | sys_clk 经 IBUF + BUFG | CPU / 总线 / 外设 PCLK |
+| clk_8m388 | IP 实际 8.42285MHz（预留） | clk_wiz MMCM CLKOUT2（目标值 8.388MHz） | 当前 RTL 未连接至 UART |
 | clk_1mhz | 1MHz | sys_clk / 50（clk_div_static） | CLINT mtime（1 tick = 1µs） |
 
 - **CDC 边界（仅两处）**：① clk_cpu ↔ clk_1mhz（CLINT mtime/mtimecmp 跨域，比较与中断输出在 mtime 域，CSR 影子在 CPU 域同步采样）；② clk_cpu ↔ JTAG TCK（debug_cdc 同步器）。综合侧对应 false_path 约束。

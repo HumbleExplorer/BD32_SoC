@@ -144,7 +144,7 @@ module AXI_Lite_Master #(
     // =========================================================================
     // 总线超时检测
     // =========================================================================
-    // 从机挂死（永不拉 ready/valid）时，FSM 会卡在等待态。计数器在等待态累加，
+    // 从机未返回 ready/valid 时，FSM 会停留在等待态。计数器在等待态累加，
     // 超过 BUS_TIMEOUT 阈值则触发 bus_timeout，强制完成事务并返回 DECERR，
     // 避免 CPU 因 ~bus_ready 永久 stall。
     localparam int unsigned TIMEOUT_VAL   = `BUS_TIMEOUT;
@@ -190,7 +190,7 @@ module AXI_Lite_Master #(
     end
 
     // ── 状态转移（纯组合）──
-    // bus_timeout 优先级最高：从机挂死时强制跳到 DONE 解除卡死
+    // bus_timeout 优先级最高：从机无响应超时后转入 DONE，保证事务有界结束。
     always_comb begin
         next_state = state;
         case (state)
@@ -253,7 +253,7 @@ module AXI_Lite_Master #(
             rsp_valid <= (next_state == DONE);
             // 进入 DONE 前锁存响应数据；总线超时则强制 DECERR（从机无响应）
             if (bus_timeout) begin
-                rsp_error <= 2'b11;          // DECERR：从机挂死/超时无响应
+                rsp_error <= 2'b11;          // DECERR：从机响应超时
                 rsp_rdata <= '0;
             end else if (state == WAIT_B && b_hs) begin
                 rsp_error <= m_bresp;
@@ -292,7 +292,7 @@ end
 `ifdef FORMAL
 // ===== 形式验证属性（SymbiYosys）=====
 // 6 态 one-hot FSM 合法性 + 输出一致性 + 等待态有界逃逸（超时计数器保证，
-// 无需环境假设——挂死场景由 BUS_TIMEOUT 强制 DONE 并回 DECERR）
+// 无需环境假设：BUS_TIMEOUT 保证请求在有限周期内进入 DONE 并返回 DECERR。
 localparam logic [5:0] FML_S_IDLE      = 6'b000001;
 localparam logic [5:0] FML_S_WAIT_W_AW = 6'b000010;
 localparam logic [5:0] FML_S_WAIT_B    = 6'b000100;

@@ -4,7 +4,7 @@
 // 目的：绕过 BootROM/CPU/总线，直接驱动 apb_uart 的 UART RX 引脚发送一个
 //       20 字节的最小 uartbin（START + ITCM_COUNT=2 + 2 字 + DTCM_COUNT=0），
 //       检查 RX 字节流、ITCM 写口与 download_done 是否正确——用于快速定位
-//       "下载卡死" 类问题是否出在 RX/下载 FSM 串行链路上。
+//       下载流程停滞是否出在 RX/下载 FSM 串行链路上。
 // 用法: 与 uart_test 同 filelist 编译，vsim tb_uart_dl_mini
 // ============================================================================
 timeunit 1ns;

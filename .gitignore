@@ -11,12 +11,26 @@
 **/modelsim.ini
 tb/sim_output.txt
 
-# --- Vivado 工程（保留 .xpr + 约束 + IP .xci，忽略生成产物）---
-BD32_SoC
-!BD32_SoC/BD32_SoC.srcs/sources_1/ip/*/*.xci
+# --- Vivado 工程（保留 .xpr、约束与 IP .xci，忽略生成产物）---
+/BD32_SoC/*
+!/BD32_SoC/BD32_SoC.xpr
+!/BD32_SoC/BD32_SoC.srcs/
+BD32_SoC/BD32_SoC.srcs/*
+!/BD32_SoC/BD32_SoC.srcs/constrs_1/
+!/BD32_SoC/BD32_SoC.srcs/sources_1/
+BD32_SoC/BD32_SoC.srcs/constrs_1/*
+!/BD32_SoC/BD32_SoC.srcs/constrs_1/new/
+BD32_SoC/BD32_SoC.srcs/constrs_1/new/*
+!/BD32_SoC/BD32_SoC.srcs/constrs_1/new/*.xdc
+!/BD32_SoC/BD32_SoC.srcs/constrs_1/new/*.tcl
+BD32_SoC/BD32_SoC.srcs/sources_1/*
+!/BD32_SoC/BD32_SoC.srcs/sources_1/ip/
+BD32_SoC/BD32_SoC.srcs/sources_1/ip/*
+!/BD32_SoC/BD32_SoC.srcs/sources_1/ip/*/
+BD32_SoC/BD32_SoC.srcs/sources_1/ip/*/*
+!/BD32_SoC/BD32_SoC.srcs/sources_1/ip/*/*.xci
 # 实现工具文件（.dcp checkpoint / .rqs）
 BD32_SoC/BD32_SoC.srcs/utils_1/
-!**/*.xpr
 
 # --- IP 仓库（外部 IP，不纳入版本管理）---
 ip_repo/
@@ -61,6 +75,7 @@ wave_analysis/
 
 # --- 编辑器 / OS 临时文件 ---
 **/~$*
+/.tmp/
 .history/
 .workbuddy/
 .vscode/

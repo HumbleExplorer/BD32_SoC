@@ -67,7 +67,7 @@ python tools/build_run.py demos/nolibc/breathing --no-listen
 python tools/build_run.py demos/nolibc/breathing --no-reset
 ```
 
-构建参数（`--newlib` / `--clang` / `--clang-extra` / `--ld-extra` / `--lld` / `--rtthread` / `--rtthread-version` / `--irq-mode` / `--opt` / `--debug` / `--extra`）透传 build.py，运行参数（`--port` / `--baud` / `--idle-timeout`（默认 3s） / `--timeout` / `--until` / `--early-warn`（0 字节超 N 秒打印一次挂死/不匹配诊断，默认 6s） / `--log` / `--no-reset` / `--no-listen`）透传 uart_send.py。产物命名与 build.py 一致（默认 Os → `<demo>_os.uartbin`；`--opt O2` → `<demo>_o2.uartbin`；`--clang` → `<demo>_clang_<opt>.uartbin`）。
+构建参数（`--newlib` / `--clang` / `--clang-extra` / `--ld-extra` / `--lld` / `--rtthread` / `--rtthread-version` / `--irq-mode` / `--opt` / `--debug` / `--extra`）透传 build.py；运行参数（`--port` / `--baud` / `--idle-timeout`（默认 3s） / `--timeout` / `--until` / `--early-warn`（0 字节持续 N 秒时打印一次无响应或固件/比特流不匹配诊断，默认 6s） / `--log` / `--no-reset` / `--no-listen`）透传 uart_send.py。产物命名与 build.py 一致（默认 Os → `<demo>_os.uartbin`；`--opt O2` → `<demo>_o2.uartbin`；`--clang` → `<demo>_clang_<opt>.uartbin`）。
 
 ## build_riscv_tests.py — riscv-tests 编译
 
@@ -177,7 +177,7 @@ python tools/auto_coremark.py --xlsx <输出路径>      # 自定义 Excel 路�
 
 ## HPM 性能计数器（固件视角）
 
-计数器走**标准 RISC-V 地址**，复位即全计数（零配置），软件只需在需要时停止/清零。
+计数器走**标准 RISC-V CSR地址**，复位即全计数（零配置），软件只需在需要时停止/清零。
 
 ### 地址表
 
@@ -217,7 +217,8 @@ uint32_t ins = read_csr(CSR_MINSTRET) - i0;
 ```
 
 要点：
-- **读差值口径**：做窗口测量时起止都要读，别拿复位以来绝对值当窗口值（否则 BootROM/启动代码全被计入）。**读 CSR 自身会 +1**：窗口内每次 `csrr` 也退休、也被计数，精确计数时按 K+1 计。
+- **窗口差值**：测量起止都要读取计数器，并用结束值减去起始值；不要使用复位以来的累计值，否则会把 BootROM 和启动代码计入窗口。
+- **CSR 读取开销**：`csrr` 指令本身也会增加 `minstret`。按上面示例的读取顺序，结束读数会计入差值；若测量代码内执行 K 条 CSR 读取，精确核对时按 K+1 条计数器读取指令计算。
 - **CoreMark 移植层（`core_main.c`）有可直接照抄的完整测量示例**：测量前后各读一次计数器取差值；除总周期/指令数外，把 ALU/访存/分支/乘除等每一类指令分别计数，并读停顿计数器（0xB0F-0xB11）做归因。它自带一个**自检**：所有分类计数相加必须等于 minstret（实际退休的指令总数）——对不上就说明 HPM 的计数语义变了（通常是 RTL 改动引入的回归），先把计数器修对再相信测量数字。
 
 ## MROM 构建
@@ -226,7 +227,7 @@ uint32_t ins = read_csr(CSR_MINSTRET) - i0;
 bash test_data/soc/build_mrom.sh
 ```
 
-MROM（0x00000000，4KB）负责：上电测量 CPU 主频 → 计算 UART NCO 系数 → 跳转 ITCM 执行用户程序。
+MROM（0x00000000，4KB）负责：上电测量 CPU 主频 → 将主频暂存到 DTCM `0x0002FFF0` → 计算 UART NCO 系数 → 跳转 ITCM 执行用户程序。应用 `_start` 在清 `.bss` 后导入该值，`soc_init()` 验证并复用；仅暂存值无效时才重复测量。
 
 ## uartbin 下载协议
 

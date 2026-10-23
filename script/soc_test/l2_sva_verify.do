@@ -1,4 +1,4 @@
-# L2 模块级断言专项验证（+define+ASSERT_MODULE）
+# L2 模块级断言验证（+define+ASSERT_MODULE）
 # 目的：验证 L2 深化断言（plic_target 协议、apb_uart 帧/FIFO、SoC 中断映射等）
 #       在中断密集场景下不误触发
 # 程序: plic_irq（test_data/soc/c/ 下直接加载），CPU 主动轮询 PLIC claim/complete 位

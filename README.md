@@ -2,21 +2,21 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-BD32 是一款自定义的 32 位 RISC-V (RV32IMC) 流水线处理器 SoC，采用经典 5 级流水线架构并配备乱序执行机制（OITF），支持乘法/除法指令与短指令并行执行，并支持 C 压缩指令扩展。项目包含完整的 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
+BD32 是一款自定义的 32 位 RISC-V（RV32IMC）流水线处理器 SoC，采用经典 5 级流水线架构。OITF 跟踪多周期乘除法指令，使其可与无数据依赖的短指令并行执行；乘除法结果按队列顺序写回。项目包含 RTL 设计、仿真验证环境、SDK 工具链和 FPGA 原型验证平台。
 
 ## 特性
 
 - RV32IMC 指令集（含 M 扩展乘除法 + C 压缩指令扩展；取指 16 位对齐，压缩指令经硬件展开器译码）
 - 指令集扩展：Zcb（压缩字节/半字访存）、Zba/Zbb/Zbs（B 位操作，全单周期）、Zcmp（压缩堆栈操作，IF 侧 FSM 多拍展开，中断/调试以整条指令为粒度）
 - 5 级流水线：IF → ID → EX → MEM → WB
-- OITF（Out-of-order Instruction Termination Facility）：深度 4 的 FIFO，允许多周期乘除法指令乱序执行
+- OITF（Out-of-order Instruction Termination Facility）：深度为 4 的长周期指令跟踪队列；乘除法结果就绪后按队列顺序写回
 - 流水线型 Booth-4 乘法器
 - 32 周期迭代恢复余数除法器
 - HPM 性能计数器（标准地址 mhpmcounter3-17 = 0xB03-0xB11）：ALU/Load/Store/Branch/Jump/MulDiv/误预测/CSR/系统指令分类计数，Zcb/B/Zcmp 扩展独立计数，load-use/OITF/取指停顿周期计数。
 - 基于Gshare的动态分支预测器：GHR+BTB+RAS
 - AXI-Lite 总线 + APB 外设子系统
 - 外设：CLINT、PLIC 中断控制器、UART（含程序、数据下载功能）、APB Timer（含输入捕获和输出比较功能）、GPIO
-- CoreMark 验证通过，跑分达2.8CoreMark/MHz
+- CoreMark GCC `-O2`：2.7601 CoreMark/MHz（500 次迭代，CRC 通过；2026-10-19，板级 CPU 时钟 50 MHz）
 - FPGA 原型验证：ZYNQ-7020（xc7z020clg400-2），RT-Thread 上板长时间稳定运行
 - 支持自修改代码和非对齐访存
 - RT-Thread 移植：v5.1.0 与 lts-v3.1.x（v3.1.5）双版本，`--rtthread` 一键构建（默认 lts-v3.1.x，`--rtthread-version 51` 切 v5.1.0），双线程 demo 已仿真与上板验证，详见 [SDK 构建工具与协议](doc/sdk.md)「RT-Thread 应用开发」
@@ -162,7 +162,7 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 - [ ] **RV32A：A 原子扩展**（LR/SC + AMO，为 RTOS/多核同步铺路）
 - [ ] **RV32F / D：F/D 浮点扩展**（FPU 数据通路 + ABI 切换）
 - [x] **RT-Thread 移植**：v5.1.0 与 lts-v3.1.x 双版本（仅 M-mode，无 U-mode / MPU / SMP）
-- [x] **FPGA 原型验证**：62.5MHz 时序全收敛（Zcmp 重构后关键路径决定签核频点），RT-Thread 双线程 demo 上板稳定运行
+- [x] **FPGA 原型验证**：当前板级 CPU 时钟为 50 MHz，RT-Thread 双线程 demo 上板稳定运行
 - [ ] **QSPI Flash 启动与总线取指（XIP）**：片外 Flash 引导 + 经 AXI 总线取指执行（替代仅 ITCM 取指）；引入时需同步建立访存延时校准（可配置/随机延时从机模型 + 性能计数器，使仿真延时可校准到真实器件）
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器

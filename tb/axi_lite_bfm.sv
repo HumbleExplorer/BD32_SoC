@@ -19,7 +19,7 @@ module axi_lite_master_bfm #(
     parameter DATA_WIDTH     = 32,
     parameter STRB_WIDTH     = DATA_WIDTH/8,
     parameter ID_WIDTH       = 4,
-    parameter int TIMEOUT_CYCLES = 4096    // 各通道握手等待上限（防 TB 挂死）
+    parameter int TIMEOUT_CYCLES = 4096    // 各通道握手等待上限（防止 TB 无限等待）
 )(
     input  logic                       clk,
     input  logic                       rst_n,

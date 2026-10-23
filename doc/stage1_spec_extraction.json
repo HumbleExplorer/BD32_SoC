@@ -29,7 +29,7 @@
     {"region": "PLIC", "base": "0xFC00_0000", "bus": "APB", "psel": 1},
     {"region": "CLINT", "base": "0xF200_0000", "bus": "APB", "psel": 0},
     {"region": "Flash/DDR", "base": "0x9000_0000 / 0xB000_0000", "bus": "AXI", "notes": "未实现→axi_err_slave 返回错误"},
-    {"region": "未映射", "base": "—", "bus": "—", "notes": "axi_err_slave 兜底（DECERR，有界返回）"}
+    {"region": "未映射", "base": "—", "bus": "—", "notes": "axi_err_slave 错误响应（DECERR，有界返回）"}
   ],
   "registers": {
     "GPIO @0xE000_0000 (apb_gpio.sv, DATA_WIDTH=8)": [
@@ -91,10 +91,10 @@
     {"irq_plic": "优先级", "source": "核内固定", "trigger": "—", "notes": "外部 > 软件 > 定时；mtimecmp 写 1 后需软件重装（电平语义）"}
   ],
   "clock_tree": [
-    {"clock": "sys_clk", "freq": "50MHz", "source": "板载晶振", "notes": "不经 IBUF 直供 clk_div/Cdc_Sync；经 IBUF 供给 clk_wiz"},
-    {"clock": "clk_cpu", "freq": "62.5MHz", "source": "clk_wiz MMCM CLKOUT1（50M 入）", "notes": "CPU/SoC/总线域；时序签核频点"},
-    {"clock": "clk_8m388", "freq": "8.388608MHz", "source": "clk_wiz MMCM CLKOUT2", "notes": "UART 波特率基准（115200×72800 整除关系，NCO 精度来源）"},
-    {"clock": "clk_1mhz", "freq": "1MHz", "source": "sys_clk/50 (clk_div_static DIV_NUM=50)", "notes": "CLINT mtime 域；1 tick=1µs（BootROM 测频/bsp delay_us 依赖）"}
+    {"clock": "sys_clk", "freq": "50MHz", "source": "板载晶振", "notes": "经 IBUF/BUFG 供给 CPU，并作为 clk_wiz 输入"},
+    {"clock": "clk_cpu", "freq": "50MHz", "source": "sys_clk 经 IBUF + BUFG 直通", "notes": "CPU/SoC/总线/外设域；clk_wiz 的 CPU 时钟输出当前未使用"},
+    {"clock": "clk_8m388", "freq": "8.42285MHz", "source": "clk_wiz MMCM CLKOUT2", "notes": "当前 RTL 未使用的预留输出；频率为 Vivado IP 配置值"},
+    {"clock": "clk_1mhz", "freq": "1MHz", "source": "clk_cpu/50 (clk_div_static DIV_NUM=50)", "notes": "CLINT mtime 域；1 tick=1µs（BootROM 测频/bsp delay_us 依赖）"}
   ],
   "reset_tree": [
     {"reset": "rst_async_n", "formula": "sys_rst_n && ~dbg_rst && clk_wiz_locked", "notes": "按键+调试器复位+MMCM 锁定三与；异步断言"},

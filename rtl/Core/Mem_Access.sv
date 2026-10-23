@@ -381,12 +381,12 @@ end
 `ifndef FORMAL
 // ===== SVA：访存一致性（仅仿真；形式验证用下方 FORMAL 有界版）=====
 // Yosys SVA 子集写法：时钟取自外层 always、disable iff 改 if 判断（ModelSim 同样接受）
-// split FSM 无卡死：同一非 IDLE 状态持续 >4096 拍视为真卡死
-// （总线挂死时亦会触发——本身即异常情形，报告价值大于误报风险）
+// split FSM 有界退出检查：同一非 IDLE 状态持续超过 4096 拍视为状态停滞。
+// （总线无响应时也会触发；该情形同样需要报告。）
 always @(posedge clk) begin
     if (rst_n && $past(split_active, 4096) && (split_state == $past(split_state, 4096))) begin
         a_split_bounded: assert property (split_state == 3'd0)
-            else $error("[SVA][MA] split FSM 状态 %h 停留超 4096 拍（疑似总线/握手卡死）", split_state);
+            else $error("[SVA][MA] split FSM 状态 %h 连续停留超过 4096 拍（疑似总线或握手停滞）", split_state);
     end
 end
 `endif

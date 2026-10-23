@@ -1,4 +1,4 @@
-# SVA 断言专项验证：memstress + timer_int 注入
+# SVA 断言验证：memstress + timer_int 注入
 # 目的：验证 L1 + L2（ASSERT_MODULE）断言在高频中断场景下不误触发
 # 用法: cd script/core_test && vsim -c -do sva_verify.do
 quit -sim

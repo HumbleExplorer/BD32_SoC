@@ -8,7 +8,7 @@
 // （PENABLE=1）→ 等待 PREADY → 撤销传输。
 //
 // 传输结果状态：每次 write/read 完成后更新 last_error（ACCESS 完成拍采样的
-// PSLVERR）；超时置 timeout_flag 并打印 $error 后返回（不挂死 TB）。
+// PSLVERR）；超时置 timeout_flag 并打印 $error 后返回（避免 TB 无限等待）。
 // ============================================================================
 timeunit 1ns;
 timeprecision 1ps;
@@ -16,7 +16,7 @@ timeprecision 1ps;
 module apb_master_bfm #(
     parameter PADDR_WIDTH = 32,
     parameter PDATA_WIDTH = 32,
-    parameter int TIMEOUT_CYCLES = 4096   // PREADY 等待上限（防 TB 挂死）
+    parameter int TIMEOUT_CYCLES = 4096   // PREADY 等待上限（防止 TB 无限等待）
 )(
     input   logic                       PRESETn,
                                         PCLK,

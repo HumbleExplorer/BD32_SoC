@@ -351,7 +351,7 @@ always @(posedge clk) begin
 end
 
 // ===========================================================================
-// SVA: L2 原子性不变式（+define+ASSERT_MODULE 使能，ModelSim 专项）
+// SVA: L2 原子性不变式（+define+ASSERT_MODULE 使能，仅在 ModelSim 仿真中启用）
 // 依据微码展开表：一条指令的微操作总数固定（push=寄存器数+1、pop/popretz/
 // popret=寄存器数+2、mv=2），"微操作计数与编码一致"即下面这些不变式：
 `ifdef ASSERT_MODULE

@@ -56,7 +56,7 @@ logic   [DATA_WIDTH-1:0]    PRDATA     ;
 logic                       tran_done  ;
 
 /********************APB 超时保护*********************/
-// 从机挂死（PREADY 恒 0）时，ACCESS 态会在 BUS_TIMEOUT/2 周期后强制完成，
+// 从机无响应（PREADY 恒 0）时，ACCESS 态会在 BUS_TIMEOUT/2 周期后强制完成，
 // 避免桥锁死导致后续所有从机不可访问。阈值取 AXI 层 BUS_TIMEOUT 的一半，
 // 保证桥先于 AXI_Lite_Master 的超时恢复，返回 SLVERR 而非 DECERR。
 localparam int unsigned APB_TO_VAL   = `BUS_TIMEOUT / 2;

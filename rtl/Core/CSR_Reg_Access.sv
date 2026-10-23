@@ -208,7 +208,7 @@ endgenerate
 
 // 停顿原因周期计数（mhpmcounter15/16/17 = 0xB0F/0xB10/0xB11，mcountinhibit/clr 位 15/16/17）
 // 周期型计数：不与 hpm_valid 挂钩（停顿拍本就无退休），仅受 mcountinhibit 门控；
-// 三者机理不同允许少量重叠，账目用 "ticks = instret + Σstall + 误预测×罚期" 核算
+// 三者机理不同允许少量重叠，一致性关系用 "ticks = instret + Σstall + 误预测×罚期" 核对
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n)                              mhpmcounter[12] <= #1 'h0;
     else if(mcounterclr[15])                mhpmcounter[12] <= #1 'h0;

@@ -195,7 +195,7 @@ halt 期间通过 SBA 访问整个 SoC 地址空间（32-bit 地址；读为 32-
 
 - 4 路 mcontrol trigger（tselect 0~3）自动分配，可同时下多个 `hbreak` 形成多断点，命中后逐个 `delete` 再 `resume`。
 - **命中锁存**：trigger 命中时 DM 自动锁存 haltreq；删除断点不会自动恢复运行，必须显式 resume。
-- **不要断在当前 PC**：trigger halt 后 dpc = 命中地址，resume 从 dpc 重新取指，若断点仍在同一地址会再次命中而卡死（OpenOCD 报 unable to resume）。上板测试用"NOP 滑道 + 断点设在下一地址"规避。
+- **不要断在当前 PC**：trigger halt 后 dpc = 命中地址，resume 从 dpc 重新取指；若断点仍设在该地址，恢复后会再次命中，导致无法继续执行（OpenOCD 报 unable to resume）。上板测试用"NOP 滑道 + 断点设在下一地址"规避。
 - tdata1 复位值 0x2000_0000（type=2、dmode=0、disabled）；dmode=0 避免 OpenOCD 0.12 枚举 trigger 时清零导致 hbreak 失效。
 
 #### 6. 数据观察点（watch，load/store 地址匹配）
@@ -335,7 +335,7 @@ SDK/tools/ 下所有脚本输出统一到仓库根 `logs/` 目录：
 | 脚本 | 内容 | 结果文件 |
 |------|------|----------|
 | `bd32_debug_test.cfg`（OpenOCD 直接运行） | DMI 全功能：JTAG、halt/PC、GPR/CSR、单步、SBA、Trigger、reset halt | 终端输出 |
-| `bd32_new_feat_test.cfg`（OpenOCD 直接运行） | 新功能专项：SBA 8/16-bit 写、双硬件断点（tselect0/1 依次命中）、ebreak 进调试 | 终端输出 |
+| `bd32_new_feat_test.cfg`（OpenOCD 直接运行） | 新功能测试：SBA 8/16-bit 写、双硬件断点（tselect0/1 依次命中）、ebreak 进调试 | 终端输出 |
 | `bd32_sba_periph.cfg`（OpenOCD 直接运行） | SBA 外设总线：GPIO/UART/CLINT 读写、字节使能、未映射 sberror、halt 保持 | 终端输出 |
 | `run_gdb_debug_test.bat` | GDB 全功能套件：reset halt、寄存器/CSR、单步、内存读写、hbreak（socket 模式） | `logs/gdb_test_result.txt` |
 | `run_demo_debug.bat` | 真实 demo（breathing）符号级调试：加载、hbreak main、单步、变量（socket 模式） | `logs/demo_debug_result.txt` |
@@ -396,7 +396,7 @@ Testbench `tb/tb_debug.sv` 通过 DMI 接口直接激励 DM，无需 JTAG 物理
 - DMI 一键测试（`bd32_debug_test.cfg`，OpenOCD 枚举识别 4 个 trigger）
 - GDB 套件（`run_gdb_debug_test.bat`：reset halt / 单步 / GPR / CSR / SBA / hbreak）
 - 真实 demo（breathing.elf）符号级调试（`run_demo_debug.bat`）
-- 新功能专项（`bd32_new_feat_test.cfg`：SBA 8/16-bit 写、双硬件断点、ebreak 进调试模式）
+- 新功能测试（`bd32_new_feat_test.cfg`：SBA 8/16-bit 写、双硬件断点、ebreak 进调试模式）
 - SBA 外设总线（`bd32_sba_periph.cfg`：SBA 访问 GPIO/UART/CLINT 外设、字节使能、未映射 sberror、halt 保持）
 - 数据观察点（`bd32_watchpoint_test.cfg`：写/读观察点、宽度过滤、无访问不误命中）
 - GDB 在线数据观察点（`run_gdb_watchpoint.bat`：watch 0x20000 → continue → 命中停止，SBA 读 BootROM 判定路径完整）

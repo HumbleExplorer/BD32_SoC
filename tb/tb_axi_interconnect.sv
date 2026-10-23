@@ -1,5 +1,5 @@
 // ============================================================================
-// tb_axi_interconnect.sv — AXI 互联链专项验证（verification_plan §SoC PLANNED 项完成）
+// tb_axi_interconnect.sv — AXI 互联链验证（verification_plan §SoC PLANNED 项完成）
 //
 // BD32 — RV32IM Pipelined RISC-V SoC
 // Copyright (c) 2026 BD32 Project
@@ -17,7 +17,7 @@
 //   T3 桩从机 PSLVERR → AXI SLVERR 传播
 //   T4 MROM/Flash 段 err_slave：读 0 + OKAY、写接受
 //   T5 DDR 段 err_slave：同 T4
-//   T6 桩从机 PREADY 挂死 → 桥超时 → SLVERR（有界完成）
+//   T6 桩从机不响应（PREADY 保持低）→ 桥超时 → SLVERR（有界完成）
 //   T7 未路由段（0xD 段）：无从机握手 → BFM 有界超时（验证不挂死）
 // ============================================================================
 timeunit 1ns;
@@ -615,7 +615,7 @@ task automatic test_timeout_paths();
     bit          ok;
     realtime     t0;
 
-    // T6：桩从机 PREADY 挂死 → 桥超时（BUS_TIMEOUT=1024 拍）→ SLVERR
+    // T6：桩从机不响应（PREADY 保持低）→ 桥超时（BUS_TIMEOUT=1024 拍）→ SLVERR
     test_no = 6;
     stub_hang = 1'b1;
     t0 = $realtime;
@@ -679,7 +679,7 @@ end
 endmodule
 
 // ============================================================================
-// APB 从机桩（寄存器块 + 等待态/错误/挂死控制）
+// APB 从机桩（寄存器块 + 等待态/错误/无响应控制）
 // ============================================================================
 module apb_slave_stub #(
     parameter NUM_REGS = 16

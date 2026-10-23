@@ -405,10 +405,10 @@ always_ff @(posedge clk or negedge rst_n) begin
         halted_d <= dbg_halted;
         if (halted_fell)
             resume_ack_r <= 1'b1;   // CPU 恢复运行，置 ack
-        // halt 保持锁存（Debug Spec 4.1/4.7/4.8）：CPU 一旦进入 Debug Mode
-        // 就保持暂停，直到调试器写 resumereq。这样 haltreq 写 0（WARZ）清除
-        // 请求后 CPU 不会跑飞，且清断点（tdata1）/清 dcsr.ebreakm 也不会让
-        // trigger/ebreak halt 的 CPU 自动恢复。替代原先的 trigger/ebreak 专用锁存。
+        // 已进入 Debug Mode 后保持暂停，直到调试器写入 resumereq。
+        // 清除 haltreq 只撤销新的暂停请求，不会释放 halt_hold_r；清除 trigger
+        // 或 dcsr.ebreakm 也不会让 CPU 脱离暂停状态并在调试器未请求恢复时继续执行。
+        // 该锁存统一替代 trigger/ebreak 专用的暂停锁存。
         if (~halted_d & dbg_halted)
             halt_hold_r <= 1'b1;
         // dpc 捕获在下方独立 always_ff（正常 halt 边沿 + 复位后延迟捕获）

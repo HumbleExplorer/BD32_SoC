@@ -111,4 +111,4 @@ ITCM/DTCM 下载：帧头 `0xBBAABBAA`，随后 ITCM 指令个数与指令数据
 ## 上电流程
 
 1. BootROM（MROM）执行：使能 mcycle → 10ms 测频 → 存储实测频率到 DTCM 0x2FFF0 →读 GPIO[0] 决定模式 → 下载模式置 DBG_EN=1 等待 uartbin，否则直接跳 ITCM。
-2. 应用 `_init()`：`soc_init()` 复测主频并更新 `g_cpu_freq_hz` → `uart_init(115200)`（按实测频率计算 FCW）→ 设置 mtvec → `main()`。
+2. 应用 `_start` 在清零 `.bss` 后从 DTCM `0x0002FFF0` 导入 MROM 已测主频到 `g_cpu_freq_hz`；`_init()` 中的 `soc_init()` 验证并复用该值（无效时才重新测量），随后 `uart_init(115200)` 按该频率计算 FCW、设置 mtvec，再进入 `main()`。
