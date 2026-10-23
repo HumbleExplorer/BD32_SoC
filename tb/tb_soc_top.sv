@@ -16,8 +16,8 @@ localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
 localparam  PATH  = `PATH;//vsim路径
 localparam  ITCM_FULL_PATH = {PATH,ITCM_FILE};
-localparam  CPU_FREQUENCY = 62_500_000;  // 与 clk_wiz_0 实际输出一致（50MHz ÷2 × 43.125 ÷ 17.25）
-localparam  CLK_PERIOD = 1_000_000_000 / CPU_FREQUENCY; // 16ns
+localparam  CPU_FREQUENCY = 50_000_000;  // 与板级顶层当前直通的 50MHz CPU 时钟一致
+localparam  CLK_PERIOD = 1_000_000_000 / CPU_FREQUENCY; // 20ns
 // 真实波特率周期 (ns)：模拟真实串口助手的发送节拍
 localparam  BAUD_PERIOD_NS = 1_000_000_000 / 115200;  // ~8680ns per bit @ 115200
 
@@ -230,6 +230,18 @@ initial begin
     $display("============================================================\n");
 
 end
+
+`ifdef MROM_FREQ_REUSE_TEST
+// DIRECT_LOAD 启动路径测试：模拟 MROM 已测得频率并写入 DTCM 预留槽。
+// 应用 _start 必须在调用 _init/压栈前导入该值，soc_init 随后不应再次测频。
+initial begin
+    #1;
+    tb_soc_top.u_SoC_top.u_RISC_V_Core.u_DTCM.gen_reg.ram_mem[14'h3FFC]
+        = 32'd50000000; // byte address 0x0002FFF0
+    $display("[%0t] Injected MROM measured CPU frequency: 50MHz", $time);
+end
+`endif
+
 `ifdef BUS_TIMEOUT_TEST
 // =====================================================================
 // 总线访问超时测试（BUS_TIMEOUT_TEST）
@@ -399,7 +411,7 @@ initial begin
 end
 
 // --- 复位后 MROM 执行跟踪 ---
-// 记录复位后 MROM 的每条指令 PC，帮助定位卡死/跑飞位置
+// 记录复位后 MROM 的每条指令 PC，帮助定位执行停滞或控制流异常。
 integer mrom_trace_fd;
 logic   prev_rst_n;
 logic   in_mrom_range;
@@ -502,7 +514,7 @@ end
 
 `ifdef UART_IRQ_TEST
 // =====================================================================
-// UART 中断收发闭环测试（配合 SDK/demos/nolibc/uart_irq）
+// UART 中断收发测试（配合 SDK/demos/nolibc/uart_irq）
 // =====================================================================
 // DIRECT_LOAD 预载 uart_irq 固件；TB 等固件开中断后注入 3 行字符串，
 // 固件以 RDA 中断收行、THRE 中断驱动回显；回显排空后固件写
@@ -580,7 +592,7 @@ SoC_top #(
     .gpio_io     	(gpio_io    ),
     .timer_channel_io   (timer_channel_io ),
     // Debug 接口：SoC 级仿真不例化 Debug Module，输入全部接地，
-    // 避免 SBA 地址 mux 的 X 传播导致 ITCM 取指全变 NOP（CoreMark 仿真跑飞根因）
+    // 避免 SBA 地址 mux 的 X 传播使 ITCM 取指变为 NOP（CoreMark 仿真异常的根因）
     .dbg_halt_req       (1'b0           ),
     .dbg_resume_req     (1'b0           ),
     .dbg_step           (1'b0           ),

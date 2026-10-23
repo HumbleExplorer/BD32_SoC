@@ -27,6 +27,14 @@ _start:
     bltu a0, a1, 1b
 2:
 
+    /* MROM 已将 mcycle/mtime 测得的 CPU 频率写到 DTCM 0x2FFF0。
+     * 必须在第一次 call/压栈之前读取：该地址位于栈顶预留区。
+     * 先清 BSS，再写入 g_cpu_freq_hz，避免它被上面的清零循环覆盖。 */
+    li   t0, 0x0002FFF0
+    lw   t1, 0(t0)
+    la   t0, g_cpu_freq_hz
+    sw   t1, 0(t0)
+
     call _init
 #ifdef RT_USING_RTTHREAD
     call rtthread_startup

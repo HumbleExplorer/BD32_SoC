@@ -2,7 +2,7 @@
 // bd32_board_top — FPGA 板级顶层
 // =============================================================================
 // 职责：
-//   1. MMCM 时钟生成（50MHz 板载晶振 → 62.5MHz clk_cpu / 8.388MHz UART 基准）
+//   1. CPU 直接使用 50MHz 板钟；MMCM locked 参与上电复位放行
 //   2. 50MHz ÷ 50 → 1MHz CLINT timer 时钟分频
 //   3. BUFG 全局缓冲 + Cdc_Sync 异步复位同步释放
 //   4. SoC_top 纯数字 IP 例化
@@ -39,23 +39,19 @@ module bd32_board_top #(
 );
 
 // =========================================================================
-// MMCM 时钟生成：50MHz → 62.5MHz clk_cpu / 8.388MHz UART 波特率基准
+// CPU 时钟：直接使用板载 50MHz；MMCM 仅提供 locked 上电条件。
 // =========================================================================
-// =========================================================================
-// MMCM 时钟生成：50MHz 晶振 → 62.5MHz clk_cpu / 8.388MHz UART 波特率基准
-// =========================================================================
-// sys_clk_buf：IBUF 缓冲后的内部信号，供给 clk_wiz（含 IBUF）。
-// sys_clk 端口直接供给 clk_div_static / Cdc_Sync（不经过 IBUF），
-// 避免端口同时驱动 IBUF 输入和其他逻辑的 illegal port connection。
+// sys_clk_buf：IBUF 缓冲后的板钟，分别供 MMCM 与 CPU BUFG 使用。
 wire sys_clk_buf;
 IBUF u_sys_clk_ibuf (.I(sys_clk), .O(sys_clk_buf));
 
 logic clk_wiz_locked;
 logic clk_cpu, clk_8m388;
-
+wire clk_cpu_mmcm_unused;
+BUFG u_cpu_clk_bufg (.I(sys_clk_buf), .O(clk_cpu));
 clk_wiz_0 u_clk_wiz_0 (
     .clk_in     (sys_clk_buf),
-    .clk_cpu    (clk_cpu),
+    .clk_cpu    (clk_cpu_mmcm_unused),
     .clk_8m388  (clk_8m388),
     .reset      (~sys_rst_n),
     .locked     (clk_wiz_locked)
@@ -129,7 +125,7 @@ Cdc_Sync #(
     .RESET_VAL   (0),
     .DELAY_STAGES(3)
 ) u_cdc_rst_clint_sync (
-    .dst_clk    (sys_clk_buf),
+    .dst_clk    (clk_cpu),
     .dst_rst_n  (rst_n_bufg),
     .async_sig  (1'b1),
     .sync_sig   (rst_n_clint_sync)
@@ -138,7 +134,7 @@ Cdc_Sync #(
 clk_div_static #(
     .DIV_NUM (50)
 ) u_clint_timer_div (
-    .clk_in  (sys_clk_buf),
+    .clk_in  (clk_cpu),
     .rst_n   (rst_n_clint_sync),
     .clk_out (clk_1mhz)
 );

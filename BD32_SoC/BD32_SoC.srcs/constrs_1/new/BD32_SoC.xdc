@@ -26,8 +26,8 @@ set_property -dict {PACKAGE_PIN Y14 IOSTANDARD LVCMOS33} [get_ports dbg_tdi]
 create_clock -period 100.000 -name dbg_tck [get_ports dbg_tck]
 set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets dbg_tck_IBUF]
 # TCK ↔ sys_clk 异步域，不做跨域时序分析
-set_false_path -from [get_clocks dbg_tck] -to [get_clocks clk_cpu_clk_wiz_0]
-set_false_path -from [get_clocks clk_cpu_clk_wiz_0] -to [get_clocks dbg_tck]
+set_false_path -from [get_clocks dbg_tck] -to [get_clocks sys_clk]
+set_false_path -from [get_clocks sys_clk] -to [get_clocks dbg_tck]
 
 # =====================================================================
 # GPIO 引脚分配（5路）
@@ -72,17 +72,10 @@ set_property -dict {PACKAGE_PIN U7 IOSTANDARD LVCMOS33} [get_ports {timer_channe
 # add_cells_to_pblock [get_pblocks pblock_Executer_Mem_Access] [get_cells -quiet [list u_SoC_top/u_RISC_V_Core/u_Executer u_SoC_top/u_RISC_V_Core/u_Mem_Access]]
 
 # =====================================================================
-# CDC 复位同步器路径设 false path（异步复位信号，不做 setup 分析）
+# 外部复位为异步控制输入，不参与 sys_clk 数据路径时序分析。
 # =====================================================================
-set_false_path -from [get_cells u_cdc_rst_sync/*]
-set_false_path -from [get_clocks sys_clk] -to [get_clocks clk_cpu_clk_wiz_0]
-# clk_cpu -> sys_clk: CLINT timer divider async reset release path
-set_false_path -from [get_clocks clk_cpu_clk_wiz_0] -to [get_clocks sys_clk]
+# CPU and CLINT divider now share the 50MHz sys_clk source.
 
 
-# 禁止 Vivado 对 sys_clk 自动插入 IBUF（clk_wiz 内部已有 IBUF）
-set_property IS_GLOBAL_CLOCK false [get_ports sys_clk]
-
-# 禁止 Vivado 自动插入 IBUF（clk_wiz 内部已含 IBUF，双重缓冲导致 illegal port）
-set_property IF_DELAY 0.0 [get_ports sys_clk]
+# sys_clk 使用板级 50MHz 输入，IBUF/BUFG 在 bd32_board_top 中显式例化。
 set_property IOSTANDARD LVCMOS33 [get_ports sys_clk]

@@ -163,7 +163,7 @@
 // --- 总线阈值 ---
 `define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000  // 高16位 >= 此值走 AXI
 
-// AXI 超时（时钟周期）：75MHz 下 1024 周期 ≈ 13.65μs
+// AXI 超时（时钟周期）：50MHz 下 1024 周期 ≈ 20.48μs
 // 形式验证（sby 定义 FORMAL）下缩小到 8：验证的是超时机制本身而非标定值，
 // 且 BMC depth 30 可全程覆盖逃逸路径；PDR 无需归纳 16 位计数器关系
 `ifdef FORMAL

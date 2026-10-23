@@ -4,9 +4,9 @@
  *
  * CPU 主频机制：
  *   MROM 上电后通过 CLINT mtime (1MHz 基准) + mcycle 自动测量，
- *   直接用实测值计算 UART NCO FCW。
- *   C 代码侧调用 soc_init() 独立测量并更新 g_cpu_freq_hz，
- *   与 MROM 解耦，正常/下载模式均适用。
+ *   并将结果暂存到 DTCM 0x0002FFF0。
+ *   start.S 在清 BSS 后导入 g_cpu_freq_hz；soc_init() 验证后复用，
+ *   仅在暂存值无效时才独立测量作为兜底。
  */
 #ifndef SOC_H
 #define SOC_H
@@ -43,7 +43,7 @@
  * CPU 频率（Hz）— 编译期常量
  * 直接使用宏定义，避免全局变量 gp/s0 寄存器破坏问题
  * =================================================================== */
-#define CPU_FREQ_HZ_DEFAULT  62500000UL  /* clk_wiz CLKOUT0 实际输出 62.5MHz（requested 62.5） */
+#define CPU_FREQ_HZ_DEFAULT  50000000UL  /* 板级 sys_clk / 当前 CPU 目标主频：50MHz */
 
 #define CPU_FREQ_HZ          CPU_FREQ_HZ_DEFAULT
 #define CPU_FREQ_KHZ         (CPU_FREQ_HZ / 1000UL)
@@ -111,20 +111,24 @@ static inline uint32_t measure_cpu_freq(uint32_t n)
  * 调用时机：_init() 最开头，早于任何 UART/定时器使用
  *
  * 流程：
- *   1. 使能 mcycle CSR 读取
- *   2. 预热一次（去掉第一次 tick 的不稳定边界）
- *   3. 标准测量 10000 ticks (10ms)
- *   4. 合理性检查后写入 g_cpu_freq_hz
+ *   1. 优先复用 start.S 从 MROM 暂存区导入的频率值（±10% 合理性检查）
+ *   2. 暂存值无效时预热 mcycle/mtime，再测量 10000 ticks (10ms)
+ *   3. 测量值通过合理性检查后写入 g_cpu_freq_hz，否则回退到默认值
  * =================================================================== */
 static inline void soc_init(void)
 {
+    uint32_t lo = CPU_FREQ_HZ_DEFAULT - CPU_FREQ_HZ_DEFAULT / 10;
+    uint32_t hi = CPU_FREQ_HZ_DEFAULT + CPU_FREQ_HZ_DEFAULT / 10;
+
+    /* start.S 在清 BSS 后、调用本函数前已从 MROM 的 DTCM 暂存区导入测频结果。
+     * 若值落在当前 SoC 允许范围内，直接复用，避免再次等待 10ms。 */
+    if (g_cpu_freq_hz >= lo && g_cpu_freq_hz <= hi) return;
+
     /* mcycle 恒计数（门控只看 mcountinhibit，复位即计数），无需任何使能写 */
     /* 预热一次（去掉第一次 tick 的不稳定边界） */
     measure_cpu_freq(1);
     /* 标准测量 10000 ticks (10ms)，±10% 合理性检查，失败回退到编译期常量 */
     uint32_t f  = measure_cpu_freq(MEASURE_MTIME_TICKS);
-    uint32_t lo = CPU_FREQ_HZ_DEFAULT - CPU_FREQ_HZ_DEFAULT / 10;
-    uint32_t hi = CPU_FREQ_HZ_DEFAULT + CPU_FREQ_HZ_DEFAULT / 10;
     g_cpu_freq_hz = (f >= lo && f <= hi) ? f : CPU_FREQ_HZ_DEFAULT;
 }
 #endif

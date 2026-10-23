@@ -20,7 +20,7 @@ void __attribute__((weak)) board_init(void) {
 void _init(void) {
     soc_init();
 
-    /* UART 初始化（soc_init 测频完成后调用，按实测主频计算 FCW） */
+    /* UART 初始化（soc_init 已复用/测得 CPU 主频，据此计算 FCW） */
     uart_init(115200);
 
 #ifdef RT_USING_RTTHREAD
