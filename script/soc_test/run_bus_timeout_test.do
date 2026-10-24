@@ -51,9 +51,9 @@ add wave -radix hex sim:/tb_soc_top/u_SoC_top/u_RISC_V_Core/u_CSR_Reg_Access/mep
 add wave -radix hex sim:/tb_soc_top/u_SoC_top/u_RISC_V_Core/u_CSR_Reg_Access/mcause
 
 add wave -divider "APB Timer (hung slave)"
-add wave sim:/tb_soc_top/u_SoC_top/apb_psel[4]
-add wave sim:/tb_soc_top/u_SoC_top/apb_penable
-add wave sim:/tb_soc_top/u_SoC_top/apb_pready[4]
+add wave sim:/tb_soc_top/u_SoC_top/apb_s[4].psel
+add wave sim:/tb_soc_top/u_SoC_top/apb_m.penable
+add wave sim:/tb_soc_top/u_SoC_top/apb_s[4].pready
 
 add wave -divider "GPIO Result"
 add wave -radix hex sim:/tb_soc_top/u_SoC_top/u_apb_gpio/out_reg

@@ -1,5 +1,4 @@
 `include "./../../SoC_Config.sv"
-`include "../../RV32_Inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
 module mul_div #(

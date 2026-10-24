@@ -1,6 +1,8 @@
 `include "./../SoC_Config.sv"
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module APB_Master #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -17,16 +19,8 @@ module APB_Master #(
     input   logic   [ALIGN_BYTES-1:0]   i_wmask,
     output  logic   [DATA_WIDTH-1:0]    o_rdata,
     output  logic                       o_tran_done,
-    // connect APB Slave
-    output  logic   [ADDR_WIDTH-1:0]    o_PADDR,// 地址总线
-    output  logic                       o_PSEL,// 选择信号
-    output  logic                       o_PENABLE,// 使能信号
-    output  logic                       o_PWRITE,// 写信号
-    output  logic   [ALIGN_BYTES-1:0]   o_PSTRB, // 写使能信号
-    output  logic   [DATA_WIDTH-1:0]    o_PWDATA,// 写数据总线
-    input   logic   [DATA_WIDTH-1:0]    i_PRDATA,// 读数据总线
-    input   logic                       i_PREADY,// 准备就绪信号
-    input   logic                       i_PSLVERR,// 错误信号
+    // connect APB Slave（接口）
+    apb_if.master                       m,          // APB 总线
     output  logic                       o_timeout  // 从机超时无响应
 );
 
@@ -59,7 +53,7 @@ logic                       tran_done  ;
 // 从机无响应（PREADY 恒 0）时，ACCESS 态会在 BUS_TIMEOUT/2 周期后强制完成，
 // 避免桥锁死导致后续所有从机不可访问。阈值取 AXI 层 BUS_TIMEOUT 的一半，
 // 保证桥先于 AXI_Lite_Master 的超时恢复，返回 SLVERR 而非 DECERR。
-localparam int unsigned APB_TO_VAL   = `BUS_TIMEOUT / 2;
+localparam int unsigned APB_TO_VAL   = BUS_TIMEOUT / 2;
 localparam int unsigned APB_TO_WIDTH = $clog2(APB_TO_VAL + 1);
 
 logic [APB_TO_WIDTH-1:0] apb_to_cnt;
@@ -109,7 +103,7 @@ end
                 ACCESS: begin
                     if (apb_timeout)
                         next_state = IDLE;          // 超时强制回 IDLE，不启动新事务
-                    else if(i_PREADY)
+                    else if(m.pready)
                         next_state = i_transfer ? SETUP : IDLE;
                     else
                         next_state = ACCESS;
@@ -149,8 +143,8 @@ end
                         PWRITE    = i_write ;
                         PSEL      = 1'b1;
                         PENABLE   = 1'b1;
-                        PRDATA    = i_PRDATA;
-                        tran_done = i_PREADY | apb_timeout;   // PREADY 或超时均完成
+                        PRDATA    = m.prdata;
+                        tran_done = m.pready | apb_timeout;   // PREADY 或超时均完成
                     end
                 default:;
             endcase
@@ -171,7 +165,7 @@ end
                     next_state = ACCESS;
                 end
                 ACCESS: begin
-                    if(i_PREADY)
+                    if(m.pready)
                         next_state = IDLE;
                     else
                         next_state = ACCESS;
@@ -221,8 +215,8 @@ end
         end else begin
             case(current_state)
                 ACCESS: begin
-                    if(i_PREADY) begin
-                        PRDATA    <= i_PRDATA;
+                    if(m.pready) begin
+                        PRDATA    <= m.prdata;
                         tran_done <= 1'b1;
                     end else begin
                         tran_done <= 1'b0;
@@ -240,15 +234,15 @@ end
 
 /********************comb*********************/
 //connect to APB Slave
-assign  o_PADDR     =   PADDR    ;
-assign  o_PSEL      =   PSEL     ;
-assign  o_PENABLE   =   PENABLE  ;
-assign  o_PWRITE    =   PWRITE   ;
-assign  o_PSTRB     =   PSTRB    ;
-assign  o_PWDATA    =   PWDATA   ;
+assign  m.paddr     =   PADDR    ;
+assign  m.psel      =   PSEL     ;
+assign  m.penable   =   PENABLE  ;
+assign  m.pwrite    =   PWRITE   ;
+assign  m.pstrb     =   PSTRB    ;
+assign  m.pwdata    =   PWDATA   ;
 
 
-// assign  o_PSTRB     =  w_strobe ;
+// assign  m.pstrb     =  w_strobe ;
 //connect to User
 assign  o_tran_done =   tran_done ;
 assign  o_rdata     =   PRDATA    ;

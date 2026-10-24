@@ -1,16 +1,17 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 `ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
 `endif
+import bd32_pkg::*;
+
 module Mem_Access #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter ALIGN_WIDTH = `ALIGN_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES,
     localparam BLOCK_SIZE_WIDTH = ADDR_WIDTH - `DEVICE_TAG_WIDTH,
-    localparam APB_BASE_ADDR = `AXI_APB_BRIDGE_BASE
+    localparam APB_BASE_ADDR = AXI_APB_BRIDGE_BASE
 )(
     input   logic                       clk,
     input   logic                       rst_n,
@@ -60,11 +61,11 @@ module Mem_Access #(
 logic [DATA_WIDTH-1:0] access_rdata;
 logic [DATA_WIDTH-1:0] tcm_rdata;
 
-assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `DTCM_BASE_TAG) ;
-assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= `BUS_BASE_ADDR) ;
+assign dtcm_sel     = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == DTCM_BASE_TAG) ;
+assign bus_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= BUS_BASE_ADDR) ;
 assign apb_sel      = access_en & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] >= APB_BASE_ADDR[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]);
-assign itcm_store_sel   = access_en & access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
-assign itcm_load_sel    = access_en & ~access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
+assign itcm_store_sel   = access_en & access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == ITCM_BASE_TAG);
+assign itcm_load_sel    = access_en & ~access_wr & (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] == ITCM_BASE_TAG);
 
 // ============================================
 // 非对齐访问拆分 FSM（DTCM / 总线内存）
@@ -108,8 +109,8 @@ always_comb begin
     split_misaligned = 1'b0;
     if (access_en && (dtcm_sel || (bus_sel && ~apb_sel))) begin
         case (access_func3)
-            `INST_LH, `INST_LHU: split_misaligned = (access_addr[ALIGN_WIDTH-1:0] == {ALIGN_WIDTH{1'b1}});
-            `INST_LW, `INST_SW:  split_misaligned = |access_addr[ALIGN_WIDTH-1:0];
+            INST_LH, INST_LHU: split_misaligned = (access_addr[ALIGN_WIDTH-1:0] == {ALIGN_WIDTH{1'b1}});
+            INST_LW, INST_SW:  split_misaligned = |access_addr[ALIGN_WIDTH-1:0];
             default:             split_misaligned = 1'b0;
         endcase
     end
@@ -206,7 +207,7 @@ always_comb begin
     split_wmask    = '0;
     if (split_is_wr) begin
         case (split_func3)
-            `INST_SW: begin
+            INST_SW: begin
                 split_wmask_p1 = {ALIGN_BYTES{1'b1}} << split_off;
                 split_wmask    = (32'd1 << split_off) - 32'd1;
                 // word0 写 lanes off..3 / word1 写 lanes 0..off-1，按偏移显式拼接
@@ -225,7 +226,7 @@ always_comb begin
                     end
                 endcase
             end
-            `INST_SH: begin
+            INST_SH: begin
                 // 半字仅在 off=3 拆分：word0 lane3 = raw[7:0]，word1 lane0 = raw[15:8]
                 split_wdata_p1 = {split_wdata_raw_q[7:0], {DATA_WIDTH-8{1'b0}}};
                 split_wmask_p1 = {1'b1, {(ALIGN_BYTES-1){1'b0}}};
@@ -242,11 +243,11 @@ always_comb begin
     split_merged = '0;
     if (split_rvalid) begin
         case (split_func3)
-            `INST_LH, `INST_LHU: begin
+            INST_LH, INST_LHU: begin
                 // 半字仅 off=3 跨字：低字节 = word0[31:24]，高字节 = word1[7:0]
                 split_merged[15:0] = {split_word1[7:0], split_word0[DATA_WIDTH-1 -: 8]};
             end
-            `INST_LW: begin
+            INST_LW: begin
                 // 小端合并：addr 处字节为 word0 lane[off]，随地址递增逐 lane 上移，
                 // 跨到 word1 的字节为结果高位
                 case (split_off)
@@ -324,7 +325,7 @@ assign access_rdata = split_rvalid        ? split_merged :
 always_comb begin
     if (tcm_rvalid | bus_rvalid) begin
         case (split_rvalid ? split_func3 : access_func3_r)
-            `INST_LB : begin
+            INST_LB : begin
                 case (split_rvalid ? split_off : access_byte_r)
                     2'b00:func3_expanded_data = {{24{access_rdata[7]}},access_rdata[7:0]};
                     2'b01:func3_expanded_data = {{24{access_rdata[15]}},access_rdata[15:8]};
@@ -333,7 +334,7 @@ always_comb begin
                     default:func3_expanded_data = {{24{access_rdata[7]}},access_rdata[7:0]};
                 endcase
             end
-            `INST_LH : begin
+            INST_LH : begin
                 if (split_rvalid) begin
                     // 拆分结果已合并到 [15:0]，直接取低半字
                     func3_expanded_data = {{16{access_rdata[15]}},access_rdata[15:0]};
@@ -346,10 +347,10 @@ always_comb begin
                     endcase
                 end
             end
-            `INST_LW : begin
+            INST_LW : begin
                 func3_expanded_data = access_rdata;
             end
-            `INST_LBU : begin
+            INST_LBU : begin
                 case (split_rvalid ? split_off : access_byte_r)
                     2'b00:func3_expanded_data = {24'h0,access_rdata[7:0]};
                     2'b01:func3_expanded_data = {24'h0,access_rdata[15:8]};
@@ -358,7 +359,7 @@ always_comb begin
                     default:func3_expanded_data = {24'h0,access_rdata[7:0]};
                 endcase
             end
-            `INST_LHU : begin
+            INST_LHU : begin
                 if (split_rvalid) begin
                     func3_expanded_data = {16'h0,access_rdata[15:0]};
                 end else begin

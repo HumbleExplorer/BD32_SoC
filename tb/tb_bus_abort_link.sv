@@ -47,17 +47,11 @@ logic [31:0] bus_rdata;
 logic [1:0]  bus_error;
 
 // =================== DUT：Bus_Access（含真实 AXI_Lite_Master）===================
-logic [3:0]  awid, arid, bid, rid;
-logic [31:0] awaddr, araddr, wdata, rdata;
-logic [7:0]  awlen, arlen;
-logic [2:0]  awsize, arsize;
-logic [1:0]  awburst, arburst, bresp, rresp;
-logic        awlock, arlock, wlast, rlast;
-logic [3:0]  awcache, arcache, awqos, arqos, awregion, arregion;
-logic [2:0]  awprot, arprot;
-logic        awvalid, awready, wvalid, wready, bvalid, bready;
-logic        arvalid, arready, rvalid, rready;
-logic [3:0]  wstrb;
+
+axi_if axi_bus ();   // Bus_Access ↔ 互联
+axi_if axi_apb ();   // 互联.m0 ↔ 桥
+axi_if axi_m1 ();    // 互联.m1 ↔ err_slave
+axi_if axi_m2 ();    // 互联.m2 ↔ err_slave
 
 Bus_Access #(
     .ADDR_WIDTH (32),
@@ -77,20 +71,7 @@ Bus_Access #(
     .o_bus_ready    (bus_ready),
     .o_bus_rdata    (bus_rdata),
     .o_bus_error    (bus_error),
-    .o_awid     (awid),     .o_awaddr  (awaddr),  .o_awlen  (awlen),
-    .o_awsize   (awsize),   .o_awburst (awburst), .o_awlock (awlock),
-    .o_awcache  (awcache),  .o_awprot  (awprot),  .o_awqos  (awqos),
-    .o_awregion (awregion), .o_awvalid (awvalid), .i_awready(awready),
-    .o_wdata    (wdata),    .o_wstrb   (wstrb),   .o_wlast  (wlast),
-    .o_wvalid   (wvalid),   .i_wready  (wready),
-    .i_bid      (bid),      .i_bresp   (bresp),   .i_bvalid (bvalid),
-    .o_bready   (bready),
-    .o_arid     (arid),     .o_araddr  (araddr),  .o_arlen  (arlen),
-    .o_arsize   (arsize),   .o_arburst (arburst), .o_arlock (arlock),
-    .o_arcache  (arcache),  .o_arprot  (arprot),  .o_arqos  (arqos),
-    .o_arregion (arregion), .o_arvalid (arvalid), .i_arready(arready),
-    .i_rid      (rid),      .i_rdata   (rdata),   .i_rresp  (rresp),
-    .i_rlast    (rlast),    .i_rvalid  (rvalid),  .o_rready (rready)
+    .m           (axi_bus)
 );
 
 // =================== DUT：AXI_Interconnect + err_slave×2 + 桥 ===================
@@ -135,74 +116,20 @@ AXI_Interconnect #(
     .ADDR_WIDTH (32), .DATA_WIDTH (32), .STRB_WIDTH (4), .ID_WIDTH (4)
 ) u_AXI_Interconnect (
     .clk(rst_n ? clk : clk), .rst_n(rst_n),
-    .s_awid(awid), .s_awaddr(awaddr), .s_awlen(awlen), .s_awsize(awsize),
-    .s_awburst(awburst), .s_awlock(awlock), .s_awcache(awcache), .s_awprot(awprot),
-    .s_awqos(awqos), .s_awregion(awregion), .s_awvalid(awvalid), .s_awready(awready),
-    .s_wdata(wdata), .s_wstrb(wstrb), .s_wlast(wlast), .s_wvalid(wvalid), .s_wready(wready),
-    .s_bid(bid), .s_bresp(bresp), .s_bvalid(bvalid), .s_bready(bready),
-    .s_arid(arid), .s_araddr(araddr), .s_arlen(arlen), .s_arsize(arsize),
-    .s_arburst(arburst), .s_arlock(arlock), .s_arcache(arcache), .s_arprot(arprot),
-    .s_arqos(arqos), .s_arregion(arregion), .s_arvalid(arvalid), .s_arready(arready),
-    .s_rid(rid), .s_rdata(rdata), .s_rresp(rresp), .s_rlast(rlast),
-    .s_rvalid(rvalid), .s_rready(rready),
-    .m0_awid(m0_awid), .m0_awaddr(m0_awaddr), .m0_awlen(m0_awlen), .m0_awsize(m0_awsize),
-    .m0_awburst(m0_awburst), .m0_awlock(m0_awlock), .m0_awcache(m0_awcache), .m0_awprot(m0_awprot),
-    .m0_awqos(m0_awqos), .m0_awregion(m0_awregion), .m0_awvalid(m0_awvalid), .m0_awready(m0_awready),
-    .m0_wdata(m0_wdata), .m0_wstrb(m0_wstrb), .m0_wlast(m0_wlast), .m0_wvalid(m0_wvalid), .m0_wready(m0_wready),
-    .m0_bid(m0_bid), .m0_bresp(m0_bresp), .m0_bvalid(m0_bvalid), .m0_bready(m0_bready),
-    .m0_arid(m0_arid), .m0_araddr(m0_araddr), .m0_arlen(m0_arlen), .m0_arsize(m0_arsize),
-    .m0_arburst(m0_arburst), .m0_arlock(m0_arlock), .m0_arcache(m0_arcache), .m0_arprot(m0_arprot),
-    .m0_arqos(m0_arqos), .m0_arregion(m0_arregion), .m0_arvalid(m0_arvalid), .m0_arready(m0_arready),
-    .m0_rid(m0_rid), .m0_rdata(m0_rdata), .m0_rresp(m0_rresp), .m0_rlast(m0_rlast),
-    .m0_rvalid(m0_rvalid), .m0_rready(m0_rready),
-    .m1_awid(m1_awid), .m1_awaddr(m1_awaddr), .m1_awlen(m1_awlen), .m1_awsize(m1_awsize),
-    .m1_awburst(m1_awburst), .m1_awlock(m1_awlock), .m1_awcache(m1_awcache), .m1_awprot(m1_awprot),
-    .m1_awqos(m1_awqos), .m1_awregion(m1_awregion), .m1_awvalid(m1_awvalid), .m1_awready(m1_awready),
-    .m1_wdata(m1_wdata), .m1_wstrb(m1_wstrb), .m1_wlast(m1_wlast), .m1_wvalid(m1_wvalid), .m1_wready(m1_wready),
-    .m1_bid(m1_bid), .m1_bresp(m1_bresp), .m1_bvalid(m1_bvalid), .m1_bready(m1_bready),
-    .m1_arid(m1_arid), .m1_araddr(m1_araddr), .m1_arlen(m1_arlen), .m1_arsize(m1_arsize),
-    .m1_arburst(m1_arburst), .m1_arlock(m1_arlock), .m1_arcache(m1_arcache), .m1_arprot(m1_arprot),
-    .m1_arqos(m1_arqos), .m1_arregion(m1_arregion), .m1_arvalid(m1_arvalid), .m1_arready(m1_arready),
-    .m1_rid(m1_rid), .m1_rdata(m1_rdata), .m1_rresp(m1_rresp), .m1_rlast(m1_rlast),
-    .m1_rvalid(m1_rvalid), .m1_rready(m1_rready),
-    .m2_awid(m2_awid), .m2_awaddr(m2_awaddr), .m2_awlen(m2_awlen), .m2_awsize(m2_awsize),
-    .m2_awburst(m2_awburst), .m2_awlock(m2_awlock), .m2_awcache(m2_awcache), .m2_awprot(m2_awprot),
-    .m2_awqos(m2_awqos), .m2_awregion(m2_awregion), .m2_awvalid(m2_awvalid), .m2_awready(m2_awready),
-    .m2_wdata(m2_wdata), .m2_wstrb(m2_wstrb), .m2_wlast(m2_wlast), .m2_wvalid(m2_wvalid), .m2_wready(m2_wready),
-    .m2_bid(m2_bid), .m2_bresp(m2_bresp), .m2_bvalid(m2_bvalid), .m2_bready(m2_bready),
-    .m2_arid(m2_arid), .m2_araddr(m2_araddr), .m2_arlen(m2_arlen), .m2_arsize(m2_arsize),
-    .m2_arburst(m2_arburst), .m2_arlock(m2_arlock), .m2_arcache(m2_arcache), .m2_arprot(m2_arprot),
-    .m2_arqos(m2_arqos), .m2_arregion(m2_arregion), .m2_arvalid(m2_arvalid), .m2_arready(m2_arready),
-    .m2_rid(m2_rid), .m2_rdata(m2_rdata), .m2_rresp(m2_rresp), .m2_rlast(m2_rlast),
-    .m2_rvalid(m2_rvalid), .m2_rready(m2_rready)
+    .s           (axi_bus),
+    .m0          (axi_apb),
+    .m1          (axi_m1),
+    .m2          (axi_m2)
 );
 
 axi_err_slave #(.ADDR_WIDTH(32), .DATA_WIDTH(32), .STRB_WIDTH(4), .ID_WIDTH(4)) u_err_mrom (
     .clk(clk), .rst_n(rst_n),
-    .s_awid(m1_awid), .s_awaddr(m1_awaddr), .s_awlen(m1_awlen), .s_awsize(m1_awsize),
-    .s_awburst(m1_awburst), .s_awlock(m1_awlock), .s_awcache(m1_awcache), .s_awprot(m1_awprot),
-    .s_awqos(m1_awqos), .s_awregion(m1_awregion), .s_awvalid(m1_awvalid), .s_awready(m1_awready),
-    .s_wdata(m1_wdata), .s_wstrb(m1_wstrb), .s_wlast(m1_wlast), .s_wvalid(m1_wvalid), .s_wready(m1_wready),
-    .s_bid(m1_bid), .s_bresp(m1_bresp), .s_bvalid(m1_bvalid), .s_bready(m1_bready),
-    .s_arid(m1_arid), .s_araddr(m1_araddr), .s_arlen(m1_arlen), .s_arsize(m1_arsize),
-    .s_arburst(m1_arburst), .s_arlock(m1_arlock), .s_arcache(m1_arcache), .s_arprot(m1_arprot),
-    .s_arqos(m1_arqos), .s_arregion(m1_arregion), .s_arvalid(m1_arvalid), .s_arready(m1_arready),
-    .s_rid(m1_rid), .s_rdata(m1_rdata), .s_rresp(m1_rresp), .s_rlast(m1_rlast),
-    .s_rvalid(m1_rvalid), .s_rready(m1_rready)
+    .s           (axi_m1)
 );
 
 axi_err_slave #(.ADDR_WIDTH(32), .DATA_WIDTH(32), .STRB_WIDTH(4), .ID_WIDTH(4)) u_err_ddr (
     .clk(clk), .rst_n(rst_n),
-    .s_awid(m2_awid), .s_awaddr(m2_awaddr), .s_awlen(m2_awlen), .s_awsize(m2_awsize),
-    .s_awburst(m2_awburst), .s_awlock(m2_awlock), .s_awcache(m2_awcache), .s_awprot(m2_awprot),
-    .s_awqos(m2_awqos), .s_awregion(m2_awregion), .s_awvalid(m2_awvalid), .s_awready(m2_awready),
-    .s_wdata(m2_wdata), .s_wstrb(m2_wstrb), .s_wlast(m2_wlast), .s_wvalid(m2_wvalid), .s_wready(m2_wready),
-    .s_bid(m2_bid), .s_bresp(m2_bresp), .s_bvalid(m2_bvalid), .s_bready(m2_bready),
-    .s_arid(m2_arid), .s_araddr(m2_araddr), .s_arlen(m2_arlen), .s_arsize(m2_arsize),
-    .s_arburst(m2_arburst), .s_arlock(m2_arlock), .s_arcache(m2_arcache), .s_arprot(m2_arprot),
-    .s_arqos(m2_arqos), .s_arregion(m2_arregion), .s_arvalid(m2_arvalid), .s_arready(m2_arready),
-    .s_rid(m2_rid), .s_rdata(m2_rdata), .s_rresp(m2_rresp), .s_rlast(m2_rlast),
-    .s_rvalid(m2_rvalid), .s_rready(m2_rready)
+    .s           (axi_m2)
 );
 
 // 桥 + APB_Interconnect + 空闲从机槽（本 TB 不测 APB 路径，但保持链完整以复现拓扑）
@@ -218,16 +145,7 @@ AXI_APB_Bridge #(
     .ADDR_WIDTH(32), .DATA_WIDTH(32), .STRB_WIDTH(4), .ID_WIDTH(4), .LEN_WIDTH(8)
 ) u_AXI_APB_Bridge (
     .clk(clk), .rst_n(rst_n),
-    .s_awid(m0_awid), .s_awaddr(m0_awaddr), .s_awlen(m0_awlen), .s_awsize(m0_awsize),
-    .s_awburst(m0_awburst), .s_awlock(m0_awlock), .s_awcache(m0_awcache), .s_awprot(m0_awprot),
-    .s_awqos(m0_awqos), .s_awregion(m0_awregion), .s_awvalid(m0_awvalid), .s_awready(m0_awready),
-    .s_wdata(m0_wdata), .s_wstrb(m0_wstrb), .s_wlast(m0_wlast), .s_wvalid(m0_wvalid), .s_wready(m0_wready),
-    .s_bid(m0_bid), .s_bresp(m0_bresp), .s_bvalid(m0_bvalid), .s_bready(m0_bready),
-    .s_arid(m0_arid), .s_araddr(m0_araddr), .s_arlen(m0_arlen), .s_arsize(m0_arsize),
-    .s_arburst(m0_arburst), .s_arlock(m0_arlock), .s_arcache(m0_arcache), .s_arprot(m0_arprot),
-    .s_arqos(m0_arqos), .s_arregion(m0_arregion), .s_arvalid(m0_arvalid), .s_arready(m0_arready),
-    .s_rid(m0_rid), .s_rdata(m0_rdata), .s_rresp(m0_rresp), .s_rlast(m0_rlast),
-    .s_rvalid(m0_rvalid), .s_rready(m0_rready),
+    .s           (axi_apb),
     .PADDR(bridge_paddr), .PSEL(bridge_psel), .PENABLE(bridge_penable),
     .PWRITE(bridge_pwrite), .PSTRB(bridge_pstrb), .PWDATA(bridge_pwdata),
     .PRDATA(bridge_prdata), .PREADY(bridge_pready), .PSLVERR(bridge_pslverr)

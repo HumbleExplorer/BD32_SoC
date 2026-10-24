@@ -434,11 +434,17 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 
 **运行入口**（SoC 级/系统级，不在核级清单）：L2 用 `script/core_test/sva_verify.do` 与 `script/soc_test/uart_lsr_verify.do`；L3 用 `script/soc_test/rtthread_sim_sys.do`。
 
+**包化约定**：共享常量放 `rtl/pkg/BD32_Pkg.sv`（`bd32_pkg`），使用模块在 `module` 声明之前写文件级 `import bd32_pkg::*;`（模块内 import 覆盖不到端口）；包文件在所有 filelist/Vivado 工程中先于使用它的模块编译。
+
+**APB 接口约定**：APB 总线走 `rtl/pkg/apb_if.sv`——主机端口 `apb_if.master m`（桥内 APB_Master/BFM），从机端口 `apb_if.slave s`（五个外设），监视用 `apb_if.mon`；互联对上游是 slave 视角、对下游是接口数组 `apb_if.master s[16]`（接口实例数组只允许常量下标，聚合经 generate 采集到线网数组后再多路选择）；接口实例必须带 `()`（`apb_if x;` 在 ModelSim 判为未知类型）且先声明后使用；APB 协议断言经 bind 挂进五个从机（bind 端口连接在目标作用域解析 `s.psel` 等）。
+
+**AXI 接口约定**：AXI4 总线走 `rtl/pkg/axi_if.sv`（39 根信号）——Bus_Access/AXI_Lite_Master 为 `axi_if.master`（Bus_Access 是纯直通封装，内层实例直连端口 m），桥/err_slave 为 `axi_if.slave`，互联对上游 slave、对下游 m0/m1/m2 三个固定 master 视角；SoC_top 用 `axi_bus`/`axi_apb`/`axi_mrom`/`axi_ddr` 四个接口实例。**主机封装模块的陷阱**：接口直通封装（Bus_Access 类）删掉离散端口后必须同步把内层实例的连接改为 `.m(m)`，否则内层连接落到隐式线网上——ModelSim 编译静默放行（假绿），Vivado elaboration 才报 unconnected。
+
 **写法约定**：带形式目标的模块里，仿真断言（`a_*` 前缀，完整 SVA 写法）只归 ModelSim 跑，形式断言（`fml_*` 前缀，Yosys SVA 子集写法）只归 SymbiYosys 跑，两套分开写、互不进对方工具；其余模块的断言只归 ModelSim，写法不限。Yosys 子集约束清单整理在 bd32-soc-workflow skill 的 Yosys SVA/RTL Subset Memo 节。
 
 ## 形式验证（SymbiYosys）
 
-SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。**已覆盖六模块全绿**（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer + Pipeline_Ctrl / CSR_Reg_Access，各 bmc depth30-40 + abc-pdr 无界证明 + cover 全命中），属性计划与完成记录见本章以下小节。
+SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。六模块形式资产：OITF / AXI_Lite_Master / Pipeline_Ctrl / CSR_Reg_Access 四目标 bmc depth30-40 + abc-pdr 无界证明 + cover 全命中；Mem_Access / IFU_Buffer 两目标因 Yosys 不支持 `import` 语法随包化改造暂不可跑，恢复路线已验证（sv2v 预处理转换后 Yosys 可解析），属性计划与完成记录见本章以下小节。
 
 ```bash
 call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat

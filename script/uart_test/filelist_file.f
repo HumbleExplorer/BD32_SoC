@@ -1,3 +1,4 @@
+../../rtl/pkg/*.sv
 ../../tb/tb_uart_dl_file.sv
 ../../tb/apb_bfm.sv
 ../../rtl/*.sv

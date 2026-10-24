@@ -17,9 +17,7 @@ localparam FCW_VAL = int'((115200 * 16 * (2.0**32)) / 50_000_000 + 0.5);
 
 logic        PCLK, PRESETn;
 logic        uart_rx_i, uart_tx_o;
-logic [31:0] PADDR, PWDATA, PRDATA;
-logic        PSEL, PENABLE, PWRITE, PREADY, PSLVERR;
-logic [3:0]  PSTRB;
+apb_if apb();               // APB 总线（BFM ↔ DUT）
 
 // 下载接口
 logic        itcm_en, dtcm_en;
@@ -37,14 +35,7 @@ apb_uart #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) dut (
     .PRESETn   (PRESETn),
     .uart_rx_i (uart_rx_i),
     .uart_tx_o (uart_tx_o),
-    .PADDR     (PADDR),
-    .PSEL      (PSEL),
-    .PENABLE   (PENABLE),
-    .PWRITE    (PWRITE),
-    .PWDATA    (PWDATA),
-    .PRDATA    (PRDATA),
-    .PREADY    (PREADY),
-    .PSLVERR   (PSLVERR),
+    .s      (apb),
     .irq_o     (),
     .itcm_download_en_o    (itcm_en),
     .itcm_download_addr_o  (itcm_addr),
@@ -56,9 +47,7 @@ apb_uart #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) dut (
 
 apb_master_bfm #(.PADDR_WIDTH(32), .PDATA_WIDTH(32)) bfm (
     .PRESETn (PRESETn), .PCLK (PCLK),
-    .PSEL (PSEL), .PENABLE (PENABLE), .PADDR (PADDR), .PSTRB (PSTRB),
-    .PWDATA (PWDATA), .PRDATA (PRDATA), .PWRITE (PWRITE),
-    .PREADY (PREADY), .PSLVERR (PSLVERR)
+    .m      (apb)
 );
 
 initial begin

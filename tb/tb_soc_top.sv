@@ -1,5 +1,7 @@
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module tb_soc_top;
 `include "./../rtl/SoC_Config.sv"
 
@@ -10,7 +12,7 @@ parameter REGFILE_NUM = `REGFILE_NUM;
 parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH;
 parameter ALIGN_BYTES = `ALIGN_BYTES;
 parameter ALIGN_WIDTH = `ALIGN_WIDTH;
-parameter GPIO_NUM = `GPIO_NUM;
+parameter GPIO_NUM = GPIO_NUM;
 
 localparam  DTCM_FILE  =  `DTCM_FILE;
 localparam  ITCM_FILE  =  `ITCM_FILE;
@@ -32,10 +34,10 @@ logic   uart_rx;
 logic   uart_tx;
 logic   download_done;
 // Timer PWM channel outputs (4 channels)
-wire    [`TIMER_CHANNEL_NUM-1:0] timer_channel_io;
+wire    [TIMER_CHANNEL_NUM-1:0] timer_channel_io;
 
 // 存储指令的内存数组（32位宽，足够大的深度）
-logic   [DATA_WIDTH-1:0] itcm_mem [0:`ITCM_DEPTH-1];
+logic   [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1];
 integer inst_cnt; // 实际读取的指令条数
 // GPIO[0] (MODE_SEL): download_en=1 模拟跳线帽接3.3V → UART下载模式
 assign  gpio_io[0] = download_en;
@@ -164,20 +166,20 @@ end
 //   3. high_count：累计本周期中高电平持续的时钟数（持续累加，不只在边沿计数）
 //   4. prev_pwm：记录上一拍的 PWM 电平，用于边沿检测
 //   5. 跳过第一个周期（prev_pwm 全 0 时 period_count 为 0），避免初始态干扰
-logic [`TIMER_CHANNEL_NUM-1:0] prev_pwm;
-integer period_cnt [`TIMER_CHANNEL_NUM];  // 本周期已过的时钟数
-integer high_cnt  [`TIMER_CHANNEL_NUM];   // 本周期中高电平的时钟数
+logic [TIMER_CHANNEL_NUM-1:0] prev_pwm;
+integer period_cnt [TIMER_CHANNEL_NUM];  // 本周期已过的时钟数
+integer high_cnt  [TIMER_CHANNEL_NUM];   // 本周期中高电平的时钟数
 integer pwm_ch;
 
 always @(posedge clk) begin
     if (~rst_n) begin
         prev_pwm <= 0;
-        for (pwm_ch = 0; pwm_ch < `TIMER_CHANNEL_NUM; pwm_ch++) begin
+        for (pwm_ch = 0; pwm_ch < TIMER_CHANNEL_NUM; pwm_ch++) begin
             period_cnt[pwm_ch] <= 0;
             high_cnt[pwm_ch]   <= 0;
         end
     end else begin
-        for (pwm_ch = 0; pwm_ch < `TIMER_CHANNEL_NUM; pwm_ch++) begin
+        for (pwm_ch = 0; pwm_ch < TIMER_CHANNEL_NUM; pwm_ch++) begin
             // 上升沿检测：上一拍低、当前拍高 → 本周期结束，输出统计
             // 仅在 UART 发送完成后才打印 PWM 信息，避免输出交替
             if (timer_channel_io[pwm_ch] && ~prev_pwm[pwm_ch]) begin
@@ -224,7 +226,7 @@ initial begin
     $display("\n============================================================");
     $display("              RISC-V SoC Simulation Started                  ");
     $display("============================================================");
-    $display("Timer Channels: %0d", `TIMER_CHANNEL_NUM);
+    $display("Timer Channels: %0d", TIMER_CHANNEL_NUM);
     $display("Expected PWM Period (ARR=255, PSC=1): 512 clocks");
     $display("Expected PWM Duty Cycle: 25%% (CCR1=64)");
     $display("============================================================\n");
@@ -283,7 +285,7 @@ initial begin
     #2000;
 
     // 挂死 Timer 从机：PREADY 恒 0 → AXI 主设备等待 → 超时
-    force tb_soc_top.u_SoC_top.apb_pready[4] = 1'b0;
+    force tb_soc_top.u_SoC_top.apb_s[4].pready = 1'b0;
 
     // 等 PASS 签名（GPIO out_reg == 0x18），带超时保护
     fork
@@ -320,7 +322,7 @@ initial begin
     else
         $display("\n  [BUS_TIMEOUT] *** TEST FAILED ***\n");
 
-    release tb_soc_top.u_SoC_top.apb_pready[4];
+    release tb_soc_top.u_SoC_top.apb_s[4].pready;
     #1000;
     $finish;
 end

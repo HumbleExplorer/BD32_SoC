@@ -13,7 +13,7 @@ set RTL ../../rtl
 set DEFS "+define+CORE_TEST+CUSTOM_ASM+DIRECT_LOAD"
 
 vlog -sv $DEFS +incdir+$RTL $RTL/SoC_Config.sv
-vlog -sv $DEFS +incdir+$RTL $RTL/RV32_Inst_Define.sv
+vlog -sv $DEFS +incdir+$RTL $RTL/pkg/BD32_Pkg.sv
 
 # Common
 vlog -sv $DEFS +incdir+$RTL $RTL/Common/once_pulse_gen.sv

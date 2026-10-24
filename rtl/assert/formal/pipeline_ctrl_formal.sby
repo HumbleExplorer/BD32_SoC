@@ -20,12 +20,12 @@ cover: smtbmc
 read -formal -sv pipeline_ctrl_formal_top.sv
 read -formal -sv -D FORMAL -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl \
     D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv \
-    D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/RV32_Inst_Define.sv \
+    D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv \
     D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Pipeline_Ctrl.sv
 prep -top pipeline_ctrl_formal_top
 
 [files]
 pipeline_ctrl_formal_top.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
-D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/RV32_Inst_Define.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Pipeline_Ctrl.sv

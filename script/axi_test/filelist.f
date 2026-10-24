@@ -1,3 +1,4 @@
+../../rtl/pkg/*.sv
 ../../tb/tb_axi_interconnect.sv
 ../../tb/axi_lite_bfm.sv
 ../../rtl/Bus/AXI_Interconnect.sv

@@ -1,3 +1,4 @@
+../../rtl/pkg/*.sv
 ../../tb/tb_apb_gpio.sv
 ../../tb/apb_bfm.sv
 ../../rtl/*.sv

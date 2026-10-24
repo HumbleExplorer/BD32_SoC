@@ -1,7 +1,8 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module Decoder #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -87,7 +88,7 @@ assign  rd_link = (rd == 'd1 || rd == 'd5);
 assign  rs1_link = (inst[19:15] == 'd1 || inst[19:15] == 'd5);
 assign  rs1_eq_rd = (inst[19:15] == rd);
 
-assign  is_nop = (inst == `INST_NOP);
+assign  is_nop = (inst == INST_NOP);
 assign  id_illegal_inst = invalid_inst;
 assign  id_ecall        = ecall_req;
 assign  id_ebreak       = ebreak_req;
@@ -95,30 +96,30 @@ assign  id_ebreak       = ebreak_req;
 always_comb begin
     inst_type = 3'd0;
     case(opcode)
-        `INST_TYPE_I:            inst_type = 3'd1;  // ALU
+        INST_TYPE_I:            inst_type = 3'd1;  // ALU
         // 仅 M 扩展（funct7=0000001）为 MULDIV；Zbb min/max 的 funct7=0000101
         // bit0 也是 1，必须按 ALU 处理，否则会被 HPM 误计入乘法/除法计数
-        `INST_TYPE_R_M:          inst_type = (func7 == 7'b0000001) ? 3'd6 : 3'd1;
-        `INST_TYPE_B:            inst_type = 3'd4;  // BRANCH
-        `INST_TYPE_S:            inst_type = 3'd3;  // STORE
-        `INST_TYPE_L:            inst_type = 3'd2;  // LOAD
-        `INST_JAL, `INST_JALR:   inst_type = 3'd5;  // JUMP
-        `INST_LUI, `INST_AUIPC:  inst_type = 3'd1;  // ALU
+        INST_TYPE_R_M:          inst_type = (func7 == 7'b0000001) ? 3'd6 : 3'd1;
+        INST_TYPE_B:            inst_type = 3'd4;  // BRANCH
+        INST_TYPE_S:            inst_type = 3'd3;  // STORE
+        INST_TYPE_L:            inst_type = 3'd2;  // LOAD
+        INST_JAL, INST_JALR:   inst_type = 3'd5;  // JUMP
+        INST_LUI, INST_AUIPC:  inst_type = 3'd1;  // ALU
         default:                 inst_type = 3'd0;  // OTHER
     endcase
 end
 
 always_comb begin
     case(opcode)
-        `INST_TYPE_I,`INST_TYPE_L,`INST_JALR:
+        INST_TYPE_I,INST_TYPE_L,INST_JALR:
             imm = {{20{inst[31]}},inst[31:20]};
-        `INST_TYPE_S:
+        INST_TYPE_S:
             imm = {{20{inst[31]}},inst[31:25],inst[11:7]};
-        `INST_TYPE_B:
+        INST_TYPE_B:
             imm = {{20{inst[31]}},inst[7],inst[30:25],inst[11:8],1'b0};
-        `INST_JAL:
+        INST_JAL:
             imm = {{12{inst[31]}},inst[19:12],inst[20],inst[30:21],1'b0};
-        `INST_LUI,`INST_AUIPC:
+        INST_LUI,INST_AUIPC:
             imm = {inst[31:12],12'h0};
         default:
             imm = 32'h0;
@@ -142,9 +143,9 @@ always_comb    begin
     push_ras        = 1'b0;
     pop_ras         = 1'b0;
     case(opcode)
-        `INST_TYPE_I:begin
+        INST_TYPE_I:begin
             case(func3)
-                `INST_ADDI,`INST_SLTI, `INST_SLTIU, `INST_XORI, `INST_ORI, `INST_ANDI, `INST_SLLI, `INST_SRI:begin
+                INST_ADDI,INST_SLTI, INST_SLTIU, INST_XORI, INST_ORI, INST_ANDI, INST_SLLI, INST_SRI:begin
 
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
@@ -159,10 +160,10 @@ always_comb    begin
                 end
             endcase
         end
-        `INST_TYPE_R_M:begin
+        INST_TYPE_R_M:begin
             case(func3)
-                `INST_ADD_SUB,`INST_SLL,`INST_SLT,`INST_SLTU,`INST_XOR,`INST_SR,`INST_OR,`INST_AND,
-                `INST_MUL,`INST_MULHU,`INST_MULH,`INST_MULHSU,`INST_DIV,`INST_DIVU,`INST_REM,`INST_REMU:begin
+                INST_ADD_SUB,INST_SLL,INST_SLT,INST_SLTU,INST_XOR,INST_SR,INST_OR,INST_AND,
+                INST_MUL,INST_MULHU,INST_MULH,INST_MULHSU,INST_DIV,INST_DIVU,INST_REM,INST_REMU:begin
 
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
@@ -177,9 +178,9 @@ always_comb    begin
                 end
             endcase
         end
-        `INST_TYPE_B:begin
+        INST_TYPE_B:begin
             case(func3)
-                `INST_BEQ,`INST_BNE,`INST_BLT,`INST_BGE,`INST_BLTU,`INST_BGEU:begin
+                INST_BEQ,INST_BNE,INST_BLT,INST_BGE,INST_BLTU,INST_BGEU:begin
         
                     access_en       = 1'b0;
                     access_wr       = 1'b0;
@@ -196,9 +197,9 @@ always_comb    begin
                 end
             endcase
         end
-        `INST_TYPE_S:begin
+        INST_TYPE_S:begin
             case(func3)
-                `INST_SB, `INST_SW, `INST_SH:begin
+                INST_SB, INST_SW, INST_SH:begin
         
                     access_en       = 1'b1;
                     access_wr       = 1'b1;
@@ -213,9 +214,9 @@ always_comb    begin
                 end
             endcase
         end
-        `INST_TYPE_L:begin
+        INST_TYPE_L:begin
             case(func3)
-                `INST_LB, `INST_LH, `INST_LW, `INST_LBU, `INST_LHU:begin
+                INST_LB, INST_LH, INST_LW, INST_LBU, INST_LHU:begin
 
                     access_en       = 1'b1;
                     access_wr       = 1'b0;
@@ -230,10 +231,10 @@ always_comb    begin
                 end
             endcase
         end
-        `INST_SYSTEM:begin
+        INST_SYSTEM:begin
             
             case(func3)
-                `INST_CSRRW, `INST_CSRRS, `INST_CSRRC:begin
+                INST_CSRRW, INST_CSRRS, INST_CSRRC:begin
                     csr_addr        = zimm;
 
                     access_en       = 1'b0;
@@ -244,7 +245,7 @@ always_comb    begin
                     alu_op1         = reg_rs1_rdata;
                     alu_op2         = 'h0;
                 end
-                `INST_CSRRWI, `INST_CSRRSI, `INST_CSRRCI:begin
+                INST_CSRRWI, INST_CSRRSI, INST_CSRRCI:begin
                     csr_addr        = zimm;
 
                     access_en       = 1'b0;
@@ -255,11 +256,11 @@ always_comb    begin
                     alu_op1         = reg_rs1_rdata;
                     alu_op2         = 'h0;
                 end
-                `INST_PRIV: begin
+                INST_PRIV: begin
                     case(func12)
-                        `INST_EBREAK: ebreak_req = 1'b1;
-                        `INST_ECALL :  ecall_req = 1'b1;
-                        `INST_WFI,`INST_MRET : ;
+                        INST_EBREAK: ebreak_req = 1'b1;
+                        INST_ECALL :  ecall_req = 1'b1;
+                        INST_WFI,INST_MRET : ;
                         default: begin
                             invalid_inst = 1'b1;
                         end
@@ -270,7 +271,7 @@ always_comb    begin
                 end
             endcase
         end
-        `INST_JAL:begin
+        INST_JAL:begin
 
             access_en       = 1'b0;
             access_wr       = 1'b0;
@@ -283,7 +284,7 @@ always_comb    begin
             branch_req      = 1'b1;
             push_ras        = rd_link;//push or none
         end
-        `INST_JALR:begin
+        INST_JALR:begin
 
             access_en       = 1'b0;
             access_wr       = 1'b0;
@@ -297,7 +298,7 @@ always_comb    begin
             push_ras        = rd_link;
             pop_ras         = rs1_link && ((rd_link && ~rs1_eq_rd) || ~rd_link);
         end
-        `INST_LUI:begin
+        INST_LUI:begin
 
             access_en       = 1'b0;
             access_wr       = 1'b0;
@@ -307,7 +308,7 @@ always_comb    begin
             alu_op1         = 32'h0;
             alu_op2         = imm;
         end
-        `INST_AUIPC:begin
+        INST_AUIPC:begin
 
             access_en       = 1'b0;
             access_wr       = 1'b0;
@@ -317,7 +318,7 @@ always_comb    begin
             alu_op1         = inst_addr;
             alu_op2         = imm;
         end
-        `INST_FENCE: begin
+        INST_FENCE: begin
 
             access_en       = 1'b0;
             access_wr       = 1'b0;

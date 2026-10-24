@@ -1,3 +1,4 @@
+../../rtl/pkg/*.sv
 ../../tb/tb_apb_plic.sv
 ../../tb/apb_bfm.sv
 ../../rtl/Common/*.sv

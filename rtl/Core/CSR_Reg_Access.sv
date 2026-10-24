@@ -1,5 +1,4 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 `ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
@@ -267,11 +266,11 @@ always_comb begin
     if (exception_jump)
         mcause_n = {1'b0,exception_code};
     else if (external_int_trap)
-        mcause_n = {1'd1,31'd11};
+        mcause_n = {1'd1, {(DATA_WIDTH-5){1'b0}}, bd32_pkg::INT_MEI};
     else if (software_int_trap)
-        mcause_n = {1'd1,31'd3};
+        mcause_n = {1'd1, {(DATA_WIDTH-5){1'b0}}, bd32_pkg::INT_MSI};
     else if (timer_int_trap)
-        mcause_n = {1'd1,31'd7};
+        mcause_n = {1'd1, {(DATA_WIDTH-5){1'b0}}, bd32_pkg::INT_MTI};
     else
         mcause_n = 'h0;
 end
@@ -371,15 +370,15 @@ always_ff @(posedge clk or negedge rst_n) begin
             mstatus[3]  <= #1 1'b0;//禁用全局中断，如果需要嵌套中断需要通过软件设置mstatus
         end else if(csr_en) begin
             case(csr_addr)
-                12'h300  : mstatus          <= #1 {mstatus[31:8],csr_wdata[7],mstatus[6:4],csr_wdata[3],mstatus[2:0]};//特权模式保持M模式，写MIE和MPIE
-                12'h304  : mie              <= #1 {mie[31:12],csr_wdata[11],mie[10:8],csr_wdata[7],mie[6:4],csr_wdata[3],mie[2:0]};
-                12'h305  : mtvec            <= #1 csr_wdata;
-                12'h320  : mcountinhibit    <= #1 csr_wdata & 32'h0003_FFFD; // WARL：仅实现位 0/2/3-17
-                12'h341  : mepc             <= #1 csr_wdata;
-                12'h340  : mscratch         <= #1 csr_wdata;
-                // 12'h342  : mcause           <= #1 csr_wdata;
-                // 12'h343  : mtval            <= #1 csr_wdata;
-                // 12'h344  : mip              <= #1 csr_wdata;
+                bd32_pkg::CSR_MSTATUS  : mstatus          <= #1 {mstatus[31:8],csr_wdata[7],mstatus[6:4],csr_wdata[3],mstatus[2:0]};//特权模式保持M模式，写MIE和MPIE
+                bd32_pkg::CSR_MIE  : mie              <= #1 {mie[31:12],csr_wdata[11],mie[10:8],csr_wdata[7],mie[6:4],csr_wdata[3],mie[2:0]};
+                bd32_pkg::CSR_MTVEC  : mtvec            <= #1 csr_wdata;
+                bd32_pkg::CSR_MCOUNTINHIBIT  : mcountinhibit    <= #1 csr_wdata & 32'h0003_FFFD; // WARL：仅实现位 0/2/3-17
+                bd32_pkg::CSR_MEPC  : mepc             <= #1 csr_wdata;
+                bd32_pkg::CSR_MSCRATCH  : mscratch         <= #1 csr_wdata;
+                // bd32_pkg::CSR_MCAUSE  : mcause           <= #1 csr_wdata;
+                // bd32_pkg::CSR_MTVAL  : mtval            <= #1 csr_wdata;
+                // bd32_pkg::CSR_MIP  : mip              <= #1 csr_wdata;
                 //自定义寄存器
                 // 0xBC0 mcounterclr 已改为下方独立的单拍脉冲寄存器（写 1 清零语义）
                 default  : ;
@@ -387,12 +386,12 @@ always_ff @(posedge clk or negedge rst_n) begin
         end else if (dbg_csr_we) begin
             // Debug CSR 写（DM 抽象命令，仅 CPU halted 时活跃）
             case(dbg_csr_addr)
-                12'h300  : mstatus          <= #1 {mstatus[31:8],dbg_csr_wdata[7],mstatus[6:4],dbg_csr_wdata[3],mstatus[2:0]};
-                12'h304  : mie              <= #1 {mie[31:12],dbg_csr_wdata[11],mie[10:8],dbg_csr_wdata[7],mie[6:4],dbg_csr_wdata[3],mie[2:0]};
-                12'h305  : mtvec            <= #1 dbg_csr_wdata;
-                12'h320  : mcountinhibit    <= #1 dbg_csr_wdata & 32'h0003_FFFD;
-                12'h341  : mepc             <= #1 dbg_csr_wdata;
-                12'h340  : mscratch         <= #1 dbg_csr_wdata;
+                bd32_pkg::CSR_MSTATUS  : mstatus          <= #1 {mstatus[31:8],dbg_csr_wdata[7],mstatus[6:4],dbg_csr_wdata[3],mstatus[2:0]};
+                bd32_pkg::CSR_MIE  : mie              <= #1 {mie[31:12],dbg_csr_wdata[11],mie[10:8],dbg_csr_wdata[7],mie[6:4],dbg_csr_wdata[3],mie[2:0]};
+                bd32_pkg::CSR_MTVEC  : mtvec            <= #1 dbg_csr_wdata;
+                bd32_pkg::CSR_MCOUNTINHIBIT  : mcountinhibit    <= #1 dbg_csr_wdata & 32'h0003_FFFD;
+                bd32_pkg::CSR_MEPC  : mepc             <= #1 dbg_csr_wdata;
+                bd32_pkg::CSR_MSCRATCH  : mscratch         <= #1 dbg_csr_wdata;
                 default  : ;
             endcase
         end
@@ -402,8 +401,8 @@ end
 // mcounterclr（0xBC0 写 1 清零）＝单拍脉冲：写后仅保持一拍供各计数器块采样，
 // 其余拍自动归零（不得锁存成常值，否则清零位把对应计数器永久钉 0）。
 logic                   mcounterclr_wr;
-assign  mcounterclr_wr = (csr_en && csr_addr == 12'hbc0)       ? csr_wdata :
-                         (dbg_csr_we && dbg_csr_addr == 12'hbc0) ? dbg_csr_wdata : 'h0;
+assign  mcounterclr_wr = (csr_en && csr_addr == bd32_pkg::CSR_MCOUNTERCLR)       ? csr_wdata :
+                         (dbg_csr_we && dbg_csr_addr == bd32_pkg::CSR_MCOUNTERCLR) ? dbg_csr_wdata : 'h0;
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) mcounterclr <= #1 'h0;
     else       mcounterclr <= #1 mcounterclr_wr;
@@ -414,57 +413,57 @@ always_comb begin
     illegal_inst_csr = 1'b0;
     if (csr_en) begin
         case(csr_addr)
-            12'h300  : csr_rdata = mstatus;
-            12'h301  : csr_rdata = 32'h4000_1106; // misa: RV32(MXL=01) + I(bit8) + M(bit12) + C(bit2) + B(bit1)
-            12'h304  : csr_rdata = mie;
-            12'h305  : csr_rdata = mtvec;
-            12'h320  : csr_rdata = mcountinhibit;
-            12'h341  : csr_rdata = mepc;
-            12'h342  : csr_rdata = mcause;
-            12'h343  : csr_rdata = mtval;
-            12'h344  : csr_rdata = mip;
-            12'h340  : csr_rdata = mscratch;
-            12'hb00  : csr_rdata = mcycle[DATA_WIDTH-1:0];
-            12'hb80  : csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hb02  : csr_rdata = minstret[DATA_WIDTH-1:0];
-            12'hb82  : csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MSTATUS  : csr_rdata = mstatus;
+            bd32_pkg::CSR_MISA  : csr_rdata = 32'h4000_1106; // misa: RV32(MXL=01) + I(bit8) + M(bit12) + C(bit2) + B(bit1)
+            bd32_pkg::CSR_MIE  : csr_rdata = mie;
+            bd32_pkg::CSR_MTVEC  : csr_rdata = mtvec;
+            bd32_pkg::CSR_MCOUNTINHIBIT  : csr_rdata = mcountinhibit;
+            bd32_pkg::CSR_MEPC  : csr_rdata = mepc;
+            bd32_pkg::CSR_MCAUSE  : csr_rdata = mcause;
+            bd32_pkg::CSR_MTVAL  : csr_rdata = mtval;
+            bd32_pkg::CSR_MIP  : csr_rdata = mip;
+            bd32_pkg::CSR_MSCRATCH  : csr_rdata = mscratch;
+            bd32_pkg::CSR_MCYCLE  : csr_rdata = mcycle[DATA_WIDTH-1:0];
+            bd32_pkg::CSR_MCYCLEH  : csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MINSTRET  : csr_rdata = minstret[DATA_WIDTH-1:0];
+            bd32_pkg::CSR_MINSTRETH  : csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
             // mhpmcounter3-9 / 3h-9h (CSR 0xB03-0xB09 / 0xB83-0xB89)
-            12'hb03  : csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
-            12'hb04  : csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
-            12'hb05  : csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];  // STORE
-            12'hb06  : csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
-            12'hb07  : csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
-            12'hb08  : csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
-        12'hb09  : csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];  // 分支预测失败
-        12'hb0a  : csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];  // Zcb 指令
-        12'hb0b  : csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];  // B 扩展指令
-        12'hb0c  : csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];  // Zcmp 指令
-        12'hb0d  : csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0]; // CSR 指令
-        12'hb0e  : csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0]; // 系统指令
-        12'hb0f  : csr_rdata = mhpmcounter[12][DATA_WIDTH-1:0]; // load-use 停顿周期
-        12'hb10  : csr_rdata = mhpmcounter[13][DATA_WIDTH-1:0]; // OITF 等待周期
-        12'hb11  : csr_rdata = mhpmcounter[14][DATA_WIDTH-1:0]; // 取指等待周期
+            bd32_pkg::CSR_MHPMCOUNTER3  : csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];  // ALU
+            bd32_pkg::CSR_MHPMCOUNTER4  : csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];  // LOAD
+            bd32_pkg::CSR_MHPMCOUNTER5  : csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];  // STORE
+            bd32_pkg::CSR_MHPMCOUNTER6  : csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];  // BRANCH
+            bd32_pkg::CSR_MHPMCOUNTER7  : csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];  // JUMP
+            bd32_pkg::CSR_MHPMCOUNTER8  : csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];  // MULDIV
+        bd32_pkg::CSR_MHPMCOUNTER9  : csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0];  // 分支预测失败
+        bd32_pkg::CSR_MHPMCOUNTER10  : csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];  // Zcb 指令
+        bd32_pkg::CSR_MHPMCOUNTER11  : csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];  // B 扩展指令
+        bd32_pkg::CSR_MHPMCOUNTER12  : csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];  // Zcmp 指令
+        bd32_pkg::CSR_MHPMCOUNTER13  : csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0]; // CSR 指令
+        bd32_pkg::CSR_MHPMCOUNTER14  : csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0]; // 系统指令
+        bd32_pkg::CSR_MHPMCOUNTER15  : csr_rdata = mhpmcounter[12][DATA_WIDTH-1:0]; // load-use 停顿周期
+        bd32_pkg::CSR_MHPMCOUNTER16  : csr_rdata = mhpmcounter[13][DATA_WIDTH-1:0]; // OITF 等待周期
+        bd32_pkg::CSR_MHPMCOUNTER17  : csr_rdata = mhpmcounter[14][DATA_WIDTH-1:0]; // 取指等待周期
             // mhpmcounter3h-9h (高32位)
-            12'hb83  : csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hb84  : csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hb85  : csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hb86  : csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hb87  : csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
-            12'hb88  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb89  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8a  : csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8b  : csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8c  : csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8d  : csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8e  : csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8f  : csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb90  : csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb91  : csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MHPMCOUNTER3H  : csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MHPMCOUNTER4H  : csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MHPMCOUNTER5H  : csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MHPMCOUNTER6H  : csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MHPMCOUNTER7H  : csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
+            bd32_pkg::CSR_MHPMCOUNTER8H  : csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER9H  : csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER10H  : csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER11H  : csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER12H  : csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER13H  : csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER14H  : csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER15H  : csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER16H  : csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER17H  : csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
             // mcounterclr（0xBC0 按位清零，自定义）：可读回防写操作被误判非法
-            12'hbc0  : csr_rdata = mcounterclr;
+            bd32_pkg::CSR_MCOUNTERCLR  : csr_rdata = mcounterclr;
             // time / timeh — 只读影子寄存器（mtime_shadow 来自 CLINT）
-            12'hc01  : csr_rdata = mtime_shadow[DATA_WIDTH-1:0];          // time (低32位)
-            12'hc81  : csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH]; // timeh (高32位)
+            bd32_pkg::CSR_TIME  : csr_rdata = mtime_shadow[DATA_WIDTH-1:0];          // time (低32位)
+            bd32_pkg::CSR_TIMEH  : csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH]; // timeh (高32位)
             default  : begin
                 illegal_inst_csr = 1'b1;
             end
@@ -476,53 +475,53 @@ end
 always_comb begin
     dbg_csr_rdata = 'h0;
     case (dbg_csr_addr)
-        12'h300  : dbg_csr_rdata = mstatus;
-        12'h301  : dbg_csr_rdata = 32'h4000_1106; // misa
-        12'h304  : dbg_csr_rdata = mie;
-        12'h305  : dbg_csr_rdata = mtvec;
-        12'h320  : dbg_csr_rdata = mcountinhibit;
-        12'h341  : dbg_csr_rdata = mepc;
-        12'h342  : dbg_csr_rdata = mcause;
-        12'h343  : dbg_csr_rdata = mtval;
-        12'h344  : dbg_csr_rdata = mip;
-        12'h340  : dbg_csr_rdata = mscratch;
-        12'hb00  : dbg_csr_rdata = mcycle[DATA_WIDTH-1:0];
-        12'hb80  : dbg_csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb02  : dbg_csr_rdata = minstret[DATA_WIDTH-1:0];
-        12'hb82  : dbg_csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb03  : dbg_csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];
-        12'hb04  : dbg_csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];
-        12'hb05  : dbg_csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];
-        12'hb06  : dbg_csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];
-        12'hb07  : dbg_csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];
-        12'hb08  : dbg_csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];
-        12'hb09  : dbg_csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0]; // 分支预测失败
-        12'hb0a  : dbg_csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];
-        12'hb0b  : dbg_csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];
-        12'hb0c  : dbg_csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];
-        12'hb0d  : dbg_csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0];
-        12'hb0e  : dbg_csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0];
-        12'hb0f  : dbg_csr_rdata = mhpmcounter[12][DATA_WIDTH-1:0];
-        12'hb10  : dbg_csr_rdata = mhpmcounter[13][DATA_WIDTH-1:0];
-        12'hb11  : dbg_csr_rdata = mhpmcounter[14][DATA_WIDTH-1:0];
-        12'hb83  : dbg_csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb84  : dbg_csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb85  : dbg_csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb86  : dbg_csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb87  : dbg_csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb88  : dbg_csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb89  : dbg_csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8a  : dbg_csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8b  : dbg_csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8c  : dbg_csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8d  : dbg_csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8e  : dbg_csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb8f  : dbg_csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb90  : dbg_csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hb91  : dbg_csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
-        12'hbc0  : dbg_csr_rdata = mcounterclr;
-        12'hc01  : dbg_csr_rdata = mtime_shadow[DATA_WIDTH-1:0];
-        12'hc81  : dbg_csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MSTATUS  : dbg_csr_rdata = mstatus;
+        bd32_pkg::CSR_MISA  : dbg_csr_rdata = 32'h4000_1106; // misa
+        bd32_pkg::CSR_MIE  : dbg_csr_rdata = mie;
+        bd32_pkg::CSR_MTVEC  : dbg_csr_rdata = mtvec;
+        bd32_pkg::CSR_MCOUNTINHIBIT  : dbg_csr_rdata = mcountinhibit;
+        bd32_pkg::CSR_MEPC  : dbg_csr_rdata = mepc;
+        bd32_pkg::CSR_MCAUSE  : dbg_csr_rdata = mcause;
+        bd32_pkg::CSR_MTVAL  : dbg_csr_rdata = mtval;
+        bd32_pkg::CSR_MIP  : dbg_csr_rdata = mip;
+        bd32_pkg::CSR_MSCRATCH  : dbg_csr_rdata = mscratch;
+        bd32_pkg::CSR_MCYCLE  : dbg_csr_rdata = mcycle[DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MCYCLEH  : dbg_csr_rdata = mcycle[2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MINSTRET  : dbg_csr_rdata = minstret[DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MINSTRETH  : dbg_csr_rdata = minstret[2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER3  : dbg_csr_rdata = mhpmcounter[0][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER4  : dbg_csr_rdata = mhpmcounter[1][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER5  : dbg_csr_rdata = mhpmcounter[2][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER6  : dbg_csr_rdata = mhpmcounter[3][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER7  : dbg_csr_rdata = mhpmcounter[4][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER8  : dbg_csr_rdata = mhpmcounter[5][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER9  : dbg_csr_rdata = mhpmcounter[6][DATA_WIDTH-1:0]; // 分支预测失败
+        bd32_pkg::CSR_MHPMCOUNTER10  : dbg_csr_rdata = mhpmcounter[7][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER11  : dbg_csr_rdata = mhpmcounter[8][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER12  : dbg_csr_rdata = mhpmcounter[9][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER13  : dbg_csr_rdata = mhpmcounter[10][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER14  : dbg_csr_rdata = mhpmcounter[11][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER15  : dbg_csr_rdata = mhpmcounter[12][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER16  : dbg_csr_rdata = mhpmcounter[13][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER17  : dbg_csr_rdata = mhpmcounter[14][DATA_WIDTH-1:0];
+        bd32_pkg::CSR_MHPMCOUNTER3H  : dbg_csr_rdata = mhpmcounter[0][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER4H  : dbg_csr_rdata = mhpmcounter[1][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER5H  : dbg_csr_rdata = mhpmcounter[2][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER6H  : dbg_csr_rdata = mhpmcounter[3][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER7H  : dbg_csr_rdata = mhpmcounter[4][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER8H  : dbg_csr_rdata = mhpmcounter[5][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER9H  : dbg_csr_rdata = mhpmcounter[6][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER10H  : dbg_csr_rdata = mhpmcounter[7][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER11H  : dbg_csr_rdata = mhpmcounter[8][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER12H  : dbg_csr_rdata = mhpmcounter[9][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER13H  : dbg_csr_rdata = mhpmcounter[10][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER14H  : dbg_csr_rdata = mhpmcounter[11][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER15H  : dbg_csr_rdata = mhpmcounter[12][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER16H  : dbg_csr_rdata = mhpmcounter[13][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MHPMCOUNTER17H  : dbg_csr_rdata = mhpmcounter[14][2*DATA_WIDTH-1:DATA_WIDTH];
+        bd32_pkg::CSR_MCOUNTERCLR  : dbg_csr_rdata = mcounterclr;
+        bd32_pkg::CSR_TIME  : dbg_csr_rdata = mtime_shadow[DATA_WIDTH-1:0];
+        bd32_pkg::CSR_TIMEH  : dbg_csr_rdata = mtime_shadow[2*DATA_WIDTH-1:DATA_WIDTH];
         default : dbg_csr_rdata = 'h0;
     endcase
 end
@@ -607,12 +606,12 @@ a_exc_code_valid: assert property (p_exc_code_valid)
 `ifdef FORMAL
 fml_a_int_code_legal: assert property
     (int_trap_jump_n
-     ? (mcause_n[31] && (mcause_n[3:0] == 4'd3 || mcause_n[3:0] == 4'd7
-                          || mcause_n[3:0] == 4'd11)) : 1'b1);
+     ? (mcause_n[31] && (mcause_n[3:0] == bd32_pkg::INT_MSI || mcause_n[3:0] == bd32_pkg::INT_MTI
+                          || mcause_n[3:0] == bd32_pkg::INT_MEI)) : 1'b1);
 `else
 property p_int_code_legal;
     @(posedge clk) disable iff (!rst_n)
-    (int_trap_jump_n |-> (mcause_n[31] && (mcause_n[3:0] inside {4'd3, 4'd7, 4'd11})));
+    (int_trap_jump_n |-> (mcause_n[31] && (mcause_n[3:0] inside {bd32_pkg::INT_MSI, bd32_pkg::INT_MTI, bd32_pkg::INT_MEI})));
 endproperty
 a_int_code_legal: assert property (p_int_code_legal)
     else $error("[SVA][CSR] 中断原因码非法 mcause_n=%h", mcause_n);

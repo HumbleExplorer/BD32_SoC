@@ -1,5 +1,4 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 `ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
@@ -95,22 +94,22 @@ begin
     case(stage)
         2'd0: begin // IF阶段
             case(code[3:0])
-                4'd0: get_priority = 4'd4;//指令地址未对齐
-                4'd1: get_priority = 4'd2;//指令访问错误
+                bd32_pkg::EXC_INSN_ADDR_MISALIGNED: get_priority = 4'd4;//指令地址未对齐
+                bd32_pkg::EXC_INSN_ACCESS_FAULT: get_priority = 4'd2;//指令访问错误
             endcase
         end
         2'd1: begin // ID阶段
             case(code[3:0])
-                4'd2: get_priority = 4'd3; // 非法指令
-                4'd3: get_priority = 4'd6; // 环境断点
-                4'd8,4'd9,4'd11: get_priority = 4'd5; // 环境调用
+                bd32_pkg::EXC_ILLEGAL_INSN: get_priority = 4'd3; // 非法指令
+                bd32_pkg::EXC_BREAKPOINT: get_priority = 4'd6; // 环境断点
+                bd32_pkg::EXC_ECALL_UMODE,bd32_pkg::EXC_ECALL_HSMODE,bd32_pkg::EXC_ECALL_MMODE: get_priority = 4'd5; // 环境调用
             endcase
         end
         2'd2: begin // EX阶段（含访存异常）
             case(code[3:0])
-                4'd2: get_priority = 4'd3; // 非法指令CSR
-                4'd5,4'd7: get_priority = 4'd10; // 访存错误
-                4'd4,4'd6: get_priority = 4'd10; // 访存未对齐（ITCM store/BootROM/APB 拆分不可覆盖时）。
+                bd32_pkg::EXC_ILLEGAL_INSN: get_priority = 4'd3; // 非法指令CSR
+                bd32_pkg::EXC_LOAD_ACCESS_FAULT,bd32_pkg::EXC_STORE_ACCESS_FAULT: get_priority = 4'd10; // 访存错误
+                bd32_pkg::EXC_LOAD_ADDR_MISALIGNED,bd32_pkg::EXC_STORE_ADDR_MISALIGNED: get_priority = 4'd10; // 访存未对齐（ITCM store/BootROM/APB 拆分不可覆盖时）。
                                                  // 缺失本项时 code 携带合法 bit30=0 却查表落默认 15，
                                                  // sel_stage 保持 default → 异常码 mux 输出全 1 标记 + mepc=0，
                                                  // 陷阱以全 1 标记 mcause=0x7FFFFFFF 发出
@@ -445,7 +444,7 @@ always_comb begin
     ex_mem_flush    = 1'b0;
     mem_wb_stall    = 1'b0;
     mem_wb_flush    = 1'b0;
-    ctrl_jump_addr  = `BOOT_BASE_TAG;
+    ctrl_jump_addr  = bd32_pkg::BOOT_BASE_TAG;
     if (dbg_halt_eff || step_halt || trigger_eff) begin
         if_id_stall     = 1'b1;
         id_ex_stall     = 1'b1;

@@ -31,4 +31,4 @@ D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/IFU_Buffer.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/RVC_Expander.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Zcmp_Expander.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
-D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/RV32_inst_Define.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv

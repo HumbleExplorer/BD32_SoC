@@ -4,6 +4,8 @@
 timeunit 1ns;
 timeprecision 1ps;
 
+import bd32_pkg::*;
+
 module tb_debug;
 
 parameter ADDR_WIDTH     = `ADDR_WIDTH;
@@ -13,7 +15,7 @@ parameter REGFILE_NUM    = `REGFILE_NUM;
 parameter CSR_ADDR_WIDTH = `CSR_ADDR_WIDTH;
 parameter ALIGN_BYTES    = `ALIGN_BYTES;
 parameter ALIGN_WIDTH    = `ALIGN_WIDTH;
-parameter GPIO_NUM       = `GPIO_NUM;
+parameter GPIO_NUM       = GPIO_NUM;
 
 localparam CPU_FREQ      = 75_000_000;
 localparam CLK_PERIOD    = 1_000_000_000 / CPU_FREQ;  // 13.333ns
@@ -54,7 +56,7 @@ logic       tdo;
 // SoC 信号
 logic                       uart_rx, uart_tx;
 wire  [GPIO_NUM-1:0]        gpio_io;
-wire  [`TIMER_CHANNEL_NUM-1:0] timer_channel_io;
+wire  [TIMER_CHANNEL_NUM-1:0] timer_channel_io;
 logic                       timer_clk;
 
 // Debug 信号（SoC_top ↔ debug_top）
@@ -103,7 +105,7 @@ assign soc_rst_n = rst_n & ~ndmreset;
 
 // GPIO 浮空上拉
 assign gpio_io = {GPIO_NUM{1'bz}};
-assign timer_channel_io = {`TIMER_CHANNEL_NUM{1'bz}};
+assign timer_channel_io = {TIMER_CHANNEL_NUM{1'bz}};
 
 // =========================================================================
 // 时钟生成
@@ -132,8 +134,8 @@ SoC_top #(
     .ALIGN_BYTES     (ALIGN_BYTES      ),
     .ALIGN_WIDTH     (ALIGN_WIDTH      ),
     .GPIO_NUM        (GPIO_NUM         ),
-    .TIMER_NUM       (`TIMER_NUM       ),
-    .TIMER_CHANNEL_NUM (`TIMER_CHANNEL_NUM)
+    .TIMER_NUM       (TIMER_NUM       ),
+    .TIMER_CHANNEL_NUM (TIMER_CHANNEL_NUM)
 ) u_SoC_top (
     .sys_clk          (sys_clk        ),
     .sys_rst_n        (soc_rst_n      ),
@@ -779,10 +781,10 @@ initial begin
     dmi_read(ADDR_DATA0, rd_data);
 `ifdef DIRECT_LOAD
     check("reset halt: dpc = ITCM reset vector", rd_data,
-          {`ITCM_BASE_TAG, {(ADDR_WIDTH-`DEVICE_TAG_WIDTH){1'b0}}});
+          {ITCM_BASE_TAG, {(ADDR_WIDTH-`DEVICE_TAG_WIDTH){1'b0}}});
 `else
     check("reset halt: dpc = BOOT reset vector", rd_data,
-          {`BOOT_BASE_TAG, {(ADDR_WIDTH-`DEVICE_TAG_WIDTH){1'b0}}});
+          {BOOT_BASE_TAG, {(ADDR_WIDTH-`DEVICE_TAG_WIDTH){1'b0}}});
 `endif
 
     // ----------------------------------------------------------

@@ -2,71 +2,24 @@
 timeunit 1ns;
 timeprecision 1ps;
 
+import bd32_pkg::*;
+
 module AXI_APB_Bridge #(
     parameter ADDR_WIDTH  = `ADDR_WIDTH,
     parameter DATA_WIDTH  = `DATA_WIDTH,
     parameter STRB_WIDTH  = `ALIGN_BYTES,
-    parameter ID_WIDTH    = `AXI_ID_WIDTH,
-    parameter LEN_WIDTH   = `AXI_LEN_WIDTH
+    parameter ID_WIDTH    = AXI_ID_WIDTH,
+    parameter LEN_WIDTH   = AXI_LEN_WIDTH
 )(
     input  logic clk,
     input  logic rst_n,
 
     // AXI4-Lite Slave 接口
-    input  logic [ID_WIDTH-1:0]       s_awid,
-    input  logic [ADDR_WIDTH-1:0]     s_awaddr,
-    input  logic [LEN_WIDTH-1:0]      s_awlen,
-    input  logic [2:0]                s_awsize,
-    input  logic [1:0]                s_awburst,
-    input  logic                      s_awlock,
-    input  logic [3:0]                s_awcache,
-    input  logic [2:0]                s_awprot,
-    input  logic [3:0]                s_awqos,
-    input  logic [3:0]                s_awregion,
-    input  logic                      s_awvalid,
-    output logic                      s_awready,
-
-    input  logic [DATA_WIDTH-1:0]     s_wdata,
-    input  logic [STRB_WIDTH-1:0]     s_wstrb,
-    input  logic                      s_wlast,
-    input  logic                      s_wvalid,
-    output logic                      s_wready,
-
-    output logic [ID_WIDTH-1:0]       s_bid,
-    output logic [1:0]                s_bresp,
-    output logic                      s_bvalid,
-    input  logic                      s_bready,
-
-    input  logic [ID_WIDTH-1:0]       s_arid,
-    input  logic [ADDR_WIDTH-1:0]     s_araddr,
-    input  logic [LEN_WIDTH-1:0]      s_arlen,
-    input  logic [2:0]                s_arsize,
-    input  logic [1:0]                s_arburst,
-    input  logic                      s_arlock,
-    input  logic [3:0]                s_arcache,
-    input  logic [2:0]                s_arprot,
-    input  logic [3:0]                s_arqos,
-    input  logic [3:0]                s_arregion,
-    input  logic                      s_arvalid,
-    output logic                      s_arready,
-
-    output logic [ID_WIDTH-1:0]       s_rid,
-    output logic [DATA_WIDTH-1:0]     s_rdata,
-    output logic [1:0]                s_rresp,
-    output logic                      s_rlast,
-    output logic                      s_rvalid,
-    input  logic                      s_rready,
+    // AXI4 Slave 接口（接口，上游互联）
+    axi_if.slave  s,
 
     // APB Master 接口
-    output logic [ADDR_WIDTH-1:0]     PADDR,
-    output logic                      PSEL,
-    output logic                      PENABLE,
-    output logic                      PWRITE,
-    output logic [STRB_WIDTH-1:0]     PSTRB,
-    output logic [DATA_WIDTH-1:0]     PWDATA,
-    input  logic [DATA_WIDTH-1:0]     PRDATA,
-    input  logic                      PREADY,
-    input  logic                      PSLVERR
+    apb_if.master                     apb         // APB 总线（下游互联/从机）
 );
 
     // 状态机
@@ -96,9 +49,9 @@ module AXI_APB_Bridge #(
 
     // AXI 握手信号
     logic aw_hs, w_hs, ar_hs;
-    assign aw_hs = s_awvalid && s_awready;
-    assign w_hs  = s_wvalid  && s_wready;
-    assign ar_hs = s_arvalid && s_arready;
+    assign aw_hs = s.awvalid && s.awready;
+    assign w_hs  = s.wvalid  && s.wready;
+    assign ar_hs = s.arvalid && s.arready;
 
     // 写事务：需要 AW 和 W 都握手
     logic write_req_ready;
@@ -116,19 +69,19 @@ module AXI_APB_Bridge #(
         next_state = state;
         case (state)
             IDLE: begin
-                if (s_awvalid && s_wvalid)
+                if (s.awvalid && s.wvalid)
                     next_state = APB_WRITE;
-                else if (s_arvalid)
+                else if (s.arvalid)
                     next_state = APB_READ;
             end
 
             APB_WRITE: begin
                 if (apb_tran_done) begin
-                    if (s_bready) begin
+                    if (s.bready) begin
                         // 背靠背：检查是否有新请求
-                        if (s_awvalid && s_wvalid)
+                        if (s.awvalid && s.wvalid)
                             next_state = APB_WRITE;
-                        else if (s_arvalid)
+                        else if (s.arvalid)
                             next_state = APB_READ;
                         else
                             next_state = IDLE;
@@ -138,10 +91,10 @@ module AXI_APB_Bridge #(
 
             APB_READ: begin
                 if (apb_tran_done) begin
-                    if (s_rready) begin
-                        if (s_awvalid && s_wvalid)
+                    if (s.rready) begin
+                        if (s.awvalid && s.wvalid)
                             next_state = APB_WRITE;
-                        else if (s_arvalid)
+                        else if (s.arvalid)
                             next_state = APB_READ;
                         else
                             next_state = IDLE;
@@ -158,20 +111,20 @@ module AXI_APB_Bridge #(
         apb_transfer = 1'b0;
         case (state)
             IDLE: begin
-                if ((s_awvalid && s_wvalid) || s_arvalid) begin
+                if ((s.awvalid && s.wvalid) || s.arvalid) begin
                     apb_transfer = 1'b1;
                 end
             end
 
             APB_WRITE: begin
                 // 背靠背：在响应阶段就启动新事务
-                if (s_bready && ((s_awvalid && s_wvalid) || s_arvalid)) begin
+                if (s.bready && ((s.awvalid && s.wvalid) || s.arvalid)) begin
                     apb_transfer = 1'b1;
                 end
             end
 
             APB_READ: begin
-                if (s_rready && ((s_awvalid && s_wvalid) || s_arvalid)) begin
+                if (s.rready && ((s.awvalid && s.wvalid) || s.arvalid)) begin
                     apb_transfer = 1'b1;
                 end
             end
@@ -188,36 +141,36 @@ always_ff @(posedge clk or negedge rst_n) begin
     end else begin
         case (state)
             IDLE:
-                if (s_awvalid && s_wvalid) begin
+                if (s.awvalid && s.wvalid) begin
                     apb_write    <= 1'b1;
-                    apb_addr     <= s_awaddr;
-                    apb_wdata    <= s_wdata;
-                    apb_wmask    <= s_wstrb;
-                end else if (s_arvalid) begin
+                    apb_addr     <= s.awaddr;
+                    apb_wdata    <= s.wdata;
+                    apb_wmask    <= s.wstrb;
+                end else if (s.arvalid) begin
                     apb_write    <= 1'b0;
-                    apb_addr     <= s_araddr;
+                    apb_addr     <= s.araddr;
                 end
             APB_WRITE: begin
                 // 背靠背：在响应阶段就启动新事务
-                if (apb_tran_done && s_bready && s_awvalid && s_wvalid) begin
+                if (apb_tran_done && s.bready && s.awvalid && s.wvalid) begin
                     apb_write    <= 1'b1;
-                    apb_addr     <= s_awaddr;
-                    apb_wdata    <= s_wdata;
-                    apb_wmask    <= s_wstrb;
-                end else if (apb_tran_done && s_bready && s_arvalid) begin
+                    apb_addr     <= s.awaddr;
+                    apb_wdata    <= s.wdata;
+                    apb_wmask    <= s.wstrb;
+                end else if (apb_tran_done && s.bready && s.arvalid) begin
                     apb_write    <= 1'b0;
-                    apb_addr     <= s_araddr;
+                    apb_addr     <= s.araddr;
                 end
             end
             READ_RESP: begin
-                if (apb_tran_done && s_rready && s_awvalid && s_wvalid) begin
+                if (apb_tran_done && s.rready && s.awvalid && s.wvalid) begin
                     apb_write    <= 1'b1;
-                    apb_addr     <= s_awaddr;
-                    apb_wdata    <= s_wdata;
-                    apb_wmask    <= s_wstrb;
-                end else if (apb_tran_done && s_rready && s_arvalid) begin
+                    apb_addr     <= s.awaddr;
+                    apb_wdata    <= s.wdata;
+                    apb_wmask    <= s.wstrb;
+                end else if (apb_tran_done && s.rready && s.arvalid) begin
                     apb_write    <= 1'b0;
-                    apb_addr     <= s_araddr;
+                    apb_addr     <= s.araddr;
                 end
             end
         endcase
@@ -226,17 +179,17 @@ end
 
     // AXI Ready 信号 —— 单通道独立断言，不依赖其他通道的 valid，避免组合环路
     // AW/W 在 IDLE 时只要看到 valid 就置 ready（AXI-Lite 要求地址和数据同时有效）
-    assign s_awready = (state == IDLE) || 
-                       (state == APB_WRITE && apb_tran_done && s_bready) ||
-                       (state == APB_READ  && apb_tran_done && s_rready);
+    assign s.awready = (state == IDLE) || 
+                       (state == APB_WRITE && apb_tran_done && s.bready) ||
+                       (state == APB_READ  && apb_tran_done && s.rready);
     
-    assign s_wready  = (state == IDLE) || 
-                       (state == APB_WRITE && apb_tran_done && s_bready) ||
-                       (state == APB_READ  && apb_tran_done && s_rready);
+    assign s.wready  = (state == IDLE) || 
+                       (state == APB_WRITE && apb_tran_done && s.bready) ||
+                       (state == APB_READ  && apb_tran_done && s.rready);
     
-    assign s_arready = (state == IDLE) || 
-                       (state == APB_WRITE && apb_tran_done && s_bready) ||
-                       (state == APB_READ  && apb_tran_done && s_rready);
+    assign s.arready = (state == IDLE) || 
+                       (state == APB_WRITE && apb_tran_done && s.bready) ||
+                       (state == APB_READ  && apb_tran_done && s.rready);
 
     // 锁存事务 ID 和错误状态
     always_ff @(posedge clk or negedge rst_n) begin
@@ -245,27 +198,27 @@ end
             trans_error <= 1'b0;
         end else begin
             if (write_req_ready)
-                trans_id <= s_awid;
+                trans_id <= s.awid;
             else if (ar_hs)
-                trans_id <= s_arid;
+                trans_id <= s.arid;
             
             if (apb_tran_done)
-                trans_error <= PSLVERR | apb_timeout;
+                trans_error <= apb.pslverr | apb_timeout;
         end
     end
 
     // AXI 响应信号
-    // s_bresp/s_rresp 直接用 PSLVERR|apb_timeout（同周期有效），
+    // s.bresp/s.rresp 直接用 apb.pslverr|apb_timeout（同周期有效），
     // 避免 trans_error 寄存器延迟一拍导致超时当拍响应为 OKAY。
-    assign s_bvalid = (state == APB_WRITE && apb_tran_done);
-    assign s_bid    = trans_id;
-    assign s_bresp  = {PSLVERR | apb_timeout, 1'b0};
+    assign s.bvalid = (state == APB_WRITE && apb_tran_done);
+    assign s.bid    = trans_id;
+    assign s.bresp  = {apb.pslverr | apb_timeout, 1'b0};
 
-    assign s_rvalid = (state == APB_READ && apb_tran_done);
-    assign s_rid    = trans_id;
-    assign s_rdata  = apb_rdata;
-    assign s_rresp  = {PSLVERR | apb_timeout, 1'b0};
-    assign s_rlast  = 1'b1;
+    assign s.rvalid = (state == APB_READ && apb_tran_done);
+    assign s.rid    = trans_id;
+    assign s.rdata  = apb_rdata;
+    assign s.rresp  = {apb.pslverr | apb_timeout, 1'b0};
+    assign s.rlast  = 1'b1;
 
     // 例化 APB Master
     APB_Master #(
@@ -282,16 +235,7 @@ end
         .i_wmask      (apb_wmask),
         .o_rdata      (apb_rdata),
         .o_tran_done  (apb_tran_done),
-        .o_PADDR      (PADDR),
-        .o_PSEL       (PSEL),
-        .o_PENABLE    (PENABLE),
-        .o_PWRITE     (PWRITE),
-        .o_PSTRB      (PSTRB),
-        .o_PWDATA     (PWDATA),
-        .i_PRDATA     (PRDATA),
-        .i_PREADY     (PREADY),
-        .i_PSLVERR    (PSLVERR),
-        .o_timeout    (apb_timeout)
+        .m            (apb),        .o_timeout    (apb_timeout)
     );
 
 endmodule

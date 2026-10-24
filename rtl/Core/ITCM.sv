@@ -1,5 +1,4 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
 // ITCM - 指令紧耦合存储器（单端口，同步读，结构同 DTCM）
@@ -7,9 +6,11 @@ timeprecision 1ps;
 // LSU store / SBA 写 / UART 下载共用写口（字节使能）
 // 地址区域：0x0001_0000 ~ 0x0001_FFFF（由 ITCM_DEPTH 决定）
 // 同步读：地址在周期 N 给出，数据在周期 N+1 输出
+import bd32_pkg::*;
+
 module ITCM #(
     parameter   ITCM_FILE    = `ITCM_FILE,
-    parameter   ITCM_DEPTH   = `ITCM_DEPTH,
+    parameter   ITCM_DEPTH   = ITCM_DEPTH,
     parameter   ADDR_WIDTH   = `ADDR_WIDTH,
     parameter   DATA_WIDTH   = `DATA_WIDTH,
     parameter   ALIGN_BYTES  = `ALIGN_BYTES,
@@ -50,7 +51,7 @@ generate
             .dina (ram_din),
             .douta(inst)
         );
-        assign itcm_inst = rst_n ? inst : `INST_NOP;
+        assign itcm_inst = rst_n ? inst : INST_NOP;
     `else
         logic [DATA_WIDTH-1:0] itcm_mem [0:ITCM_DEPTH-1] = '{default: '0};
 
@@ -63,7 +64,7 @@ generate
         // 同步读：地址在上升沿采样，下一拍输出数据
         always_ff @(posedge clk or negedge rst_n) begin
             if (!rst_n)
-                itcm_inst <= #1 `INST_NOP;
+                itcm_inst <= #1 INST_NOP;
             else
                 itcm_inst <= #1 itcm_mem[ram_addr[ITCM_SIZE_WIDTH-1:ALIGN_WIDTH]];
         end

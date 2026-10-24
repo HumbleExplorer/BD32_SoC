@@ -10,14 +10,7 @@ module apb_uart #(
     // APB总线接口（4字节对齐）
     input   logic                       PCLK,
     input   logic                       PRESETn,
-    input   logic   [ADDR_WIDTH-1:0]    PADDR,
-    input   logic                       PSEL,
-    input   logic                       PENABLE,
-    input   logic                       PWRITE,
-    input   logic   [DATA_WIDTH-1:0]    PWDATA,
-    output  logic   [DATA_WIDTH-1:0]    PRDATA,
-    output  logic                       PREADY,
-    output  logic                       PSLVERR,
+    apb_if.slave           s,             // APB 从机接口
     output  logic                       irq_o,
     input   logic                       uart_rx_i,
     output  logic                       uart_tx_o,
@@ -99,9 +92,9 @@ logic           download_en;
 logic           download_done;
 
 
-assign  reg_sel   = PADDR[5:2];
-assign  reg_rd_en = PSEL & !PWRITE & PENABLE;
-assign  reg_wr_en = PSEL & PWRITE & PENABLE;
+assign  reg_sel   = s.paddr[5:2];
+assign  reg_rd_en = s.psel & !s.pwrite & s.penable;
+assign  reg_wr_en = s.psel & s.pwrite & s.penable;
 assign  timeout   = timeout_cnt == 6'd63;
 assign  tx_uart_pulse = (tx_sample_cnt == 4'd15) && sample_pulse;
 // 无调制解调器引脚：MSR 恒 0（IIR 的 MSR 子源编码保留，但不产生中断）
@@ -121,21 +114,21 @@ always_ff @(posedge PCLK or negedge PRESETn) begin
         if (reg_wr_en) begin
             case (uart_reg_sel_e'(reg_sel))
                 REG_SEL_0: begin
-                    if (lcr[DLAB_BIT]) divisor[7:0] <= #1 PWDATA[7:0];
+                    if (lcr[DLAB_BIT]) divisor[7:0] <= #1 s.pwdata[7:0];
                 end
                 REG_SEL_1: begin
-                    if (lcr[DLAB_BIT]) divisor[15:8] <= #1 PWDATA[7:0];
-                    else ier <= #1 PWDATA[3:0];
+                    if (lcr[DLAB_BIT]) divisor[15:8] <= #1 s.pwdata[7:0];
+                    else ier <= #1 s.pwdata[3:0];
                 end
                 REG_SEL_2: begin
-                    fcr <= #1 PWDATA[7:0];
+                    fcr <= #1 s.pwdata[7:0];
                 end
                 REG_SEL_3: begin
-                    lcr <= #1 PWDATA[6] ? (PWDATA[7:0] & 8'h7F) : PWDATA[7:0];
+                    lcr <= #1 s.pwdata[6] ? (s.pwdata[7:0] & 8'h7F) : s.pwdata[7:0];
                 end
-                REG_SEL_4: mcr <= #1 PWDATA[7:0];
-                REG_SEL_7: download_en <= #1 PWDATA[0];
-                REG_SEL_9: fcw <= #1 PWDATA[31:0];  // FCW
+                REG_SEL_4: mcr <= #1 s.pwdata[7:0];
+                REG_SEL_7: download_en <= #1 s.pwdata[0];
+                REG_SEL_9: fcw <= #1 s.pwdata[31:0];  // FCW
                 default: ;
             endcase
         end
@@ -150,7 +143,7 @@ end
 assign  tx_fifo_rd_en  = tx_uart_pulse && ~tx_fifo_rd_empty & ~tx_busy;
 assign  tx_fifo_wr_en  = reg_wr_en && uart_reg_sel_e'(reg_sel) == REG_SEL_0 && ~lcr[DLAB_BIT]
                          && ~tx_fifo_wr_full;
-assign  tx_fifo_wdata  = PWDATA[7:0];
+assign  tx_fifo_wdata  = s.pwdata[7:0];
 assign  rx_fifo_wr_en  = rx_data_valid & ~rx_fifo_wr_full;
 assign  rx_fifo_rd_en  = ((reg_rd_en && uart_reg_sel_e'(reg_sel) == REG_SEL_0 && ~lcr[DLAB_BIT])
                           || (download_en && ~download_done))
@@ -161,24 +154,24 @@ assign  flush_tx = fcr[FCR_CLR_TX];
 
 // ==================== 2. 寄存器读逻辑 ====================
 always_comb begin
-    PRDATA = {DATA_WIDTH{1'b0}};
+    s.prdata = {DATA_WIDTH{1'b0}};
     if (reg_rd_en) begin
         case (uart_reg_sel_e'(reg_sel))
             REG_SEL_0: begin
-                if (lcr[DLAB_BIT]) PRDATA[7:0] = divisor[7:0];
-                else                PRDATA[7:0] = rx_fifo_rd_empty ? 8'h00 : rx_fifo_rdata;  // 空读返回 0（避免未初始化 mem 的 X 传播）
+                if (lcr[DLAB_BIT]) s.prdata[7:0] = divisor[7:0];
+                else                s.prdata[7:0] = rx_fifo_rd_empty ? 8'h00 : rx_fifo_rdata;  // 空读返回 0（避免未初始化 mem 的 X 传播）
             end
             REG_SEL_1: begin
-                if (lcr[DLAB_BIT]) PRDATA[7:0] = divisor[15:8];
-                else                PRDATA[7:0] = {4'd0, ier};
+                if (lcr[DLAB_BIT]) s.prdata[7:0] = divisor[15:8];
+                else                s.prdata[7:0] = {4'd0, ier};
             end
-            REG_SEL_2: PRDATA[7:0] = iir;
-            REG_SEL_3: PRDATA[7:0] = lcr;
-            REG_SEL_4: PRDATA[7:0] = mcr;
-            REG_SEL_5: PRDATA[7:0] = lsr;
-            REG_SEL_6: PRDATA[7:0] = msr;
-            REG_SEL_8: PRDATA[1:0] = {download_en, download_done};
-            REG_SEL_9: PRDATA[31:0] = fcw;
+            REG_SEL_2: s.prdata[7:0] = iir;
+            REG_SEL_3: s.prdata[7:0] = lcr;
+            REG_SEL_4: s.prdata[7:0] = mcr;
+            REG_SEL_5: s.prdata[7:0] = lsr;
+            REG_SEL_6: s.prdata[7:0] = msr;
+            REG_SEL_8: s.prdata[1:0] = {download_en, download_done};
+            REG_SEL_9: s.prdata[31:0] = fcw;
             default: ;
         endcase
     end
@@ -345,10 +338,10 @@ uart_download #(
 );
 
 assign tx_start = tx_fifo_rd_en;
-// assign PREADY = (PSEL && PENABLE && (reg_sel == REG_SEL_0)) ? 
-//                 (PWRITE ? tx_fifo_wr_en : rx_fifo_rd_en): 1'b1;
-assign PREADY  = 1'b1;
-assign PSLVERR  = 1'b0;
+// assign s.pready = (s.psel && s.penable && (reg_sel == REG_SEL_0)) ? 
+//                 (s.pwrite ? tx_fifo_wr_en : rx_fifo_rd_en): 1'b1;
+assign s.pready  = 1'b1;
+assign s.pslverr  = 1'b0;
 
 `ifndef SYNTHESIS
 // ===== SVA：UART 协议不变式（L2，+define+ASSERT_MODULE 使能）=====

@@ -61,19 +61,19 @@ endmodule
 
 // 逐从机 bind——端口连接表达式在目标作用域解析，同名直连即透传
 bind CLINT     apb_slave_chk #(.NAME("CLINT"), .AW(32), .DW(32)) u_chk_apb_clint (
-    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(PSEL), .PENABLE(PENABLE),
-    .PWRITE(PWRITE), .PREADY(PREADY), .PADDR(PADDR), .PWDATA(PWDATA));
+    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(s.psel), .PENABLE(s.penable),
+    .PWRITE(s.pwrite), .PREADY(s.pready), .PADDR(s.paddr), .PWDATA(s.pwdata));
 bind apb_uart  apb_slave_chk #(.NAME("UART"),  .AW(32), .DW(32)) u_chk_apb_uart (
-    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(PSEL), .PENABLE(PENABLE),
-    .PWRITE(PWRITE), .PREADY(PREADY), .PADDR(PADDR), .PWDATA(PWDATA));
+    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(s.psel), .PENABLE(s.penable),
+    .PWRITE(s.pwrite), .PREADY(s.pready), .PADDR(s.paddr), .PWDATA(s.pwdata));
 bind apb_timer apb_slave_chk #(.NAME("TIMER"), .AW(32), .DW(32)) u_chk_apb_timer (
-    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(PSEL), .PENABLE(PENABLE),
-    .PWRITE(PWRITE), .PREADY(PREADY), .PADDR(PADDR), .PWDATA(PWDATA));
+    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(s.psel), .PENABLE(s.penable),
+    .PWRITE(s.pwrite), .PREADY(s.pready), .PADDR(s.paddr), .PWDATA(s.pwdata));
 bind apb_gpio  apb_slave_chk #(.NAME("GPIO"),  .AW(32), .DW(32)) u_chk_apb_gpio (
-    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(PSEL), .PENABLE(PENABLE),
-    .PWRITE(PWRITE), .PREADY(PREADY), .PADDR(PADDR), .PWDATA(PWDATA));
+    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(s.psel), .PENABLE(s.penable),
+    .PWRITE(s.pwrite), .PREADY(s.pready), .PADDR(s.paddr), .PWDATA(s.pwdata));
 bind PLIC      apb_slave_chk #(.NAME("PLIC"),  .AW(32), .DW(32)) u_chk_apb_plic (
-    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(PSEL), .PENABLE(PENABLE),
-    .PWRITE(PWRITE), .PREADY(PREADY), .PADDR(PADDR), .PWDATA(PWDATA));
+    .PCLK(PCLK), .PRESETn(PRESETn), .PSEL(s.psel), .PENABLE(s.penable),
+    .PWRITE(s.pwrite), .PREADY(s.pready), .PADDR(s.paddr), .PWDATA(s.pwdata));
 
 `endif // SYNTHESIS

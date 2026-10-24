@@ -2,9 +2,11 @@
 
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module DTCM #(
     parameter DTCM_FILE     = `DTCM_FILE,
-    parameter DTCM_DEPTH    = `DTCM_DEPTH,
+    parameter DTCM_DEPTH    = DTCM_DEPTH,
     parameter ADDR_WIDTH    = `ADDR_WIDTH,
     parameter DATA_WIDTH    = `DATA_WIDTH,
     parameter ALIGN_WIDTH   = `ALIGN_WIDTH,

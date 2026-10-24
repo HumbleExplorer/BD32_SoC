@@ -1,13 +1,14 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
 // BootROM - 只读启动存储器（同步读）
 // CPU 上电后从此处取指，执行 bootloader 后跳转到 ITCM
 // 地址区域：0x0000_0000 ~ 0x0000_0FFF（1K×4B = 4KB）
 // 同步读：地址在周期 N 给出，数据在周期 N+1 输出
+import bd32_pkg::*;
+
 module BootROM #(
-    parameter   MROM_DEPTH   = `MROM_DEPTH,
+    parameter   MROM_DEPTH   = MROM_DEPTH,
     parameter   ADDR_WIDTH   = `ADDR_WIDTH,
     parameter   DATA_WIDTH   = `DATA_WIDTH,
     parameter   ALIGN_WIDTH  = `ALIGN_WIDTH,
@@ -29,7 +30,7 @@ generate
             .addra(inst_addr[MROM_SIZE_WIDTH-1:ALIGN_WIDTH]),// input wire [9 : 0] addra
             .douta(inst)          // output wire [31 : 0] douta
         );
-        assign inst_o = rst_n ? inst : `INST_NOP;
+        assign inst_o = rst_n ? inst : INST_NOP;
 
     `else
         logic [DATA_WIDTH-1:0] mrom_mem [0:MROM_DEPTH-1];
@@ -41,7 +42,7 @@ generate
         // 同步读：地址在上升沿采样，下一拍输出数据
         always_ff @(posedge clk or negedge rst_n) begin
             if (!rst_n)
-                inst_o <= #1 `INST_NOP;
+                inst_o <= #1 INST_NOP;
             else
                 inst_o <= #1 mrom_mem[inst_addr[MROM_SIZE_WIDTH-1:ALIGN_WIDTH]];
         end

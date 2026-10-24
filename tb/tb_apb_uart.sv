@@ -47,15 +47,7 @@ logic                       PCLK;
 logic                       PRESETn;
 logic                       uart_rx_i;
 logic                       uart_tx_o;
-logic   [31:0]              PADDR;
-logic                       PSEL;
-logic                       PENABLE;
-logic                       PWRITE;
-logic   [3:0]               PSTRB;
-logic   [31:0]              PWDATA;
-logic   [31:0]              PRDATA;
-logic                       PREADY;
-logic                       PSLVERR;
+apb_if apb();               // APB 总线（BFM ↔ DUT）
 logic                       irq_o;
 logic                       test_pass;
 int                         error_count;
@@ -69,14 +61,7 @@ apb_uart #(
     .PRESETn     (PRESETn),
     .uart_rx_i   (uart_rx_i),
     .uart_tx_o   (uart_tx_o),
-    .PADDR       (PADDR),
-    .PSEL        (PSEL),
-    .PENABLE     (PENABLE),
-    .PWRITE      (PWRITE),
-    .PWDATA      (PWDATA),
-    .PRDATA      (PRDATA),
-    .PREADY      (PREADY),
-    .PSLVERR     (PSLVERR),
+    .s           (apb),
     .irq_o       (irq_o),
     // 下载接口输出：外设独立仿真不检查，留空
     .itcm_download_en_o    (),
@@ -94,15 +79,7 @@ apb_master_bfm #(
 ) bfm (
     .PRESETn  (PRESETn),
     .PCLK     (PCLK),
-    .PSEL     (PSEL),
-    .PENABLE  (PENABLE),
-    .PADDR    (PADDR),
-    .PSTRB    (PSTRB),
-    .PWDATA   (PWDATA),
-    .PRDATA   (PRDATA),
-    .PWRITE   (PWRITE),
-    .PREADY   (PREADY),
-    .PSLVERR  (PSLVERR)
+    .m        (apb)
 );
 
 // =================== 时钟 ===================

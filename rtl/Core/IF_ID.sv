@@ -1,8 +1,9 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module IF_ID #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -42,8 +43,8 @@ module IF_ID #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        inst_o          <= #1 `INST_NOP;
+        inst_addr_o     <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_o          <= #1 INST_NOP;
         is_compressed_o <= #1 1'b0;
         illegal_inst_o  <= #1 1'b0;
         zcmp_micro_last_o <= #1 1'b0;
@@ -52,7 +53,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         predict_taken_o <= #1 1'b0;
         predict_target_o<= #1 'h0;
     end else if(flush) begin
-        inst_o          <= #1 `INST_NOP;
+        inst_o          <= #1 INST_NOP;
         is_compressed_o <= #1 1'b0;
         illegal_inst_o  <= #1 1'b0;
         zcmp_micro_last_o <= #1 1'b0;
@@ -68,7 +69,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         zcmp_micro_last_o <= #1 zcmp_micro_last_i;
         zcmp_micro_any_o  <= #1 zcmp_micro_any_i;
         zcb_tag_o         <= #1 zcb_tag_i;
-        // inst_o          <= #1 inst_i == {DATA_WIDTH{1'bx}} ? `INST_NOP : inst_i;//冗余设计
+        // inst_o          <= #1 inst_i == {DATA_WIDTH{1'bx}} ? INST_NOP : inst_i;//冗余设计
         predict_taken_o <= #1 predict_taken_i;
         predict_target_o<= #1 predict_target_i;
     end
@@ -77,9 +78,9 @@ end
 `ifdef DISPLAY_INST_WAVE
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_display_o <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else if(flush) begin
-        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_display_o <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else if (!stall) begin
         inst_addr_display_o <= #1 inst_addr_i;
     end

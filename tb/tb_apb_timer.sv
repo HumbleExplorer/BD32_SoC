@@ -19,15 +19,6 @@ localparam PSTRB_SIZE   = PDATA_WIDTH/8;
 // APB信号
 logic                       PRESETn;
 logic                       PCLK;
-logic                       PSEL;
-logic                       PENABLE;
-logic   [PADDR_WIDTH  -1:0] PADDR;
-logic   [PSTRB_SIZE   -1:0] PSTRB;
-logic   [PDATA_WIDTH  -1:0] PWDATA;
-logic   [PDATA_WIDTH  -1:0] PRDATA;
-logic                       PWRITE;
-logic                       PREADY;
-logic                       PSLVERR;
 logic                       irq_o;
 
 // 通道信号
@@ -78,10 +69,12 @@ int reset_watchdog,
 //
 // Instantiate the APB-Master BFM
 //
+apb_if apb();               // APB 总线（BFM ↔ DUT）
+
 apb_master_bfm #(
     .PADDR_WIDTH ( PADDR_WIDTH ),
     .PDATA_WIDTH ( PDATA_WIDTH )
-) apb_mst_bfm (.*);
+) apb_mst_bfm (.m(apb), .*);
 
 // DUT
 apb_timer #(
@@ -89,7 +82,7 @@ apb_timer #(
     .DATA_WIDTH     (PDATA_WIDTH),
     .TIMER_WIDTH    (TIMER_WIDTH),
     .CHANNEL_NUM    (CHANNEL_NUM)
-) dut (.*);
+) dut (.s(apb), .*);
 
 initial begin : reset_watchdog_monitor
     errors         = 0;

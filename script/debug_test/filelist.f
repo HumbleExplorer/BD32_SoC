@@ -1,3 +1,4 @@
+../../rtl/pkg/*.sv
 ../../tb/tb_debug.sv
 ../../rtl/*.sv
 ../../rtl/Bus/*.sv

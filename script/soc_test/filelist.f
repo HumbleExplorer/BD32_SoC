@@ -1,3 +1,4 @@
+../../rtl/pkg/*.sv
 ../../tb/tb_soc_top.sv
 ../../rtl/*.sv
 ../../rtl/Bus/*.sv

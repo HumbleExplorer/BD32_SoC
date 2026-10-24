@@ -37,15 +37,7 @@ module apb_timer #(
 )(
     input   logic                       PCLK,
     input   logic                       PRESETn,
-    input   logic   [ADDR_WIDTH-1:0]    PADDR,
-    input   logic                       PSEL,
-    input   logic                       PENABLE,
-    input   logic                       PWRITE,
-    input   logic   [ALIGN_BYTES-1:0]   PSTRB,
-    input   logic   [DATA_WIDTH-1:0]    PWDATA,
-    output  logic   [DATA_WIDTH-1:0]    PRDATA,
-    output  logic                       PREADY,
-    output  logic                       PSLVERR,
+    apb_if.slave           s,             // APB 从机接口
     output  logic                       irq_o,  // 定时器中断输出
 
     // 外部通道接口 (输入捕获/输出比较)
@@ -101,7 +93,7 @@ module apb_timer #(
     assign  channel_oe = ~channel_oe_n;
 
     logic [3:0] reg_sel;
-    assign reg_sel = PADDR[5:2];
+    assign reg_sel = s.paddr[5:2];
 
     // 控制寄存器位域
     // TIMx_CR
@@ -155,12 +147,12 @@ module apb_timer #(
 
     // Is this a valid read access?
     function automatic bit is_read();
-        return PSEL & PENABLE & ~PWRITE;
+        return s.psel & s.penable & ~s.pwrite;
     endfunction : is_read
 
     // Is this a valid write access?
     function automatic bit is_write();
-        return PSEL & PENABLE & PWRITE;
+        return s.psel & s.penable & s.pwrite;
     endfunction : is_write
 
     // Is this a valid write to address 0x...?
@@ -173,12 +165,12 @@ module apb_timer #(
     // APB Access
     //
 
-    assign PREADY  = 1'b1; // Always ready
-    assign PSLVERR = 1'b0; // Never an error
+    assign s.pready  = 1'b1; // Always ready
+    assign s.pslverr = 1'b0; // Never an error
 
     //////////////////////////////////////////////////////////////////
     //
-    // APB Writes (PSTRB assumed always all 1's, simplified)
+    // APB Writes (s.pstrb assumed always all 1's, simplified)
     //
 
     // TIMx_PSC - 预分频系数寄存器
@@ -186,7 +178,7 @@ module apb_timer #(
         if (!PRESETn)
             timer_prescaler <= {TIMER_WIDTH{1'b0}};
         else if (is_write_to_addr(TIMx_PSC))
-            timer_prescaler <= PWDATA[TIMER_WIDTH-1:0];
+            timer_prescaler <= s.pwdata[TIMER_WIDTH-1:0];
     end
 
     // TIMx_ARR - 自动重载寄存器
@@ -194,7 +186,7 @@ module apb_timer #(
         if (!PRESETn)
             timer_arr <= {TIMER_WIDTH{1'b0}};
         else if (is_write_to_addr(TIMx_ARR))
-            timer_arr <= PWDATA[TIMER_WIDTH-1:0];
+            timer_arr <= s.pwdata[TIMER_WIDTH-1:0];
     end
 
     // TIMx_CR - 控制寄存器
@@ -204,9 +196,9 @@ module apb_timer #(
             timer_clr     <= 1'b0;
             timer_dir_sel <= 1'b0;
         end else if (is_write_to_addr(TIMx_CR)) begin
-            timer_en      <= PWDATA[0];
-            timer_clr     <= PWDATA[1];
-            timer_dir_sel <= PWDATA[2];
+            timer_en      <= s.pwdata[0];
+            timer_clr     <= s.pwdata[1];
+            timer_dir_sel <= s.pwdata[2];
         end else if (timer_clr) begin
             timer_clr <= 1'b0;
         end
@@ -219,10 +211,10 @@ module apb_timer #(
             timer_of_int_en    <= 1'b0;
             timer_ic_oc_int_en <= {CHANNEL_NUM{1'b0}};
         end else if (is_write_to_addr(TIMx_IER)) begin
-            timer_int_en    <= PWDATA[0];
-            timer_of_int_en <= PWDATA[1];
+            timer_int_en    <= s.pwdata[0];
+            timer_of_int_en <= s.pwdata[1];
             for (int i = 0; i < CHANNEL_NUM; i++)
-                timer_ic_oc_int_en[i] <= PWDATA[2+i];
+                timer_ic_oc_int_en[i] <= s.pwdata[2+i];
         end
     end
 
@@ -233,10 +225,10 @@ module apb_timer #(
             timer_int_trigger_pend <= {CHANNEL_NUM{1'b0}};
         end else if (is_write_to_addr(TIMx_SR)) begin
             // 写1清零
-            if (PWDATA[0])
+            if (s.pwdata[0])
                 timer_int_of_pend <= 1'b0;
             for (int i = 0; i < CHANNEL_NUM; i++)
-                if (PWDATA[1+i])
+                if (s.pwdata[1+i])
                     timer_int_trigger_pend[i] <= 1'b0;
         end else begin
             // 中断挂起由硬件置位
@@ -256,9 +248,9 @@ module apb_timer #(
         end else if (is_write_to_addr(TIMx_CCMR)) begin
             // 假设PWDATA低位为 mode，接着为 filter_mode
             for (int i = 0; i < CHANNEL_NUM; i++)
-                timer_ic_oc_mode[i] <= PWDATA[i];
+                timer_ic_oc_mode[i] <= s.pwdata[i];
             for (int i = 0; i < CHANNEL_NUM*4; i++)
-                timer_filter_mode[i] <= PWDATA[CHANNEL_NUM + i];
+                timer_filter_mode[i] <= s.pwdata[CHANNEL_NUM + i];
         end
     end
 
@@ -270,11 +262,11 @@ module apb_timer #(
             timer_trigger_mode  <= {CHANNEL_NUM*2{1'b0}};
         end else if (is_write_to_addr(TIMx_CCER)) begin
             for (int i = 0; i < CHANNEL_NUM; i++)
-                timer_ic_oc_en[i] <= PWDATA[i];
+                timer_ic_oc_en[i] <= s.pwdata[i];
             for (int i = 0; i < CHANNEL_NUM; i++)
-                timer_ic_oc_polarity[i] <= PWDATA[CHANNEL_NUM + i];
+                timer_ic_oc_polarity[i] <= s.pwdata[CHANNEL_NUM + i];
             for (int i = 0; i < CHANNEL_NUM*2; i++)
-                timer_trigger_mode[i] <= PWDATA[2*CHANNEL_NUM + i];
+                timer_trigger_mode[i] <= s.pwdata[2*CHANNEL_NUM + i];
         end
     end
 
@@ -287,7 +279,7 @@ module apb_timer #(
                 if (!PRESETn)
                     timer_ccr_cmp[ch] <= {TIMER_WIDTH{1'b0}};
                 else if (is_write_to_addr(CCR_ADDR))
-                    timer_ccr_cmp[ch] <= PWDATA[TIMER_WIDTH-1:0];
+                    timer_ccr_cmp[ch] <= s.pwdata[TIMER_WIDTH-1:0];
             end
         end
     endgenerate
@@ -298,21 +290,21 @@ module apb_timer #(
     //
 
     always_comb begin
-        PRDATA = {DATA_WIDTH{1'b0}};
+        s.prdata = {DATA_WIDTH{1'b0}};
         case (TIMx_reg_sel_e'(reg_sel))
-            TIMx_PSC:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_prescaler};
-            TIMx_CNT:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_cnt};
-            TIMx_ARR:   PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_arr};
-            TIMx_CR:    PRDATA = {{(DATA_WIDTH-3){1'b0}}, timer_dir_sel, timer_clr, timer_en};
-            TIMx_IER:   PRDATA = {{(DATA_WIDTH-2-CHANNEL_NUM){1'b0}}, timer_ic_oc_int_en, timer_of_int_en, timer_int_en};
-            TIMx_SR:    PRDATA = {{(DATA_WIDTH-1-CHANNEL_NUM){1'b0}}, timer_int_trigger_pend, timer_int_of_pend};
-            TIMx_CCMR:  PRDATA = {{(DATA_WIDTH-CHANNEL_NUM-4*CHANNEL_NUM){1'b0}}, timer_filter_mode, timer_ic_oc_mode};
-            TIMx_CCER:  PRDATA = {{(DATA_WIDTH-CHANNEL_NUM-CHANNEL_NUM-2*CHANNEL_NUM){1'b0}}, timer_trigger_mode, timer_ic_oc_polarity, timer_ic_oc_en};
-            TIMx_CCR1:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[0] ? timer_ccr_cmp[0] : timer_ccr_cap[0]};
-            TIMx_CCR2:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[1] ? timer_ccr_cmp[1] : timer_ccr_cap[1]};
-            TIMx_CCR3:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[2] ? timer_ccr_cmp[2] : timer_ccr_cap[2]};
-            TIMx_CCR4:  PRDATA = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[3] ? timer_ccr_cmp[3] : timer_ccr_cap[3]};
-            default:    PRDATA = {DATA_WIDTH{1'b0}};
+            TIMx_PSC:   s.prdata = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_prescaler};
+            TIMx_CNT:   s.prdata = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_cnt};
+            TIMx_ARR:   s.prdata = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_arr};
+            TIMx_CR:    s.prdata = {{(DATA_WIDTH-3){1'b0}}, timer_dir_sel, timer_clr, timer_en};
+            TIMx_IER:   s.prdata = {{(DATA_WIDTH-2-CHANNEL_NUM){1'b0}}, timer_ic_oc_int_en, timer_of_int_en, timer_int_en};
+            TIMx_SR:    s.prdata = {{(DATA_WIDTH-1-CHANNEL_NUM){1'b0}}, timer_int_trigger_pend, timer_int_of_pend};
+            TIMx_CCMR:  s.prdata = {{(DATA_WIDTH-CHANNEL_NUM-4*CHANNEL_NUM){1'b0}}, timer_filter_mode, timer_ic_oc_mode};
+            TIMx_CCER:  s.prdata = {{(DATA_WIDTH-CHANNEL_NUM-CHANNEL_NUM-2*CHANNEL_NUM){1'b0}}, timer_trigger_mode, timer_ic_oc_polarity, timer_ic_oc_en};
+            TIMx_CCR1:  s.prdata = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[0] ? timer_ccr_cmp[0] : timer_ccr_cap[0]};
+            TIMx_CCR2:  s.prdata = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[1] ? timer_ccr_cmp[1] : timer_ccr_cap[1]};
+            TIMx_CCR3:  s.prdata = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[2] ? timer_ccr_cmp[2] : timer_ccr_cap[2]};
+            TIMx_CCR4:  s.prdata = {{(DATA_WIDTH-TIMER_WIDTH){1'b0}}, timer_ic_oc_mode[3] ? timer_ccr_cmp[3] : timer_ccr_cap[3]};
+            default:    s.prdata = {DATA_WIDTH{1'b0}};
         endcase
     end
 
@@ -323,7 +315,7 @@ module apb_timer #(
 
     // 计数值写使能
     assign cnt_wr_en = is_write_to_addr(TIMx_CNT);
-    assign cnt_wr_data = PWDATA[TIMER_WIDTH-1:0];
+    assign cnt_wr_data = s.pwdata[TIMER_WIDTH-1:0];
 
     // 定时器核心实例
     basic_timer #(

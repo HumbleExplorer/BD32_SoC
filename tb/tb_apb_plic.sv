@@ -27,15 +27,6 @@ localparam PSTRB_SIZE   = PDATA_WIDTH/8;
 // APB 信号
 logic                       PRESETn;
 logic                       PCLK;
-logic                       PSEL;
-logic                       PENABLE;
-logic   [PADDR_WIDTH  -1:0] PADDR;
-logic   [PSTRB_SIZE   -1:0] PSTRB;
-logic   [PDATA_WIDTH  -1:0] PWDATA;
-logic   [PDATA_WIDTH  -1:0] PRDATA;
-logic                       PWRITE;
-logic                       PREADY;
-logic                       PSLVERR;
 
 // PLIC 中断信号 (声明时赋初值, 避免复位前不定态传播)
 logic   [NUM_SOURCES-1:0]   irq_i = '0;
@@ -70,10 +61,12 @@ int test_count;
 //
 // Instantiate the APB Master BFM
 //
+apb_if apb();               // APB 总线（BFM ↔ DUT）
+
 apb_master_bfm #(
     .PADDR_WIDTH ( PADDR_WIDTH ),
     .PDATA_WIDTH ( PDATA_WIDTH )
-) apb_mst_bfm (.*);
+) apb_mst_bfm (.m(apb), .*);
 
 // DUT
 PLIC #(
@@ -84,7 +77,7 @@ PLIC #(
     .MAX_PRIORITY (MAX_PRIORITY),
     .NUM_TARGETS    (NUM_TARGETS),
     .SYNC_STAGES    (0)         // 测试中旁路同步, 减少延迟
-) dut (.*);
+) dut (.s(apb), .*);
 
 ////////////////////////////////////////////////////////////////
 //

@@ -1,5 +1,4 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 `ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
@@ -23,6 +22,8 @@ timeprecision 1ps;
 //   push 依次 sw 高->低寄存器到 sp-4/sp-8/...；pop 依次 lw 自 sp+(adj-4) 递减；
 //   SP 调整最后；popretz 尾部 = addi sp + li a0,0 + ret，popret 尾部 = addi sp + ret。
 // =============================================================================
+import bd32_pkg::*;
+
 module Zcmp_Expander (
     input  logic        clk,
     input  logic        rst_n,
@@ -160,7 +161,7 @@ module Zcmp_Expander (
 
   // ---------------- 组合输出与状态转移 ----------------
   always_comb begin
-    micro_inst_o  = `INST_NOP;
+    micro_inst_o  = INST_NOP;
     micro_valid_o = 1'b0;
     micro_last_o  = 1'b0;
     state_d  = state_q;

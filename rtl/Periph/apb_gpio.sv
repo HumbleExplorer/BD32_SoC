@@ -32,20 +32,12 @@ module apb_gpio #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
     parameter ALIGN_BYTES = `ALIGN_BYTES,
-    parameter GPIO_NUM = `GPIO_NUM,
+    parameter GPIO_NUM = bd32_pkg::GPIO_NUM,
     localparam INPUT_STAGES = 2 
 )(
     input   logic                       PCLK,
     input   logic                       PRESETn,
-    input   logic   [ADDR_WIDTH-1:0]    PADDR,
-    input   logic                       PSEL,
-    input   logic                       PENABLE,
-    input   logic                       PWRITE,
-    input   logic   [ALIGN_BYTES-1:0]   PSTRB,
-    input   logic   [DATA_WIDTH-1:0]    PWDATA,
-    output  logic   [DATA_WIDTH-1:0]    PRDATA,
-    output  logic                       PREADY,
-    output  logic                       PSLVERR,
+    apb_if.slave           s,             // APB 从机接口
     output  logic                       irq_o,
 `ifdef GPIO_SIM
     input   logic   [DATA_WIDTH-1:0]    gpio_i,
@@ -91,7 +83,7 @@ typedef enum logic[3:0] {
 } gpio_reg_sel_e;
 
 logic [3:0] reg_sel;
-assign reg_sel = PADDR[5:2];
+assign reg_sel = s.paddr[5:2];
 
 //////////////////////////////////////////////////////////////////
 //
@@ -125,12 +117,12 @@ logic   [DATA_WIDTH-1:0]    input_regs  [INPUT_STAGES];
 
 //Is this a valid read access?
 function automatic bit is_read();
-    return PSEL & PENABLE & ~PWRITE;
+    return s.psel & s.penable & ~s.pwrite;
 endfunction : is_read
 
 //Is this a valid write access?
 function automatic bit is_write();
-    return PSEL & PENABLE & PWRITE;
+    return s.psel & s.penable & s.pwrite;
 endfunction : is_write
 
 //Is this a valid write to address 0x...?
@@ -140,26 +132,26 @@ function automatic bit is_write_to_addr(input [3:0] reg_addr);
 endfunction : is_write_to_addr
 
 //What data is written?
-//- Handles PSTRB, takes previous register/data value as an argument
+//- Handles s.pstrb, takes previous register/data value as an argument
 function automatic logic [DATA_WIDTH-1:0] get_write_value (input [DATA_WIDTH-1:0] original_val);
     for (int n=0; n < ALIGN_BYTES; n++)
-    get_write_value[n*8 +: 8] = PSTRB[n] ? PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
+    get_write_value[n*8 +: 8] = s.pstrb[n] ? s.pwdata[n*8 +: 8] : original_val[n*8 +: 8];
 endfunction : get_write_value
 
 //Clear bits on write
-//- Handles PSTRB
+//- Handles s.pstrb
 function automatic logic [DATA_WIDTH-1:0] get_clearonwrite_value (input [DATA_WIDTH-1:0] original_val);
     for (int n=0; n < ALIGN_BYTES; n++)
-    get_clearonwrite_value[n*8 +: 8] = PSTRB[n] ? original_val[n*8 +: 8] & ~PWDATA[n*8 +: 8] : original_val[n*8 +: 8];
+    get_clearonwrite_value[n*8 +: 8] = s.pstrb[n] ? original_val[n*8 +: 8] & ~s.pwdata[n*8 +: 8] : original_val[n*8 +: 8];
 endfunction : get_clearonwrite_value
 
 /*
 * APB accesses
 */
 //The core supports zero-wait state accesses on all transfers.
-//It is allowed to drive PREADY with a hard wired signal
-assign PREADY  = 1'b1; //always_ff ready
-assign PSLVERR = 1'b0; //Never an error
+//It is allowed to drive s.pready with a hard wired signal
+assign s.pready  = 1'b1; //always_ff ready
+assign s.pslverr = 1'b0; //Never an error
 
 /*
 * APB Writes
@@ -210,8 +202,8 @@ always_ff @(posedge PCLK,negedge PRESETn)
 // BOP_SET: 写 1 置位对应 GPIO 位（写 0 不影响）
 always_ff @(posedge PCLK,negedge PRESETn)
     if      (!PRESETn                     ) out_reg <= #1 {DATA_WIDTH{1'b0}};
-    else if ( is_write_to_addr(BOP_SET   )) out_reg <= #1 out_reg | PWDATA;
-    else if ( is_write_to_addr(BOP_CLR   )) out_reg <= #1 out_reg & ~PWDATA;
+    else if ( is_write_to_addr(BOP_SET   )) out_reg <= #1 out_reg | s.pwdata;
+    else if ( is_write_to_addr(BOP_CLR   )) out_reg <= #1 out_reg & ~s.pwdata;
     else if ( is_write_to_addr(OUTPUT) ||
               is_write_to_addr(INPUT )    ) out_reg <= #1 get_write_value(out_reg);
 
@@ -225,18 +217,18 @@ always_ff @(posedge PCLK,negedge PRESETn)
 */
 always_comb begin
     case (gpio_reg_sel_e'(reg_sel))
-        MODE     : PRDATA = mode_reg;
-        DIRECTION: PRDATA = dir_reg;
-        OUTPUT   : PRDATA = out_reg;
-        INPUT    : PRDATA = in_reg;
-        TR_TYPE  : PRDATA = tr_type_reg;
-        TR_LVL0  : PRDATA = tr_lvl0_reg;
-        TR_LVL1  : PRDATA = tr_lvl1_reg;
-        TR_STAT  : PRDATA = tr_status_reg;
-        IRQ_ENA  : PRDATA = irq_ena_reg;
+        MODE     : s.prdata = mode_reg;
+        DIRECTION: s.prdata = dir_reg;
+        OUTPUT   : s.prdata = out_reg;
+        INPUT    : s.prdata = in_reg;
+        TR_TYPE  : s.prdata = tr_type_reg;
+        TR_LVL0  : s.prdata = tr_lvl0_reg;
+        TR_LVL1  : s.prdata = tr_lvl1_reg;
+        TR_STAT  : s.prdata = tr_status_reg;
+        IRQ_ENA  : s.prdata = irq_ena_reg;
         BOP_SET,
-        BOP_CLR  : PRDATA = {DATA_WIDTH{1'b0}};  // write-only, reads 0
-        default  : PRDATA = {DATA_WIDTH{1'b0}};
+        BOP_CLR  : s.prdata = {DATA_WIDTH{1'b0}};  // write-only, reads 0
+        default  : s.prdata = {DATA_WIDTH{1'b0}};
     endcase
 end
 

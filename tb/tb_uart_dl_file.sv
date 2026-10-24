@@ -18,9 +18,7 @@ localparam string UARTBIN = "../../test_data/soc/c/bus_timeout.uartbin";
 
 logic        PCLK, PRESETn;
 logic        uart_rx_i, uart_tx_o;
-logic [31:0] PADDR, PWDATA, PRDATA;
-logic        PSEL, PENABLE, PWRITE, PREADY, PSLVERR;
-logic [3:0]  PSTRB;
+apb_if apb();               // APB 总线（BFM ↔ DUT）
 
 logic        itcm_en, dtcm_en;
 logic [31:0] itcm_addr, itcm_data, dtcm_addr, dtcm_data;
@@ -39,17 +37,14 @@ int exp_itcm_n = 0, exp_dtcm_n = 0;
 
 apb_uart #(.ADDR_WIDTH(32), .DATA_WIDTH(32)) dut (
     .PCLK (PCLK), .PRESETn (PRESETn), .uart_rx_i (uart_rx_i), .uart_tx_o (uart_tx_o),
-    .PADDR (PADDR), .PSEL (PSEL), .PENABLE (PENABLE), .PWRITE (PWRITE),
-    .PWDATA (PWDATA), .PRDATA (PRDATA), .PREADY (PREADY), .PSLVERR (PSLVERR),
+    .s (apb),
     .irq_o (), .itcm_download_en_o (itcm_en), .itcm_download_addr_o (itcm_addr),
     .itcm_download_data_o (itcm_data), .dtcm_download_en_o (dtcm_en),
     .dtcm_download_addr_o (dtcm_addr), .dtcm_download_data_o (dtcm_data)
 );
 
 apb_master_bfm #(.PADDR_WIDTH(32), .PDATA_WIDTH(32)) bfm (
-    .PRESETn (PRESETn), .PCLK (PCLK), .PSEL (PSEL), .PENABLE (PENABLE),
-    .PADDR (PADDR), .PSTRB (PSTRB), .PWDATA (PWDATA), .PRDATA (PRDATA),
-    .PWRITE (PWRITE), .PREADY (PREADY), .PSLVERR (PSLVERR)
+    .PRESETn (PRESETn), .PCLK (PCLK), .m (apb)
 );
 
 initial begin

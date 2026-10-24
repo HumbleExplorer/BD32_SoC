@@ -4,6 +4,8 @@
 // 不再使用 END_FRAME / DTCM_MARKER，彻底避免数据内容与帧标记冲突
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module uart_download #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -168,19 +170,19 @@ end
 // 地址递增
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        itcm_download_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        dtcm_download_addr <= #1 {`DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        itcm_download_addr <= #1 {ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        dtcm_download_addr <= #1 {DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else begin
         // ITCM 地址复位
         if (current_state == IDLE && next_state == RECV_ITCM_CNT) begin
-            itcm_download_addr <= #1 {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+            itcm_download_addr <= #1 {ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         end else if (current_state == RECV_ITCM && itcm_download_en) begin
             itcm_download_addr[31:ALIGN_WIDTH] <= #1 itcm_download_addr[31:ALIGN_WIDTH] + 1;
         end
 
         // DTCM 地址复位
         if (current_state == RECV_DTCM_CNT && next_state == RECV_DTCM) begin
-            dtcm_download_addr <= #1 {`DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+            dtcm_download_addr <= #1 {DTCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
         end else if (current_state == RECV_DTCM && dtcm_download_en) begin
             dtcm_download_addr[31:ALIGN_WIDTH] <= #1 dtcm_download_addr[31:ALIGN_WIDTH] + 1;
         end

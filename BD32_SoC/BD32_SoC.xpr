@@ -112,6 +112,13 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../rtl/pkg/BD32_Pkg.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PPRDIR/../rtl/Bus/APB_Interconnect.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -141,13 +148,6 @@
         </FileInfo>
       </File>
       <File Path="$PPRDIR/../rtl/Bus/AXI_Lite_Master.sv">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../rtl/RV32_Inst_Define.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
@@ -343,6 +343,13 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../rtl/pkg/apb_if.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PPRDIR/../rtl/Periph/timer/apb_timer.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -358,6 +365,13 @@
         </FileInfo>
       </File>
       <File Path="$PPRDIR/../rtl/Bus/axi_err_slave.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/pkg/axi_if.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
@@ -805,12 +819,12 @@
         <StratHandle Name="Flow_PerfOptimized_high" Flow="Vivado Synthesis 2023"/>
         <Step Id="synth_design">
           <Option Id="ResourceSharing">2</Option>
-          <Option Id="Directive">7</Option>
-          <Option Id="ShregMinSize">5</Option>
-          <Option Id="NoCombineLuts">1</Option>
           <Option Id="KeepEquivalentRegisters">1</Option>
+          <Option Id="ShregMinSize">5</Option>
           <Option Id="FlattenHierarchy">1</Option>
           <Option Id="FsmExtraction">1</Option>
+          <Option Id="NoCombineLuts">1</Option>
+          <Option Id="Directive">7</Option>
         </Step>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -854,7 +868,7 @@
         <Step Id="write_bitstream"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2023" CtrlBit="true"/>
+      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2023"/>
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles>
         <RQSFilePath>$PSRCDIR/utils_1/imports/impl_1/bd32_board_top_routed.rqs</RQSFilePath>

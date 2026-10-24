@@ -1,5 +1,4 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 `ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
@@ -17,6 +16,8 @@ timeprecision 1ps;
 //   - 链接地址语义（C.JAL/C.JALR 的 pc+2）由流水线 is_compressed 标志处理，
 //     本模块只负责指令编码展开。
 // =============================================================================
+import bd32_pkg::*;
+
 module RVC_Expander (
     input  logic [15:0] rvc_inst,   // 16 位压缩指令（低 16 位）
     output logic [31:0] inst_o,     // 展开后的 32 位指令
@@ -122,7 +123,7 @@ module RVC_Expander (
             // C.ADDI -> addi rd, rd, imm（rd=x0 为 C.NOP/HINT -> NOP）
             inst_o = {{6{rvc_inst[12]}}, rvc_inst[12], rvc_inst[6:2],
                       rd, 3'b000, rd, 7'b0010011};
-            if (rd == 5'b0) inst_o = `INST_NOP;
+            if (rd == 5'b0) inst_o = INST_NOP;
           end
           3'b001: begin
             // C.JAL（仅 RV32）-> jal x1, offset
@@ -134,7 +135,7 @@ module RVC_Expander (
             // C.LI -> addi rd, x0, imm（rd=x0 为 HINT -> NOP）
             inst_o = {{6{rvc_inst[12]}}, rvc_inst[12], rvc_inst[6:2], 5'b0,
                       3'b000, rd, 7'b0010011};
-            if (rd == 5'b0) inst_o = `INST_NOP;
+            if (rd == 5'b0) inst_o = INST_NOP;
           end
           3'b011: begin
             // C.ADDI16SP（rd=x2）/ C.LUI（其余，rd=x0 为 HINT -> NOP）
@@ -146,7 +147,7 @@ module RVC_Expander (
             end else begin
               // C.LUI -> lui rd, imm
               inst_o = {{15{rvc_inst[12]}}, rvc_inst[6:2], rd, 7'b0110111};
-              if (rd == 5'b0) inst_o = `INST_NOP;
+              if (rd == 5'b0) inst_o = INST_NOP;
             end
           end
           3'b100: begin
@@ -265,7 +266,7 @@ module RVC_Expander (
               if (rs2 != 5'b0) begin
                 // C.MV -> add rd, x0, rs2（rd=x0 为 HINT -> NOP）
                 inst_o = {7'b0, rs2, 5'b0, 3'b000, rd, 7'b0110011};
-                if (rd == 5'b0) inst_o = `INST_NOP;
+                if (rd == 5'b0) inst_o = INST_NOP;
               end else begin
                 // C.JR -> jalr x0, rs1, 0（rs1=x0 保留）
                 inst_o = {12'b0, rs1, 3'b000, 5'b0, 7'b1100111};
@@ -275,7 +276,7 @@ module RVC_Expander (
               if (rs2 != 5'b0) begin
                 // C.ADD -> add rd, rd, rs2（rd=x0 为 HINT -> NOP）
                 inst_o = {7'b0, rs2, rd, 3'b000, rd, 7'b0110011};
-                if (rd == 5'b0) inst_o = `INST_NOP;
+                if (rd == 5'b0) inst_o = INST_NOP;
               end else begin
                 if (rs1 == 5'b0) begin
                   // C.EBREAK -> ebreak

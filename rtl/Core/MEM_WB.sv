@@ -1,7 +1,8 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module MEM_WB #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -44,8 +45,8 @@ module MEM_WB #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        inst_o          <= #1 `INST_NOP;
+        inst_addr_o     <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_o          <= #1 INST_NOP;
         reg_rd_wen_o    <= #1 1'b0;
         reg_rd_waddr_o  <= #1 'h0;
         reg_rd_wdata_o  <= #1 'h0;
@@ -54,7 +55,7 @@ always_ff @(posedge clk or negedge rst_n) begin
     zcmp_micro_any_o  <= #1 1'b0;
     zcb_tag_o         <= #1 1'b0;
     end else if(flush) begin
-        inst_o          <= #1 `INST_NOP;
+        inst_o          <= #1 INST_NOP;
         reg_rd_wen_o    <= #1 1'b0;
         reg_rd_waddr_o  <= #1 'h0;
         reg_rd_wdata_o  <= #1 'h0;
@@ -78,9 +79,9 @@ end
 `ifdef DISPLAY_INST_WAVE
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_display_o <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else if(flush) begin
-        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_display_o <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else if (!stall) begin
         inst_addr_display_o <= #1 inst_addr_i;
     end

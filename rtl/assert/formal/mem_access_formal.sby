@@ -25,4 +25,4 @@ prep -top mem_access_formal_top
 mem_access_formal_top.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Mem_Access.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
-D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/RV32_inst_Define.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv

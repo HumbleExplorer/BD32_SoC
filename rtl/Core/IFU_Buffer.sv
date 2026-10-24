@@ -1,5 +1,4 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 `ifndef FORMAL
 timeunit 1ns;
 timeprecision 1ps;
@@ -14,6 +13,8 @@ timeprecision 1ps;
 // 与 LSU/SBA 抢占：fetch_served 指示本拍请求是否被存储器服务；被抢占时
 // fetch_addr 保持重发、装配器忽略该拍返回字，保证字流不错位。
 // =============================================================================
+import bd32_pkg::*;
+
 module IFU_Buffer #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -219,8 +220,8 @@ module IFU_Buffer #(
   assign fetch_word_addr_o = req_addr;  // w_new = 上一拍请求字（req_addr）的返回数据
 
   // ---------------- 异常 ----------------
-  wire inst_addr_legal = (pc_asm[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`BOOT_BASE_TAG ||
-                          pc_asm[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==`ITCM_BASE_TAG);
+  wire inst_addr_legal = (pc_asm[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==BOOT_BASE_TAG ||
+                          pc_asm[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH]==ITCM_BASE_TAG);
   assign if_addr_misalign = 1'b0;   // C 扩展下取指仅 16 位对齐，无非对齐异常
   assign if_access_fault  = ~inst_addr_legal;
 
@@ -228,13 +229,13 @@ module IFU_Buffer #(
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
 `ifdef DIRECT_LOAD
-      pc_asm     <= {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-      fetch_addr <= {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-      req_addr   <= {`ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+      pc_asm     <= {ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+      fetch_addr <= {ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+      req_addr   <= {ITCM_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
 `else
-      pc_asm     <= {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-      fetch_addr <= {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-      req_addr   <= {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+      pc_asm     <= {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+      fetch_addr <= {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+      req_addr   <= {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
 `endif
       cur_w      <= '0;
       cur_w_addr <= '0;

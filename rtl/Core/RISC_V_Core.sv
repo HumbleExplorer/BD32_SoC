@@ -1,7 +1,8 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module RISC_V_Core #(
     parameter ITCM_FILE = `ITCM_FILE,
     parameter DTCM_FILE = `DTCM_FILE,
@@ -356,27 +357,27 @@ wire mem_split_ok        = dtcm_sel | (bus_sel & ~apb_sel);
 wire access_misalign_ex  = ex_addr_misalign & ~mem_split_ok;
 // IF 级：指令访问错误 > 指令地址未对齐
 assign exception_code_if = if_access_fault  ? {{DATA_WIDTH-5{1'b0}}, 4'd1}
-                         : if_addr_misalign ? {{DATA_WIDTH-5{1'b0}}, 4'd0}
+                         : if_addr_misalign ? {{DATA_WIDTH-5{1'b0}}, EXC_INSN_ADDR_MISALIGNED}
                          : {DATA_WIDTH-1{1'b1}};
 assign exception_val_if  = inst_addr_if;
 
 // ID 级：非法指令 > ecall > ebreak
-assign exception_code_id = id_illegal_total ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
-                         : id_ecall        ? {{DATA_WIDTH-5{1'b0}}, (priv_mode == 2'b00) ? 4'd8 : 4'd11}
+assign exception_code_id = id_illegal_total ? {{DATA_WIDTH-5{1'b0}}, EXC_ILLEGAL_INSN}
+                         : id_ecall        ? {{DATA_WIDTH-5{1'b0}}, (priv_mode == 2'b00) ? EXC_ECALL_UMODE : EXC_ECALL_MMODE}
                          // ebreakm=1 时 ebreak 进入 debug 模式（mtvec 陷阱被抑制）
-                         : (id_ebreak && !ebreak_halt) ? {{DATA_WIDTH-5{1'b0}}, 4'd3}
+                         : (id_ebreak && !ebreak_halt) ? {{DATA_WIDTH-5{1'b0}}, EXC_BREAKPOINT}
                          : {DATA_WIDTH-1{1'b1}};
 assign exception_val_id  = id_illegal_total ? inst_id : 'h0;   // 压缩保留编码 mtval 记展开值
 
 // EX 级：bus_error > 访存非法 > 访存未对齐 > 非法 CSR
 // bus_error 时 mtval 填锁存地址 bus_addr_q；访存异常填 access_addr_ex；非法 CSR 填 inst_ex
-assign exception_code_ex = bus_error        ? (bus_write_q ? {{DATA_WIDTH-5{1'b0}}, 4'd7}
-                                                           : {{DATA_WIDTH-5{1'b0}}, 4'd5})
-                         : ex_access_illegal ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, 4'd7}
-                                                             : {{DATA_WIDTH-5{1'b0}}, 4'd5})
-                         : access_misalign_ex ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, 4'd6}
-                                                             : {{DATA_WIDTH-5{1'b0}}, 4'd4})
-                         : ex_illegal_csr    ? {{DATA_WIDTH-5{1'b0}}, 4'd2}
+assign exception_code_ex = bus_error        ? (bus_write_q ? {{DATA_WIDTH-5{1'b0}}, EXC_STORE_ACCESS_FAULT}
+                                                           : {{DATA_WIDTH-5{1'b0}}, EXC_LOAD_ACCESS_FAULT})
+                         : ex_access_illegal ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, EXC_STORE_ACCESS_FAULT}
+                                                             : {{DATA_WIDTH-5{1'b0}}, EXC_LOAD_ACCESS_FAULT})
+                         : access_misalign_ex ? (access_wr_ex ? {{DATA_WIDTH-5{1'b0}}, EXC_STORE_ADDR_MISALIGNED}
+                                                             : {{DATA_WIDTH-5{1'b0}}, EXC_LOAD_ADDR_MISALIGNED})
+                         : ex_illegal_csr    ? {{DATA_WIDTH-5{1'b0}}, EXC_ILLEGAL_INSN}
                          : {DATA_WIDTH-1{1'b1}};
 assign exception_val_ex  = bus_error                    ? bus_addr_q
                          : (ex_access_illegal | access_misalign_ex) ? access_addr_ex
@@ -659,13 +660,13 @@ logic                     bootrom_fetch_sel;  // 返回字区域：BootROM（ins
 logic                     itcm_fetch_sel;     // 返回字区域：ITCM（inst 区选用）
 wire  [ADDR_WIDTH-1:0]    bootrom_rd_addr;   // BootROM read addr: sba_addr when SBA hits 0x0000 region
 
-assign bootrom_sel   = (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
-assign itcm_store_sel= (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
-assign bootrom_fetch_sel = (fetch_word_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `BOOT_BASE_TAG);
-assign itcm_fetch_sel    = (fetch_word_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == `ITCM_BASE_TAG);
+assign bootrom_sel   = (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == BOOT_BASE_TAG);
+assign itcm_store_sel= (pc[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == ITCM_BASE_TAG);
+assign bootrom_fetch_sel = (fetch_word_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == BOOT_BASE_TAG);
+assign itcm_fetch_sel    = (fetch_word_addr_if[DATA_WIDTH-1:BLOCK_SIZE_WIDTH] == ITCM_BASE_TAG);
 
 BootROM #(
-    .MROM_DEPTH     (`MROM_DEPTH),
+    .MROM_DEPTH     (MROM_DEPTH),
     .ADDR_WIDTH     (ADDR_WIDTH),
     .DATA_WIDTH     (DATA_WIDTH),
     .ALIGN_WIDTH    (ALIGN_WIDTH)
@@ -681,10 +682,10 @@ BootROM #(
 // CPU halt 期间调试器通过 SBA 读写 ITCM/DTCM/外设总线；BootROM(0x0000) 只读
 // 译码与 CPU 一致：BOOT=0x0000, ITCM=0x0001, DTCM=0x0002, tag>=0x8000 走 AXI/APB 总线
 // ============================================================
-wire sba_bootrom_sel = (sba_addr[ADDR_WIDTH-1:16] == `BOOT_BASE_TAG);
-wire sba_itcm_store_sel    = (sba_addr[ADDR_WIDTH-1:16] == `ITCM_BASE_TAG);
-wire sba_dtcm_sel    = (sba_addr[ADDR_WIDTH-1:16] == `DTCM_BASE_TAG);
-wire sba_bus_sel     = (sba_addr[ADDR_WIDTH-1:16] >= `BUS_BASE_ADDR);
+wire sba_bootrom_sel = (sba_addr[ADDR_WIDTH-1:16] == BOOT_BASE_TAG);
+wire sba_itcm_store_sel    = (sba_addr[ADDR_WIDTH-1:16] == ITCM_BASE_TAG);
+wire sba_dtcm_sel    = (sba_addr[ADDR_WIDTH-1:16] == DTCM_BASE_TAG);
+wire sba_bus_sel     = (sba_addr[ADDR_WIDTH-1:16] >= BUS_BASE_ADDR);
 wire sba_any_sel     = sba_bootrom_sel | sba_itcm_store_sel | sba_dtcm_sel | sba_bus_sel;
 // BootROM read-addr mux: switch to sba_addr only for SBA read of 0x0000 (PC frozen while halted)
 assign bootrom_rd_addr = (sba_req_valid && sba_bootrom_sel) ? sba_addr : pc;
@@ -814,7 +815,7 @@ assign sba_error     = sba_bus_d ? (bus_resp != 2'b00)
 
 ITCM #(
     .ITCM_FILE      (ITCM_FILE),
-    .ITCM_DEPTH     (`ITCM_DEPTH),
+    .ITCM_DEPTH     (ITCM_DEPTH),
     .ADDR_WIDTH     (ADDR_WIDTH),
     .DATA_WIDTH     (DATA_WIDTH),
     .ALIGN_BYTES    (ALIGN_BYTES),
@@ -835,12 +836,12 @@ ITCM #(
 `ifdef XILINX
 assign inst = bootrom_fetch_sel ? bootrom_inst :
               itcm_fetch_sel    ? itcm_inst    :
-              `INST_NOP;
+              INST_NOP;
 `else
 // 若取出的指令含不定态 X，替换为 NOP 防止 X 传播
-assign inst = bootrom_fetch_sel ? ($isunknown(bootrom_inst) ? `INST_NOP : bootrom_inst) :
-              itcm_fetch_sel    ? ($isunknown(itcm_inst)    ? `INST_NOP : itcm_inst)    :
-              `INST_NOP;
+assign inst = bootrom_fetch_sel ? ($isunknown(bootrom_inst) ? INST_NOP : bootrom_inst) :
+              itcm_fetch_sel    ? ($isunknown(itcm_inst)    ? INST_NOP : itcm_inst)    :
+              INST_NOP;
 `endif
 IF_ID #(
     .ADDR_WIDTH         (ADDR_WIDTH),
@@ -1238,7 +1239,7 @@ Mem_Access #(
 
 DTCM #(
     .DTCM_FILE   (DTCM_FILE),
-    .DTCM_DEPTH  (`DTCM_DEPTH),
+    .DTCM_DEPTH  (DTCM_DEPTH),
     .ADDR_WIDTH  (ADDR_WIDTH),
     .DATA_WIDTH  (DATA_WIDTH),
     .ALIGN_WIDTH (ALIGN_WIDTH),

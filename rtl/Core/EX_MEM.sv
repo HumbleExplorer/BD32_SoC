@@ -1,7 +1,8 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module EX_MEM #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -48,8 +49,8 @@ module EX_MEM #(
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_o     <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
-        inst_o          <= #1 `INST_NOP;
+        inst_addr_o     <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_o          <= #1 INST_NOP;
         access_en_o     <= #1 1'b0;
         access_wr_o     <= #1 1'b0;
         reg_rd_wen_o    <= #1 1'b0;
@@ -61,7 +62,7 @@ always_ff @(posedge clk or negedge rst_n) begin
     zcb_tag_o         <= #1 1'b0;
     end else begin
         if(flush) begin
-            inst_o          <= #1 `INST_NOP;
+            inst_o          <= #1 INST_NOP;
             access_en_o     <= #1 1'b0;
             reg_rd_wen_o    <= #1 1'b0;
             // 冲刷时清残留 waddr/wdata：否则被取消指令的陈旧 waddr 会配合
@@ -90,9 +91,9 @@ end
 `ifdef DISPLAY_INST_WAVE
 always_ff @(posedge clk or negedge rst_n) begin
     if(!rst_n) begin
-        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_display_o <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else if(flush) begin
-        inst_addr_display_o <= #1 {`BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
+        inst_addr_display_o <= #1 {BOOT_BASE_TAG,{BLOCK_SIZE_WIDTH{1'b0}}};
     end else if (!stall) begin
         inst_addr_display_o <= #1 inst_addr_i;
     end

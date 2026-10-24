@@ -1,7 +1,8 @@
 `include "./../SoC_Config.sv"
-`include "./../RV32_inst_Define.sv"
 timeunit 1ns;
 timeprecision 1ps;
+import bd32_pkg::*;
+
 module Executer #(
     parameter ADDR_WIDTH = `ADDR_WIDTH,
     parameter DATA_WIDTH = `DATA_WIDTH,
@@ -138,8 +139,8 @@ function automatic logic [5:0] cpop32(input logic [31:0] v);
 endfunction
 
 // ITCM 可读写（自修改代码 / LSU 读代码区）；其余低于 DTCM 基址的区域（BootROM/未映射）为非法访问
-assign access_illegal = access_en ? ((access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < `DTCM_BASE_TAG)
-                                    && (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] != `ITCM_BASE_TAG)) : 1'b0;
+assign access_illegal = access_en ? ((access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] < DTCM_BASE_TAG)
+                                    && (access_addr[ADDR_WIDTH-1:BLOCK_SIZE_WIDTH] != ITCM_BASE_TAG)) : 1'b0;
 assign ex_access_illegal = access_illegal;
 assign ex_addr_misalign  = access_addr_misalign;
 assign branch_predict_success = ((predict_taken && branch_taken) && (predict_target == branch_target)) 
@@ -162,23 +163,23 @@ always_comb begin
     branch_taken      = 1'b0;
     branch_target     = inst_addr_plus_len;
     case(opcode)
-        `INST_TYPE_I:begin
+        INST_TYPE_I:begin
             reg_rd_wen        = ~is_nop;
             reg_rd_waddr      = rd;
             case(func3)
-                `INST_ADDI  : reg_rd_wdata   = alu_op1 + alu_op2;
-                `INST_SLTI  : reg_rd_wdata   = less_signed ? 32'h1 : 32'h0;
-                `INST_SLTIU : reg_rd_wdata   = less_unsigned ? 32'h1 : 32'h0;
-                `INST_XORI  : begin
+                INST_ADDI  : reg_rd_wdata   = alu_op1 + alu_op2;
+                INST_SLTI  : reg_rd_wdata   = less_signed ? 32'h1 : 32'h0;
+                INST_SLTIU : reg_rd_wdata   = less_unsigned ? 32'h1 : 32'h0;
+                INST_XORI  : begin
                     // ZBB ZEXT.H：编码与 xori rd,rs1,0x080 重叠，规范定义该编码为 zext.h
                     if ((func7 == 7'b0000100) && (alu_op2[4:0] == 5'b0))
                         reg_rd_wdata = {16'h0, alu_op1[15:0]};
                     else
                         reg_rd_wdata = alu_op1 ^ alu_op2;
                 end
-                `INST_ORI   : reg_rd_wdata   = alu_op1 | alu_op2;
-                `INST_ANDI  : reg_rd_wdata   = alu_op1 & alu_op2;
-                `INST_SLLI  : begin
+                INST_ORI   : reg_rd_wdata   = alu_op1 | alu_op2;
+                INST_ANDI  : reg_rd_wdata   = alu_op1 & alu_op2;
+                INST_SLLI  : begin
                     // SLLI + Zbb/Zbs 立即数形式（按 func7 区分；inst[24:20] 为 shamt）
                     case (func7)
                         7'b0000000: reg_rd_wdata = alu_op1 << alu_op2[4:0];            // SLLI
@@ -199,7 +200,7 @@ always_comb begin
                         default:    reg_rd_wdata = alu_op1;                              // 保留编码
                     endcase
                 end
-                `INST_SRI:begin
+                INST_SRI:begin
                     if (func7 == 7'b0010100) begin                                      // ORC.B（OP-IMM 空间）
                         reg_rd_wdata[31:24] = {8{|alu_op1[31:24]}};
                         reg_rd_wdata[23:16] = {8{|alu_op1[23:16]}};
@@ -217,33 +218,33 @@ always_comb begin
                 end
             endcase
         end
-        `INST_TYPE_R_M:begin
+        INST_TYPE_R_M:begin
             reg_rd_waddr      = rd;
             if ((func7 == 7'b0000000) || (func7 == 7'b0100000)) begin
                 reg_rd_wen        = 1'b1;
                 case(func3)
-                    `INST_ADD_SUB:begin
+                    INST_ADD_SUB:begin
                         if(func7 == 7'b000_0000)//ADD
                             reg_rd_wdata = alu_op1 + alu_op2;
                         else//SUB
                             reg_rd_wdata = alu_op1 - alu_op2;
                     end
-                    `INST_SLL: reg_rd_wdata = alu_op1 << alu_op2[4:0];
-                    `INST_SLT: reg_rd_wdata = less_signed ? 32'h1 : 32'h0;
-                    `INST_SLTU:reg_rd_wdata = less_unsigned ? 32'h1 : 32'h0;
-                    `INST_XOR: begin
+                    INST_SLL: reg_rd_wdata = alu_op1 << alu_op2[4:0];
+                    INST_SLT: reg_rd_wdata = less_signed ? 32'h1 : 32'h0;
+                    INST_SLTU:reg_rd_wdata = less_unsigned ? 32'h1 : 32'h0;
+                    INST_XOR: begin
                         if (func7 == 7'b0100000) reg_rd_wdata = ~(alu_op1 ^ alu_op2);  // XNOR
                         else                       reg_rd_wdata = alu_op1 ^ alu_op2;
                     end
-                    `INST_OR: begin
+                    INST_OR: begin
                         if (func7 == 7'b0100000) reg_rd_wdata = alu_op1 | ~alu_op2;    // ORN
                         else                       reg_rd_wdata = alu_op1 | alu_op2;
                     end
-                    `INST_AND: begin
+                    INST_AND: begin
                         if (func7 == 7'b0100000) reg_rd_wdata = alu_op1 & ~alu_op2;    // ANDN
                         else                       reg_rd_wdata = alu_op1 & alu_op2;
                     end
-                    `INST_SR:begin
+                    INST_SR:begin
                         if(func7 == 7'b0100000)//SRAI
                             // reg_rd_wdata = (sr_shift & sr_shift_mask) | ({DATA_WIDTH{alu_op1[DATA_WIDTH-1]}} & (~sr_shift_mask));
                             reg_rd_wdata = $signed(alu_op1) >>> alu_op2[4:0];
@@ -255,28 +256,28 @@ always_comb begin
             else if (func7 == 7'b0000101) begin//Zbb: MIN/MINU/MAX/MAXU
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_XOR: reg_rd_wdata = less_signed   ? alu_op1 : alu_op2;  // MIN
-                    `INST_SR:  reg_rd_wdata = less_unsigned ? alu_op1 : alu_op2;  // MINU
-                    `INST_OR:  reg_rd_wdata = less_signed   ? alu_op2 : alu_op1;  // MAX
-                    `INST_AND: reg_rd_wdata = less_unsigned ? alu_op2 : alu_op1;  // MAXU
+                    INST_XOR: reg_rd_wdata = less_signed   ? alu_op1 : alu_op2;  // MIN
+                    INST_SR:  reg_rd_wdata = less_unsigned ? alu_op1 : alu_op2;  // MINU
+                    INST_OR:  reg_rd_wdata = less_signed   ? alu_op2 : alu_op1;  // MAX
+                    INST_AND: reg_rd_wdata = less_unsigned ? alu_op2 : alu_op1;  // MAXU
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
             else if (func7 == 7'b0010000) begin//Zba: SH1ADD/SH2ADD/SH3ADD
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_SLT: reg_rd_wdata = (alu_op1 << 1) + alu_op2;  // SH1ADD
-                    `INST_XOR: reg_rd_wdata = (alu_op1 << 2) + alu_op2;  // SH2ADD
-                    `INST_OR:  reg_rd_wdata = (alu_op1 << 3) + alu_op2;  // SH3ADD
+                    INST_SLT: reg_rd_wdata = (alu_op1 << 1) + alu_op2;  // SH1ADD
+                    INST_XOR: reg_rd_wdata = (alu_op1 << 2) + alu_op2;  // SH2ADD
+                    INST_OR:  reg_rd_wdata = (alu_op1 << 3) + alu_op2;  // SH3ADD
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
             else if (func7 == 7'b0110000) begin//Zbb: ROL/ROR
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_SLL: reg_rd_wdata = (alu_op1 << alu_op2[4:0]) |
+                    INST_SLL: reg_rd_wdata = (alu_op1 << alu_op2[4:0]) |
                                               (alu_op1 >> ((32 - alu_op2[4:0]) & 5'h1f));  // ROL
-                    `INST_SR:  reg_rd_wdata = (alu_op1 >> alu_op2[4:0]) |
+                    INST_SR:  reg_rd_wdata = (alu_op1 >> alu_op2[4:0]) |
                                               (alu_op1 << ((32 - alu_op2[4:0]) & 5'h1f));  // ROR
                     default:   reg_rd_wdata = alu_op1;
                 endcase
@@ -284,37 +285,37 @@ always_comb begin
             else if (func7 == 7'b0010100) begin//Zbs: BSET
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_SLL: reg_rd_wdata = alu_op1 | (32'h1 << alu_op2[4:0]);  // BSET
+                    INST_SLL: reg_rd_wdata = alu_op1 | (32'h1 << alu_op2[4:0]);  // BSET
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
             else if (func7 == 7'b0100100) begin//Zbs: BCLR/BEXT
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_SLL: reg_rd_wdata = alu_op1 & ~(32'h1 << alu_op2[4:0]);  // BCLR
-                    `INST_SR:  reg_rd_wdata = (alu_op1 >> alu_op2[4:0]) & 32'h1;   // BEXT
+                    INST_SLL: reg_rd_wdata = alu_op1 & ~(32'h1 << alu_op2[4:0]);  // BCLR
+                    INST_SR:  reg_rd_wdata = (alu_op1 >> alu_op2[4:0]) & 32'h1;   // BEXT
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
             else if (func7 == 7'b0110100) begin//Zbs: BINV
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_SLL: reg_rd_wdata = alu_op1 ^ (32'h1 << alu_op2[4:0]);  // BINV
+                    INST_SLL: reg_rd_wdata = alu_op1 ^ (32'h1 << alu_op2[4:0]);  // BINV
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
             else if (func7 == 7'b0000100) begin//Zbb: ZEXT.H（rs2=0）
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_XOR: reg_rd_wdata = {16'h0, alu_op1[15:0]};  // ZEXT.H
+                    INST_XOR: reg_rd_wdata = {16'h0, alu_op1[15:0]};  // ZEXT.H
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
             else if (func7 == 7'b0000111) begin//Zicond: CZERO.EQZ/CZERO.NEZ
                 reg_rd_wen        = 1'b1;
                 case (func3)
-                    `INST_SR:  reg_rd_wdata = (alu_op2 == 32'h0) ? 32'h0 : alu_op1;  // CZERO.EQZ: rs2==0 → rd=0
-                    `INST_AND: reg_rd_wdata = (alu_op2 != 32'h0) ? 32'h0 : alu_op1;  // CZERO.NEZ: rs2!=0 → rd=0
+                    INST_SR:  reg_rd_wdata = (alu_op2 == 32'h0) ? 32'h0 : alu_op1;  // CZERO.EQZ: rs2==0 → rd=0
+                    INST_AND: reg_rd_wdata = (alu_op2 != 32'h0) ? 32'h0 : alu_op1;  // CZERO.NEZ: rs2!=0 → rd=0
                     default:   reg_rd_wdata = alu_op1;
                 endcase
             end
@@ -324,24 +325,24 @@ always_comb begin
                 lp_valid = 1'b1;
             end
         end
-        `INST_TYPE_B: begin
+        INST_TYPE_B: begin
             reg_rd_wdata      = 'h0;
             access_wdata      = 'h0;
             case(func3)
-                `INST_BEQ: branch_taken     = equal;
-                `INST_BNE: branch_taken     = ~equal;
-                `INST_BLT: branch_taken     = less_signed;
-                `INST_BGE: branch_taken     = ~less_signed;
-                `INST_BLTU:branch_taken     = less_unsigned;
-                `INST_BGEU:branch_taken     = ~less_unsigned;
+                INST_BEQ: branch_taken     = equal;
+                INST_BNE: branch_taken     = ~equal;
+                INST_BLT: branch_taken     = less_signed;
+                INST_BGE: branch_taken     = ~less_signed;
+                INST_BLTU:branch_taken     = less_unsigned;
+                INST_BGEU:branch_taken     = ~less_unsigned;
                 default: branch_taken     = 1'b0;
             endcase
     // branch_target   = branch_taken ? jump_imm : inst_addr_plus_len;
             branch_target   = jump_imm;
         end
-        `INST_TYPE_S:begin
+        INST_TYPE_S:begin
             case(func3)
-                `INST_SB:begin
+                INST_SB:begin
                     case (access_addr[1:0])
                         2'b00: begin
                             access_wdata = {24'h0,access_wdata_temp[7:0]};
@@ -365,7 +366,7 @@ always_comb begin
                         end
                     endcase
                 end
-                `INST_SH: begin
+                INST_SH: begin
                     access_addr_misalign = access_addr[0];
                     case (access_addr[1:0])
                         2'b00: begin
@@ -388,42 +389,42 @@ always_comb begin
                         end
                     endcase
                 end
-                `INST_SW: begin
+                INST_SW: begin
                     access_addr_misalign = |access_addr[ALIGN_WIDTH-1:0];
                     access_wdata = access_wdata_temp;
                     access_wmask = 4'b1111;
                 end
             endcase
         end
-        `INST_TYPE_L: begin
+        INST_TYPE_L: begin
             // reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
             case(func3)
-                `INST_LH, `INST_LHU: 
+                INST_LH, INST_LHU: 
                     access_addr_misalign = access_addr[0];
-                `INST_LW: 
+                INST_LW: 
                     access_addr_misalign = |access_addr[ALIGN_WIDTH-1:0];
             endcase
         end
-        `INST_SYSTEM: begin
+        INST_SYSTEM: begin
             reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
             reg_rd_wdata = csr_rdata;
             case (func3)
-                `INST_CSRRW: csr_wdata = alu_op1;
-                `INST_CSRRS: csr_wdata = csr_rdata | alu_op1;
-                `INST_CSRRC: csr_wdata = csr_rdata & (~alu_op1);
-                `INST_CSRRWI:csr_wdata = {27'h0,zimm};
-                `INST_CSRRSI:csr_wdata = csr_rdata | {27'h0,zimm};
-                `INST_CSRRCI:csr_wdata = csr_rdata & {~{27'h0,zimm}};
-                `INST_PRIV: begin
+                INST_CSRRW: csr_wdata = alu_op1;
+                INST_CSRRS: csr_wdata = csr_rdata | alu_op1;
+                INST_CSRRC: csr_wdata = csr_rdata & (~alu_op1);
+                INST_CSRRWI:csr_wdata = {27'h0,zimm};
+                INST_CSRRSI:csr_wdata = csr_rdata | {27'h0,zimm};
+                INST_CSRRCI:csr_wdata = csr_rdata & {~{27'h0,zimm}};
+                INST_PRIV: begin
                     reg_rd_wen    = 1'b0;   // MRET/WFI 不写寄存器
                     reg_rd_waddr  = 5'h0;
                     case(func12)
-                        // `INST_EBREAK: ebreak_req = 1'b1;
-                        // `INST_ECALL :  ecall_req = 1'b1;
-                        `INST_MRET: mret_req = 1'b1;
-                        `INST_WFI:  wfi_req =  1'b1;
+                        // INST_EBREAK: ebreak_req = 1'b1;
+                        // INST_ECALL :  ecall_req = 1'b1;
+                        INST_MRET: mret_req = 1'b1;
+                        INST_WFI:  wfi_req =  1'b1;
                     endcase
                 end
             endcase
@@ -441,31 +442,31 @@ always_comb begin
             link  | link  |     0    |  pop,then push
             link  | link  |     1    |    push
         */
-        `INST_JAL:begin
+        INST_JAL:begin
             reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
     reg_rd_wdata      = inst_addr_plus_len;
             branch_taken      = 1'b1;
             branch_target     = jump_imm;
         end
-        `INST_JALR:begin
+        INST_JALR:begin
             reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
     reg_rd_wdata      = inst_addr_plus_len;
             branch_taken      = 1'b1;
             branch_target     = alu_op1 + imm;
         end
-        `INST_LUI:begin
+        INST_LUI:begin
             reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
             reg_rd_wdata      = alu_op2;
         end
-        `INST_AUIPC:begin
+        INST_AUIPC:begin
             reg_rd_wen        = 1'b1;
             reg_rd_waddr      = rd;
             reg_rd_wdata      = alu_op1 + alu_op2;
         end
-        `INST_FENCE:begin
+        INST_FENCE:begin
             if(func3) begin//FENCE.I 冲刷
                 ;
             end else begin //FENCE 等同于NOP

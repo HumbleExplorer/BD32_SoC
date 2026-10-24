@@ -1,5 +1,9 @@
-// =============================================================================
-// SoC_Config.sv — BD32 SoC 全局配置
+// ==============================================================================
+// SoC_Config.sv — BD32 SoC 全局配置（条件编译类：开关/测试模式/加载/环境/路径）
+// ==============================================================================
+// 带保护宏：BD32_Pkg.sv 会反向包含本文件（包内常量引用位宽 define），其余文件
+// 的 `include 由此变为无操作。地址映射/存储几何/外设数量/AXI 位宽等纯常量
+// 已迁入 rtl/pkg/BD32_Pkg.sv 的 bd32_pkg，不在此定义。
 // =============================================================================
 // 使用方式：
 //   ModelSim 仿真：不定义 XILINX，默认 DIRECT_LOAD（从 .mem 加载）
@@ -7,8 +11,11 @@
 //   Vivado 仿真：  定义 XILINX + SIMULATION
 // =============================================================================
 
+`ifndef SOC_CONFIG_INCLUDED
+`define SOC_CONFIG_INCLUDED
+
 // ============================================================
-// 1. 基础参数（所有环境通用）
+// 1. 基础位宽参数（所有环境通用；存储深度已迁入 bd32_pkg）
 // ============================================================
 `define ADDR_WIDTH 32
 `define DATA_WIDTH 32
@@ -18,13 +25,6 @@
 `define ALIGN_BYTES 4
 `define ALIGN_WIDTH 2
 `define DEVICE_TAG_WIDTH 16
-
-`define ITCM_DEPTH 16*1024
-`define DTCM_DEPTH 16*1024
-`define MROM_DEPTH 1*1024
-
-`define ITCM_LENGTH (`ITCM_DEPTH * `ALIGN_BYTES)  // 16K×4 = 64KB
-`define DTCM_LENGTH (`DTCM_DEPTH * `ALIGN_BYTES)
 
 // ============================================================
 // 2. 功能开关
@@ -140,78 +140,4 @@
 
 `define MROM_FILE "mrom.dat"
 
-// ============================================================
-// 7. 地址映射
-// ============================================================
-// --- AXI Interconnect 路由（地址高 4 位 [31:28] 译码）---
-`define AXI_FLASH_BASE_ADDR    32'h9000_0000  // [31:28]=4'h9/A, 512MB
-`define AXI_DDR_BASE_ADDR      32'hB000_0000  // [31:28]=4'hB/C, 512MB
-`define AXI_APB_BRIDGE_BASE    32'hE000_0000  // [31:28]=4'hE/F, 512MB
-
-// --- AXI-APB Bridge 从机映射（[31:16] 匹配，每个从机 64KB）---
-`define APB_SLAVE_ADDR_WIDTH   16
-`define APB_NUM_SLAVES         16
-
-`define APB_CLINT_BASE_ADDR    32'hF200_0000  // PSEL[0]
-`define APB_PLIC_BASE_ADDR     32'hFC00_0000  // PSEL[1]
-`define APB_GPIO_BASE_ADDR     32'hE000_0000  // PSEL[2]
-`define APB_UART_BASE_ADDR     32'hE001_0000  // PSEL[3]
-`define APB_TIMER_BASE_ADDR    32'hE002_0000  // PSEL[4]
-`define APB_SPI_BASE_ADDR      32'hE003_0000  // PSEL[5]
-`define APB_I2C_BASE_ADDR      32'hE004_0000  // PSEL[6]
-
-// --- 总线阈值 ---
-`define BUS_BASE_ADDR  `DEVICE_TAG_WIDTH'h8000  // 高16位 >= 此值走 AXI
-
-// AXI 超时（时钟周期）：50MHz 下 1024 周期 ≈ 20.48μs
-// 形式验证（sby 定义 FORMAL）下缩小到 8：验证的是超时机制本身而非标定值，
-// 且 BMC depth 30 可全程覆盖逃逸路径；PDR 无需归纳 16 位计数器关系
-`ifdef FORMAL
-`define BUS_TIMEOUT  8
-`else
-`define BUS_TIMEOUT  1024
-`endif
-
-// --- 16 位设备标签（快速地址译码用）---
-`define BOOT_BASE_TAG  `DEVICE_TAG_WIDTH'h0000
-`define CLINT_BASE_TAG `DEVICE_TAG_WIDTH'hF200
-`define PLIC_BASE_TAG  `DEVICE_TAG_WIDTH'hFC00
-`define GPIO_BASE_TAG  `DEVICE_TAG_WIDTH'hE000
-`define UART_BASE_TAG  `DEVICE_TAG_WIDTH'hE001
-`define TIMER_BASE_TAG `DEVICE_TAG_WIDTH'hE002
-`define SPI_BASE_TAG   `DEVICE_TAG_WIDTH'hE003
-`define I2C_BASE_TAG   `DEVICE_TAG_WIDTH'hE004
-
-`ifdef CORE_TEST
-    `define ITCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
-    `define DTCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
-`else
-    `define ITCM_BASE_TAG `DEVICE_TAG_WIDTH'h0001
-    `define DTCM_BASE_TAG `DEVICE_TAG_WIDTH'h0002
-`endif
-
-// --- 外部存储容量 ---
-`define FLASH_LENGTH 128*1024*1024/8       // 128Mbit / 8 = 16MB
-`define DDR_LENGTH   256*1024*1024*16/8    // 256M × 16bit = 512MB
-`define MAX_SIZE ((`DDR_LENGTH > `FLASH_LENGTH) ? `DDR_LENGTH : `FLASH_LENGTH)
-
-// ============================================================
-// 8. 外设数量
-// ============================================================
-`define GPIO_NUM 5
-`define TIMER_NUM 1
-`define TIMER_CHANNEL_NUM 4
-
-// ============================================================
-// 9. AXI 总线位宽
-// ============================================================
-`define AXI_ID_WIDTH     4
-`define AXI_LEN_WIDTH    8
-`define AXI_SIZE_WIDTH   3
-`define AXI_BURST_WIDTH  2
-`define AXI_CACHE_WIDTH  4
-`define AXI_PROT_WIDTH   3
-`define AXI_QOS_WIDTH    4
-`define AXI_REGION_WIDTH 4
-`define AXI_RESP_WIDTH   2
-`define AXI_STRB_WIDTH   `ALIGN_BYTES
+`endif // SOC_CONFIG_INCLUDED

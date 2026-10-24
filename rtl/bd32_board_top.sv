@@ -15,10 +15,12 @@
 timeunit 1ns;
 timeprecision 1ps;
 
+import bd32_pkg::*;
+
 module bd32_board_top #(
-    parameter GPIO_NUM           = `GPIO_NUM,
-    parameter TIMER_NUM          = `TIMER_NUM,
-    parameter TIMER_CHANNEL_NUM  = `TIMER_CHANNEL_NUM
+    parameter GPIO_NUM           = GPIO_NUM,
+    parameter TIMER_NUM          = TIMER_NUM,
+    parameter TIMER_CHANNEL_NUM  = TIMER_CHANNEL_NUM
 )(
     input  logic                                     sys_clk,           // 板载晶振 50MHz
     input  logic                                     sys_rst_n,         // 板载复位按键（低有效）
