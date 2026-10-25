@@ -444,7 +444,9 @@ spike --isa=rv32im -m0x10000:0x30000,0xe0010000:0x1000 \
 
 ## 形式验证（SymbiYosys）
 
-SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。六模块形式资产：OITF / AXI_Lite_Master / Pipeline_Ctrl / CSR_Reg_Access 四目标 bmc depth30-40 + abc-pdr 无界证明 + cover 全命中；Mem_Access / IFU_Buffer 两目标因 Yosys 不支持 `import` 语法随包化改造暂不可跑，恢复路线已验证（sv2v 预处理转换后 Yosys 可解析），属性计划与完成记录见本章以下小节。
+SVA 体系 P3：对关键模块做 BMC / 无界证明 / 覆盖率三合一形式验证。**六模块 16 任务全绿**（OITF / Mem_Access / AXI_Lite_Master / IFU_Buffer / Pipeline_Ctrl / CSR_Reg_Access，bmc depth30-40 + abc-pdr 无界证明 + cover 全命中；接口化与常量迁包后的 RTL 重新证明，cover 逐步到达核对非空洞），属性计划与完成记录见本章以下小节。
+
+**包化/接口化后的 formal 运行约定**：三个恢复流（mem_access/ifu_buffer/axi_master）的 [script] 必须显式先读 `SoC_Config.sv` 与 `pkg/BD32_Pkg.sv`（sby 把 [files] 拷入 src/ 后 `include "./../.." 相对路径失效，define 不加载会导致接口成员隐式声明）；axi_master 另需先读 `pkg/axi_if.sv`（yosys 原生支持 interface 的扁平实例化连接）；axi_master_formal_top 以 axi_if 接口实例连接 DUT（成员无驱动 = 形式验证自由输入）。**勿用 sv2v 预处理 formal**：sv2v 把 `assert property` 静默转成空命名块（yosys 0 个 $assert 单元），PASS 全为空洞。
 
 ```bash
 call D:\IC_Design_Toolkit\oss-cad-suite\environment.bat

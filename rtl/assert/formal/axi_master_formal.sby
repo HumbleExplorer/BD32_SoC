@@ -17,6 +17,9 @@ prove: abc pdr
 cover: smtbmc
 
 [script]
+read -formal -sv D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
+read -formal -sv D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv
+read -formal -sv D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/axi_if.sv
 read -formal -sv axi_master_formal_top.sv
 read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Bus/AXI_Lite_Master.sv
 prep -top axi_master_formal_top
@@ -25,3 +28,5 @@ prep -top axi_master_formal_top
 axi_master_formal_top.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Bus/AXI_Lite_Master.sv
 D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv
+D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/axi_if.sv

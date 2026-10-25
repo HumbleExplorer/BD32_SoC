@@ -13,15 +13,14 @@ prove: abc pdr
 cover: smtbmc
 
 [script]
+read -formal -sv D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
+read -formal -sv D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv
 read -formal -sv ifu_buffer_formal_top.sv
 read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/IFU_Buffer.sv
 read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/RVC_Expander.sv
 read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Zcmp_Expander.sv
 prep -top ifu_buffer_formal_top
 setundef -zero -init
-# prove(abc pdr) 的 AIGER 后端不接受任何 x 位：predict_target/jump_addr 等
-# 输入的 bit0 被 RTL 弃用（[31:1] 拼接），opt 后成 x 连接；转成 $anyseq 自由位。
-# ROM（proc_rom 推断）未用参数同样带 x，仅对 prove 任务展开。
 prove: setundef -anyseq
 prove: memory_map
 

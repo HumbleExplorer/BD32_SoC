@@ -17,6 +17,8 @@ prove: abc pdr
 cover: smtbmc
 
 [script]
+read -formal -sv D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/SoC_Config.sv
+read -formal -sv D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/pkg/BD32_Pkg.sv
 read -formal -sv mem_access_formal_top.sv
 read -formal -sv -I D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl D:/Desktop/OpenClaw_Workspace/RISCV_CPU/Working/rtl/Core/Mem_Access.sv
 prep -top mem_access_formal_top
