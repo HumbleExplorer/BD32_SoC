@@ -351,7 +351,6 @@ RT-Thread 固件烧入后无人值守长跑，UART 监听器全程抓取输出�
 | `kill_listener.ps1` | 结束监听并释放 COM 口（重新下载固件前必跑） |
 
 - 判据：`logs/soak_uart.log` 中 t1/t2 持续交替、`SERR` 出现 0 次、`soak_SERR_FOUND.marker` 不存在；报告写入 `logs/soak_report.txt`。
-- 历史基线：12 小时 t1/t2 交替、0 SERR（62.5MHz 比特流）；当前板级配置为 50MHz。
 
 
 ## CoreMark 基准

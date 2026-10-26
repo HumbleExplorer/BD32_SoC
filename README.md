@@ -167,7 +167,7 @@ RT-Thread 双版本移植（lts-v3.1.x / v5.1.0）的版本目录、中断模式
 - [ ] **DMA 控制器**：UART/SPI 等外设内存搬运
 - [ ] **自定义指令**：AI加速器或加解密协处理器
 - [ ] **AXI-Lite 总线扩展（XIP/DMA 前置）**：互连升级多 master 仲裁（现单 master 地址译码，CPU 独占）；大延时从机模型（可配置延时，供 XIP 访存延时校准）；有状态从机的半事务自恢复（现全部从机无状态，桥层双层超时已回收，见下）。
-- [ ] **SV 工程化与形式验证（主体完成）**：分层 SVA 断言体系、SymbiYosys 形式验证基本完成；共享常量包化（`rtl/pkg/BD32_Pkg.sv`）+ 总线接口化（`rtl/pkg/apb_if.sv` + `rtl/pkg/axi_if.sv`，APB/AXI 全链 modport 化，APB BFM 内 clocking block）。待细化：形式验证两模块适配包化/接口化语法（sv2v 预处理路线已验证）
+- [x] **SV 工程化与形式验证**：分层 SVA 断言体系、SymbiYosys 形式验证基本完成；共享常量包化+ 总线接口化。
 - [ ] **SDK 完善**：构建脚本、驱动分层、demo 库、文档
 - [ ] **其他外设**：I2C / WDT / RTC / PMU……
 - [ ] **详细PDF设计文档**：正在写……
